@@ -1,0 +1,298 @@
+/*
+   ============================================================================
+   theory: umbrella_hybrid_signature_and_mode
+   ============================================================================
+
+   Модель AND-mode hybrid signature security (Ed25519 ⊕ ML-DSA-65) per
+   NIST SP 800-227 hybrid signature scheme guidelines. Compromise одного
+   из двух семейств (classical Ed25519 либо post-quantum ML-DSA-65) сам
+   по себе НЕ позволяет forge AND-mode hybrid signature; для forgery
+   нужны оба секрета.
+
+   ----------------------------------------------------------------------------
+   SPEC reference     : SPEC-13-PQ-HYBRID v0.0.1 §5 (Identity hybrid layer)
+   ADR  reference     : ADR-011 Решение 5 (Identity hybrid layer Variant A
+                        AND-mode) + ADR-012 Решение 3 (Tamarin/ProVerif
+                        авторинг in-house)
+   Block reference    : 9.3 (formal models — hybrid signature + KT v2)
+   Tool               : Tamarin Prover 1.10.0+
+   ----------------------------------------------------------------------------
+
+   Properties (proven in this theory):
+
+   - and_mode_security_classical_break_ed25519
+       Если adversary раскрыл Ed25519 private key но НЕ ML-DSA-65 private
+       key — он не может forge AND-mode hybrid signature на новое
+       message; ML-DSA-65 EUF-CMA защищает.
+
+   - and_mode_security_quantum_break_mldsa
+       Симметрично: если adversary раскрыл ML-DSA-65 private key но НЕ
+       Ed25519 private key — он не может forge AND-mode подпись;
+       Ed25519 EUF-CMA защищает в classical model.
+
+   - domain_separation
+       Hybrid signature accept под non-canonical context label требует
+       compromise обоих компонентов. Cross-protocol replay (например
+       подпись с сealed-sender V2 domain separator presented как
+       hybrid sig) blocked если хотя бы один секрет intact.
+
+   - honest_setup_executable (exists-trace)
+       Sanity check: honest party может выполнить полный keygen + sign
+       + verify roundtrip без compromise.
+
+   ----------------------------------------------------------------------------
+   Axioms / abstractions:
+
+   - Ed25519 EUF-CMA modelled by Tamarin's `signing` builtin:
+       sign/2, verify/3, pk/1; equation
+       verify(sign(m, sk), m, pk(sk)) = true.
+     Real-world basis: RFC 8032 + ed25519-dalek 2.2 (deterministic
+     scheme, RFC 6979 nonces).
+   - ML-DSA-65 EUF-CMA modelled as abstract trapdoor:
+       mldsa_pk/1 [private], mldsa_sign/2, mldsa_verify/3; equation
+       mldsa_verify(mldsa_sign(m, sk), m, mldsa_pk(sk)) = true.
+     Real-world basis: NIST FIPS 204 + libcrux-ml-dsa 0.0.8 (hax-verified
+     для secret-independence).
+   - AND-mode composite verify: hybrid_verify_accept rule fires только
+     когда оба `verify(...) = true` И `mldsa_verify(...) = true` через
+     стандартный Tamarin pattern «Eq action label + Equality restriction».
+   - HYBRID_CONTEXT = `'umbrellax-hybrid-sig-v1'` (public 0-ary constant)
+     hardcoded domain separator; соответствует
+     umbrella_pq::constants::HYBRID_CONTEXT byte-equal.
+   - В реальном коде Ed25519 prepends HYBRID_CONTEXT manually (RFC 8032
+     не имеет native context API) а ML-DSA-65 принимает context как
+     native FIPS 204 §6.2 параметр. В модели обе схемы получают
+     `<HYBRID_CONTEXT, m>` как signed input — abstraction safe potому
+     что domain separation byte-equal в обоих real-world implementations.
+
+   ----------------------------------------------------------------------------
+   Adversary model:
+
+   - Active Dolev–Yao (видит все `Out`, контролирует все `In` сообщения).
+   - Может indивидуально compromise Ed25519 secret через
+     `reveal_ed25519_seed` (модель «classical break»: hypothetical
+     cryptanalysis либо leak X25519 private key).
+   - Может indивидуально compromise ML-DSA-65 secret через
+     `reveal_mldsa_seed` (модель «quantum break»: hypothetical lattice
+     cryptanalysis breakthrough либо CRQC).
+   - AND-mode security: даже compromise одного семейства не позволяет
+     recovery hybrid forgery; только simultaneous compromise обоих ломает.
+   ============================================================================
+*/
+
+theory umbrella_hybrid_signature_and_mode
+begin
+
+builtins: signing, hashing
+
+/*
+   ML-DSA-65 abstraction: separate function symbols от Tamarin signing
+   builtin (которая моделирует Ed25519). `mldsa_pk` помечен `[private]`
+   чтобы adversary не мог compute pubkey из произвольного terms — pk
+   derive только через rule с access к ~sk_md.
+
+   ML-DSA-65 abstraction: separate function symbols from Tamarin's signing
+   builtin (which models Ed25519). `mldsa_pk` is marked `[private]` so the
+   adversary cannot compute the pubkey from arbitrary terms — pk is
+   derived only through a rule with access to ~sk_md.
+*/
+functions: mldsa_pk/1 [private],
+           mldsa_sign/2,
+           mldsa_verify/3
+
+equations: mldsa_verify(mldsa_sign(m, skm), m, mldsa_pk(skm)) = true
+
+/*
+   Rule: generate_hybrid_keypair
+
+   Honestly-generated hybrid keypair = пара (Ed25519 sk, ML-DSA-65 sk).
+   Public keys (pk_ed, pk_md) опубликованы на канал через `Out` fact;
+   secrets хранятся персистентно у `$A` через `!SeedHybrid` persistent
+   fact для последующих honest-sign / reveal операций.
+*/
+rule generate_hybrid_keypair:
+    let pk_ed = pk(~sk_ed)
+        pk_md = mldsa_pk(~sk_md)
+    in
+    [ Fr(~sk_ed), Fr(~sk_md) ]
+  --[ HybridKeyPair($A, <pk_ed, pk_md>) ]->
+    [ !PubkeyHybrid($A, <pk_ed, pk_md>),
+      !SeedHybrid($A, ~sk_ed, ~sk_md),
+      Out(<pk_ed, pk_md>) ]
+
+/*
+   Rule: hybrid_sign_honest
+
+   $A честно подписывает свежее message ~m обоими компонентами с
+   domain separation HYBRID_CONTEXT. Composite signature опубликован
+   как `<~m, ed_sig, md_sig>` — adversary получает m + sig pair через
+   канал.
+
+   Action label `HybridSignHonest($A, ~m)` фиксирует honest sign event
+   для использования в AND-mode lemmas (forge возможен только если
+   $A не подписывал message OR оба секрета revealed).
+*/
+rule hybrid_sign_honest:
+    let
+        ctx       = 'umbrellax-hybrid-sig-v1'
+        signed    = <ctx, ~m>
+        ed_sig    = sign(signed, sk_ed)
+        md_sig    = mldsa_sign(signed, sk_md)
+    in
+    [ Fr(~m), !SeedHybrid($A, sk_ed, sk_md) ]
+  --[ HybridSignHonest($A, ~m) ]->
+    [ Out(<~m, ed_sig, md_sig>) ]
+
+/*
+   Rule: hybrid_verify_accept_canonical
+
+   Verify rule с canonical HYBRID_CONTEXT захардкоженным в input.
+   Rule fires только когда оба `verify(...) = true` и `mldsa_verify(...)
+   = true` evaluate в `true` через Tamarin equational reasoning +
+   Equality restriction.
+
+   Action `HybridVerifyAccept($A, m)` фиксирует факт принятия signature
+   на message m под $A's pubkeys; используется в AND-mode security
+   lemmas как trigger event.
+*/
+rule hybrid_verify_accept_canonical:
+    let
+        ctx        = 'umbrellax-hybrid-sig-v1'
+        ed_check   = verify(ed_sig, <ctx, m>, pk_ed)
+        md_check   = mldsa_verify(md_sig, <ctx, m>, pk_md)
+    in
+    [ In(<m, ed_sig, md_sig>),
+      !PubkeyHybrid($A, <pk_ed, pk_md>) ]
+  --[ Eq(ed_check, true),
+      Eq(md_check, true),
+      HybridVerifyAccept($A, m) ]->
+    [ ]
+
+/*
+   Rule: hybrid_verify_accept_alternate_context
+
+   Альтернативная verify rule с adversary-chosen context label `ctx`.
+   Используется для domain_separation lemma: показывает что любой
+   verify accept под non-canonical ctx требует compromise обоих секретов
+   (honest_sign никогда не выпускает signature с non-canonical ctx).
+
+   Restriction `CtxIsAlternate` ограничивает trigger только non-canonical
+   context (исключает overlap с canonical rule выше).
+*/
+rule hybrid_verify_accept_alternate_context:
+    let
+        ed_check   = verify(ed_sig, <ctx, m>, pk_ed)
+        md_check   = mldsa_verify(md_sig, <ctx, m>, pk_md)
+    in
+    [ In(<ctx, m, ed_sig, md_sig>),
+      !PubkeyHybrid($A, <pk_ed, pk_md>) ]
+  --[ Eq(ed_check, true),
+      Eq(md_check, true),
+      HybridVerifyAcceptAltCtx($A, ctx, m) ]->
+    [ ]
+
+restriction CtxIsAlternate:
+    "All A ctx m #i.
+        HybridVerifyAcceptAltCtx(A, ctx, m) @ i
+        ==>
+        not(ctx = 'umbrellax-hybrid-sig-v1')"
+
+/*
+   Restriction: Equality
+
+   Стандартный Tamarin pattern для encoding `verify(sig, m, pk) = true`
+   inside rules: action `Eq(x, y)` enforces `x = y` во всех traces, что
+   эквивалентно «rule fires only when verify returned true».
+
+   Standard Tamarin pattern for encoding `verify(sig, m, pk) = true`
+   inside rules: an `Eq(x, y)` action enforces `x = y` across all traces,
+   which is equivalent to "the rule fires only when verify returned true".
+*/
+restriction Equality:
+    "All x y #i. Eq(x, y) @ i ==> x = y"
+
+/*
+   Reveal rules для адversarial breaks.
+
+   `reveal_ed25519_seed` — модель «classical break» (полный compromise
+   classical Ed25519 семейства; adversary получает sk_ed). В реальности
+   это либо crypto-analytical breakthrough на discrete log curve25519
+   либо leak hardware key store.
+
+   `reveal_mldsa_seed` — модель «quantum break» (полный compromise PQ
+   ML-DSA-65 семейства). В реальности — lattice cryptanalysis либо
+   квантовый Shor-style алгоритм на module-LWE problem.
+*/
+rule reveal_ed25519_seed:
+    [ !SeedHybrid($A, sk_ed, sk_md) ]
+  --[ RevealEd25519($A, sk_ed) ]->
+    [ Out(sk_ed) ]
+
+rule reveal_mldsa_seed:
+    [ !SeedHybrid($A, sk_ed, sk_md) ]
+  --[ RevealMlDsa($A, sk_md) ]->
+    [ Out(sk_md) ]
+
+/*
+   Lemma: and_mode_security_classical_break_ed25519
+
+   Если HybridVerifyAccept произошёл на (A, m), $A не подписывал m
+   honestly, и adversary раскрыл Ed25519 sk — то ML-DSA-65 sk также
+   должен быть раскрыт. Иначе говоря: classical break (Ed25519) сам
+   по себе не позволяет forge AND-mode подпись; ML-DSA-65 EUF-CMA
+   защищает оставшийся компонент.
+*/
+lemma and_mode_security_classical_break_ed25519:
+    "All A m #i.
+        HybridVerifyAccept(A, m) @ i
+        & not (Ex #j. HybridSignHonest(A, m) @ j)
+        & (Ex sk_ed #x. RevealEd25519(A, sk_ed) @ x)
+        ==>
+        (Ex sk_md #y. RevealMlDsa(A, sk_md) @ y)"
+
+/*
+   Lemma: and_mode_security_quantum_break_mldsa
+
+   Симметрично: quantum break (ML-DSA-65 compromise) сам по себе не
+   позволяет forge AND-mode подпись. Ed25519 EUF-CMA в classical model
+   защищает оставшийся компонент.
+*/
+lemma and_mode_security_quantum_break_mldsa:
+    "All A m #i.
+        HybridVerifyAccept(A, m) @ i
+        & not (Ex #j. HybridSignHonest(A, m) @ j)
+        & (Ex sk_md #y. RevealMlDsa(A, sk_md) @ y)
+        ==>
+        (Ex sk_ed #x. RevealEd25519(A, sk_ed) @ x)"
+
+/*
+   Lemma: domain_separation
+
+   Hybrid signature accept под non-canonical context label требует
+   compromise обоих секретов. Cross-protocol replay (использование
+   подписи с context 'umbrellax-sealed-sender-v2' либо любым другим
+   non-canonical separator как hybrid sig) blocked если хотя бы один
+   секрет intact.
+*/
+lemma domain_separation:
+    "All A ctx m #i.
+        HybridVerifyAcceptAltCtx(A, ctx, m) @ i
+        ==>
+        (Ex sk_ed #x. RevealEd25519(A, sk_ed) @ x)
+        & (Ex sk_md #y. RevealMlDsa(A, sk_md) @ y)"
+
+/*
+   Lemma: honest_setup_executable (exists-trace)
+
+   Sanity check — protocol может выполниться полностью на uncompromised
+   parties. Catches modeling bugs где rules слишком restrictive (например
+   typo в context binding между sign и verify).
+*/
+lemma honest_setup_executable: exists-trace
+    "Ex A m #i #j.
+        HybridSignHonest(A, m) @ i
+        & HybridVerifyAccept(A, m) @ j
+        & (not Ex sk_ed #x. RevealEd25519(A, sk_ed) @ x)
+        & (not Ex sk_md #y. RevealMlDsa(A, sk_md) @ y)"
+
+end

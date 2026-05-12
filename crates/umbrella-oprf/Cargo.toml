@@ -1,0 +1,27 @@
+[package]
+name = "umbrella-oprf"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Ristretto255 OPRF клиент с 3-of-5 server reconstruction для contact discovery (RFC 9497)."
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+voprf = { workspace = true }
+curve25519-dalek = { workspace = true }
+ed25519-dalek = { workspace = true }
+sha2 = { workspace = true }
+rand_core = { workspace = true }
+zeroize = { workspace = true }
+subtle = { workspace = true }
+heapless = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+hex = "0.4"

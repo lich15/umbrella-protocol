@@ -1,0 +1,19 @@
+warning: `assert!()` is not allowed in library code (ADR-015 §Decision 5 criterion 5: assertions are panic vectors)
+  --> $DIR/no_assert_in_lib.rs:13:5
+   |
+LL |     assert!(input_len <= 4096);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: return `Result::Err(...)` if the condition is a runtime invariant; use `debug_assert!()` (no-op in release) for invariants that are guaranteed by a correct API; prefer type-system invariants (newtypes / phantom types / sealed traits) where possible
+   = note: `#[warn(no_assert_in_lib)]` on by default
+
+warning: `assert!()` is not allowed in library code (ADR-015 §Decision 5 criterion 5: assertions are panic vectors)
+  --> $DIR/no_assert_in_lib.rs:17:5
+   |
+LL |     assert!(value >= 0, "value must be non-negative");
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: return `Result::Err(...)` if the condition is a runtime invariant; use `debug_assert!()` (no-op in release) for invariants that are guaranteed by a correct API; prefer type-system invariants (newtypes / phantom types / sealed traits) where possible
+
+warning: 2 warnings emitted
+

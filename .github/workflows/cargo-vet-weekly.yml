@@ -1,0 +1,75 @@
+# Weekly cargo-vet supply-chain trust check
+#
+# Runs cargo-vet check каждую неделю (Sunday 00:00 UTC) для validation
+# что workspace dependency graph corresponds к accepted supply-chain
+# trust framework. Pattern K extension parallel formal-verification.yml
+# (Tamarin) + dudect-benchmarks.yml (Reparaz) precedent — slow checks
+# moved off per-push CI к weekly cron.
+#
+# supply-chain audit). Per design §7.4 + production design §Decision 5 done
+# predicate criterion «zero supply-chain alerts».
+#
+# Weekly cargo-vet supply-chain trust check
+#
+# Runs `cargo vet check` weekly (Sunday 00:00 UTC) to validate that the
+# workspace dependency graph remains consistent with the accepted
+# supply-chain trust framework. Pattern K extension parallel
+# formal-verification.yml (Tamarin) + dudect-benchmarks.yml (Reparaz)
+# precedent — slow checks moved off per-push CI to a weekly cron.
+#
+# block — supply-chain audit). Per design §7.4 + production design §Decision 5
+# done predicate criterion «zero supply-chain alerts».
+#
+# Security note: This workflow does NOT consume any untrusted GitHub
+# event input (no issue/PR/comment fields). It is triggered solely by
+# cron schedule + manual workflow_dispatch; therefore command injection
+# attack surface is intentionally zero.
+
+name: cargo-vet weekly check
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'   # Sunday 00:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  vet:
+    name: cargo vet check
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install Rust toolchain (1.95.0 per current toolchain)
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal
+          rustup default 1.95.0
+
+      - name: Install cargo-vet (locked version)
+        run: cargo install cargo-vet --locked --version 0.10.2
+
+      - name: Print versions (diagnostic)
+        run: |
+          rustc --version
+          cargo --version
+          cargo vet --version
+
+      - name: Run cargo vet check
+        run: cargo vet check
+        # Exits non-zero if violations are found.
+        # under criteria «safe-to-deploy» либо «safe-to-run»; «Vetting Succeeded».
+        # Future weekly runs surface drift if new transitive deps появятся
+        # without explicit audit decision либо exemption.
+
+      - name: Diagnostic — show recent advisory state
+        if: always()
+        run: |
+          cargo install cargo-audit --locked --version 0.22.1 || true
+          cargo audit || true
+          # Exits success even when audit emits warnings (we have 2
+          # accepted INFO Unmaintained advisories: RUSTSEC-2025-0141 +
+          # RUSTSEC-2024-0436 per dependency baseline). New
+          # advisories beyond baseline trigger immediate investigation.

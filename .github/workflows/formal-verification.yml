@@ -1,0 +1,88 @@
+name: formal-verification
+
+# Pattern K из memory feedback_15_postulates.md: formal verification —
+# separate cargo target / weekly CI job, не per-push. Tamarin Prover на
+# полную модель X-Wing combiner может занимать ~30 минут CPU; запуск на
+# каждом push был бы избыточен (substance check Pattern H уже покрыт
+# `cargo test --test model_consistency` на каждом push).
+#
+# Pattern K from memory feedback_15_postulates.md: formal verification —
+# separate cargo target / weekly CI job, not per-push. Tamarin Prover on
+# the full X-Wing combiner model may take ~30 minutes CPU; running it on
+# every push would be excessive (substance check Pattern H is already
+# covered by `cargo test --test model_consistency` on every push).
+
+on:
+  schedule:
+    # Каждое воскресенье 00:00 UTC.
+    # Every Sunday at 00:00 UTC.
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    # Manual trigger через GitHub UI либо `gh workflow run formal-verification.yml`.
+    # Manual trigger via the GitHub UI or `gh workflow run formal-verification.yml`.
+
+permissions:
+  contents: read
+
+jobs:
+  tamarin:
+    name: Tamarin Prover models
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install Tamarin Prover dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y graphviz maude
+
+      - name: Install Tamarin Prover binary
+        run: |
+          set -euo pipefail
+          TAMARIN_VERSION="1.10.0"
+          ARCHIVE="tamarin-prover-${TAMARIN_VERSION}-linux64-ubuntu.tar.gz"
+          curl -fL --retry 3 \
+            -o "${ARCHIVE}" \
+            "https://github.com/tamarin-prover/tamarin-prover/releases/download/${TAMARIN_VERSION}/${ARCHIVE}"
+          tar -xzf "${ARCHIVE}"
+          sudo mv tamarin-prover /usr/local/bin/tamarin-prover
+          sudo chmod +x /usr/local/bin/tamarin-prover
+          tamarin-prover --version
+
+      - name: Verify all Tamarin models
+        run: ./scripts/verify-tamarin-models.sh
+
+      - name: Upload verification artefacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tamarin-results
+          path: target/tamarin-results/
+          retention-days: 90
+
+  proverif:
+    name: ProVerif models
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install ProVerif binary
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y proverif
+          proverif --help | head -5 || true
+
+      - name: Verify all ProVerif models
+        run: ./scripts/verify-proverif-models.sh
+
+      - name: Upload verification artefacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: proverif-results
+          path: target/proverif-results/
+          retention-days: 90

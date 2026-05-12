@@ -1,0 +1,75 @@
+name: cargo-deny
+
+# Pattern K из memory feedback_15_postulates.md: supply-chain политика —
+# weekly cron + on-push gate; advisory-db обновляется регулярно, поэтому
+# weekly run ловит новые RUSTSEC, даже если на main давно не было push.
+# Pattern S: yml пишется через Bash heredoc (sandbox-safe).
+#
+# Pattern K from memory feedback_15_postulates.md: supply-chain policy —
+# weekly cron + on-push gate; the advisory-db updates regularly, so the
+# weekly run catches new RUSTSEC entries even when main hasn't been pushed
+# in a while. Pattern S: yml is emitted via a Bash heredoc (sandbox-safe).
+#
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/**/Cargo.toml'
+      - 'xtask/Cargo.toml'
+      - 'deny.toml'
+      - '.github/workflows/cargo-deny.yml'
+  pull_request:
+    branches: [main]
+  schedule:
+    # Каждый понедельник 06:00 UTC — обнаруживает новые RUSTSEC между
+    # выходными релизами (Pattern K weekly cron).
+    # Every Monday 06:00 UTC — picks up new RUSTSEC entries between
+    # weekend releases (Pattern K weekly cron).
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    # Manual trigger через GitHub UI либо `gh workflow run cargo-deny.yml`.
+    # Manual trigger via the GitHub UI or `gh workflow run cargo-deny.yml`.
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-deny:
+    name: cargo-deny ${{ matrix.checks }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Matrix запускает четыре проверки параллельно (advisories / bans /
+    # licenses / sources). Failure любой — fail job, но per-check видимость
+    # ускоряет диагностику.
+    # The matrix runs four checks in parallel (advisories / bans / licenses
+    # / sources). Any failure fails the job, but per-check visibility
+    # speeds up diagnosis.
+    strategy:
+      fail-fast: false
+      matrix:
+        checks:
+          - advisories
+          - bans
+          - licenses
+          - sources
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Run cargo-deny ${{ matrix.checks }}
+        uses: EmbarkStudios/cargo-deny-action@91bf2b620e09e18d6eb78b92e7861937469acedb
+        with:
+          command: check ${{ matrix.checks }}
+          # Версия pinned для reproducibility; обновляется через
+          # process maturity check (раз в квартал) либо при release
+          # cargo-deny с критическими fix'ами (CVSS 4.0 support и т.п.).
+          # Version pinned for reproducibility; bumped during the
+          # quarterly process maturity check or on cargo-deny releases
+          # with critical fixes (e.g., CVSS 4.0 support).
+          arg: --workspace --all-features
+          rust-version: stable

@@ -1,0 +1,29 @@
+[package]
+name = "umbrella-formal-verification"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.95"
+license = "LicenseRef-UPAL-1.0"
+authors = ["UmbrellaX LLP <security@umbrellax.io>"]
+repository = "https://github.com/umbrellax/umbrella-protocol"
+homepage = "https://umbrellax.io"
+publish = false
+description = "Tamarin/ProVerif formal verification models for Umbrella Protocol"
+
+# Метакрейт. Хранит metadata моделей + consistency tests; модели лежат в
+# директории `models/` как `*.spthy` и `*.pv` файлы и верифицируются external
+# tools (Tamarin Prover + ProVerif), не Rust кодом — постулат 5 «только Rust
+# для нашего кода» соблюдён, потому что naсh Rust код это metadata + tests,
+# а binary verifiers допустимы как weekly CI tooling per production design Решение 3.
+#
+# Meta-crate. Stores model metadata + consistency tests; models live in the
+# `models/` directory as `*.spthy` and `*.pv` files and are verified by
+# external tools (Tamarin Prover + ProVerif), not Rust code — postulate 5
+# ("only Rust for our code") is preserved, because our Rust code is the
+# metadata + tests, while the binary verifiers are allowed weekly CI tooling
+# per production design Decision 3.
+
+[dependencies]
+
+[dev-dependencies]
+serde_json = { workspace = true }

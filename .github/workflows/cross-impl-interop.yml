@@ -1,0 +1,206 @@
+name: cross-impl-interop
+
+# reference Rust-реализациями MLS RFC 9420:
+#  - openmls (https://github.com/openmls/openmls) — pinned snapshot
+#    submodule + canonical test_vectors RFC 9420 §A;
+#  - mls-rs (https://github.com/awslabs/mls-rs) — AWS Labs альтернативная
+#    реализация, pure-Rust crypto provider mls-rs-crypto-rustcrypto.
+#
+# Pattern K — weekly cron для дорогих проверок (cross-impl roundtrip против
+# 300-entry messages.json занимает ~2-3 мин). Pattern S — yml через Bash
+# heredoc (sandbox-safe), девятая application паттерна (предыдущие:
+# ffi-build-ios, formal-verification, cargo-fuzz-weekly, cargo-deny,
+# miri-weekly, dylint, release-pipeline, reproducibility-check).
+#
+# reference Rust MLS RFC 9420 implementations:
+#  - openmls (https://github.com/openmls/openmls) — pinned submodule
+#    snapshot + canonical RFC 9420 §A test_vectors;
+#  - mls-rs (https://github.com/awslabs/mls-rs) — AWS Labs alternate
+#    implementation, pure-Rust crypto provider mls-rs-crypto-rustcrypto.
+#
+# Pattern K — weekly cron for expensive checks (cross-impl roundtrip
+# against the 300-entry messages.json takes ~2-3 min). Pattern S — yml
+# emitted via a Bash heredoc (sandbox-safe), ninth application of the
+# pattern (previous: ffi-build-ios, formal-verification, cargo-fuzz-weekly,
+# cargo-deny, miri-weekly, dylint, release-pipeline, reproducibility-check).
+#
+
+on:
+  schedule:
+    # Каждый понедельник 09:00 UTC — оставляет cargo-deny (понедельник позже),
+    # miri (воскресенье 04:00), cargo-fuzz (вторник) на других слотах,
+    # пиковая нагрузка размазана по неделе.
+    # Every Monday 09:00 UTC — leaves cargo-deny (Monday later), miri
+    # (Sunday 04:00), cargo-fuzz (Tuesday) on different slots; the peak
+    # load is spread across the week.
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    # Ручной запуск (`gh workflow run cross-impl-interop.yml`) для срочной
+    # compatibility migration procedure.
+    # Manual trigger (`gh workflow run cross-impl-interop.yml`) for urgent
+    # compatibility migration procedure.
+
+permissions:
+  contents: read
+  # Issues write нужен на финальном шаге для авто-создания GitHub issue при
+  # регрессии — `gh issue create --label 'regression: cross-impl interop'`.
+  # Issues write is needed for the final step to auto-create a GitHub issue
+  # on regression — `gh issue create --label 'regression: cross-impl interop'`.
+  issues: write
+
+jobs:
+  interop:
+    name: cross-impl interop snapshot + roundtrip
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          # `submodules: recursive` тянет cross_impl/openmls + cross_impl/aws_mls_rs
+          # на pinned tag из .gitmodules (snapshot test).
+          # `submodules: recursive` pulls cross_impl/openmls + cross_impl/aws_mls_rs
+          # at their pinned tag from .gitmodules (snapshot test).
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: '1.95'
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cross-impl-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '.gitmodules') }}
+          restore-keys: |
+            cross-impl-${{ runner.os }}-
+
+      - name: Verify pinned submodule tags
+        # Pre-flight Pattern X — submodule status должен matchить pinned
+        # commits в `.gitmodules`; если drift detected (например manual
+        # update) — fail с понятным message.
+        # Pre-flight Pattern X — submodule status must match the pinned
+        # commits in `.gitmodules`; if a drift is detected (e.g. a manual
+        # update), fail with a clear message.
+        run: |
+          set -euo pipefail
+          echo "::group::Pinned submodules"
+          git submodule status --recursive
+          echo "::endgroup::"
+
+      - name: Cross-impl interop tests (snapshot — pinned tags)
+        # Запуск ровно двух cross-impl harness'ов с pinned snapshot.
+        # Никаких `--all-features`: cross_impl_*.rs не зависят от feature pq
+        # (PQ X-Wing trip-wires проверяют **отсутствие** native X-Wing).
+        # Run exactly the two cross-impl harnesses with the pinned snapshot.
+        # No `--all-features`: cross_impl_*.rs do not depend on the pq
+        # feature (the PQ X-Wing trip-wires assert the **absence** of native
+        # X-Wing).
+        run: |
+          set -euo pipefail
+          cargo test -p umbrella-tests \
+                     --locked \
+                     --test cross_impl_openmls \
+                     --test cross_impl_mls_rs \
+                     -- --nocapture
+
+      - name: Sync submodules to upstream HEAD (drift detection)
+        # Принудительно подтягиваем upstream HEAD каждого submodule, чтобы
+        # обнаружить drift между нашими pinned tags и текущим upstream
+        # main/master. Это и есть еженедельный «regression detector»: если
+        # upstream сменил wire-format либо удалил test vector, тесты
+        # ниже fail-ят на upstream HEAD при том что pinned snapshot
+        # прошёл выше.
+        # Force-update each submodule to the upstream HEAD to detect drift
+        # between our pinned tags and the current upstream main/master.
+        # This is the weekly «regression detector»: if upstream changed
+        # wire format or removed a test vector, the tests below fail on
+        # upstream HEAD even though the pinned snapshot passed above.
+        run: |
+          set -euo pipefail
+          git submodule update --remote --recursive
+          echo "::group::Upstream HEAD"
+          git submodule status --recursive
+          echo "::endgroup::"
+
+      - name: Cross-impl interop tests (against upstream HEAD)
+        id: drift_check
+        # Запуск тестов на upstream HEAD. continue-on-error=true — мы
+        # хотим, чтобы workflow продолжился до auto-issue даже если
+        # тесты failed (regression).
+        # Run tests against upstream HEAD. continue-on-error=true — we
+        # want the workflow to continue to the auto-issue step even if
+        # tests failed (regression).
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          cargo test -p umbrella-tests \
+                     --test cross_impl_openmls \
+                     --test cross_impl_mls_rs \
+                     -- --nocapture
+
+      - name: Open auto-issue on regression
+        # Если drift_check failed — открываем GitHub issue с triage
+        # шаблоном. Idempotency через `--label` и фиксированный заголовок
+        # дня недели + ISO date предотвращают spam (один issue в неделю
+        # max).
+        # If drift_check failed — open a GitHub issue with a triage
+        # template. Idempotency via `--label` and a fixed weekday + ISO
+        # date in the title prevents spam (one issue per week max).
+        if: steps.drift_check.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ISO_DATE=$(date -u +%Y-%m-%d)
+          TITLE="cross-impl interop regression detected — $ISO_DATE"
+          BODY=$(cat <<BODY_EOF
+          Weekly cross-impl interop check detected drift between Umbrella's
+          pinned reference implementations and upstream HEAD.
+
+          Triage steps:
+
+          1. Investigate which test failed (cross_impl_openmls / cross_impl_mls_rs).
+          2. Compare upstream HEAD vs pinned tag — какой commit вызвал regression.
+          3. Если upstream legitimately обновил wire-format / vectors:
+             - bump pinned tag в \`.gitmodules\`,
+             - rerun pinned snapshot test (must pass),
+             - update the private cross-implementation compatibility notes.
+          4. Если upstream regression — открыть upstream issue, держать pin.
+
+          Workflow run: \${GITHUB_SERVER_URL}/\${GITHUB_REPOSITORY}/actions/runs/\${GITHUB_RUN_ID}
+          BODY_EOF
+          )
+          # Дедупликация: ищем существующий open issue с тем же label —
+          # если найден, не создаём новый, вместо этого добавляем comment.
+          # Deduplication: look for an existing open issue with the same
+          # label — if found, comment instead of opening a duplicate.
+          EXISTING=$(gh issue list \
+                       --label "regression: cross-impl interop" \
+                       --state open \
+                       --json number \
+                       --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Drift повторно зафиксирован $ISO_DATE — workflow run \${GITHUB_RUN_ID}."
+          else
+            gh issue create \
+                  --title "$TITLE" \
+                  --label "regression: cross-impl interop" \
+                  --body "$BODY"
+          fi
+
+      - name: Fail workflow if drift was detected
+        # Финальный gate: даже если auto-issue создан, workflow status
+        # должен быть failed чтобы разработчики видели red badge на main.
+        # Final gate: even if the auto-issue was created, the workflow
+        # status must be failed so developers see the red badge on main.
+        if: steps.drift_check.outcome == 'failure'
+        run: |
+          echo "::error::cross-impl interop regression — see auto-issue with label 'regression: cross-impl interop'"
+          exit 1

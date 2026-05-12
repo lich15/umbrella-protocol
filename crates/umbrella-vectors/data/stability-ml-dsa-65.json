@@ -1,0 +1,32 @@
+{
+  "algorithm": "ml-dsa-65",
+  "source": "umbrella-pq stability KAT — generated 2026-04-25 from libcrux-ml-dsa 0.0.8 ml_dsa_65::generate_key_pair; fixes deterministic seed→keypair для reproducibility. Note: ML-DSA-65 sign использует hedged randomness — signature не deterministic для fixed seed, vectors проверяют только keygen и verify acceptance.",
+  "vectors": [
+    {
+      "vector_id": 0,
+      "seed_hex": "0505050505050505050505050505050505050505050505050505050505050505",
+      "expected_pk_hex": null,
+      "expected_sk_hex": null,
+      "message_hex": "48656c6c6f206879627269642068796272696420706f73742d7175616e74756d",
+      "context_hex": "756d6272656c6c61782d68796272696420636f6e74657874",
+      "expected_signature_hex": null,
+      "expected_ciphertext_hex": null,
+      "expected_shared_secret_hex": null,
+      "encaps_seed_hex": null,
+      "note": "32-byte keygen randomness; 32-byte ASCII message 'Hello hybrid hybrid post-quantum'; 24-byte ASCII context 'umbrellax-hybrid context'. Test ассертит sign → verify roundtrip + bit-flip detection."
+    },
+    {
+      "vector_id": 1,
+      "seed_hex": "0606060606060606060606060606060606060606060606060606060606060606",
+      "expected_pk_hex": null,
+      "expected_sk_hex": null,
+      "message_hex": "00",
+      "context_hex": "",
+      "expected_signature_hex": null,
+      "expected_ciphertext_hex": null,
+      "expected_shared_secret_hex": null,
+      "encaps_seed_hex": null,
+      "note": "Single-byte message + empty context — boundary case для FIPS 204 sign."
+    }
+  ]
+}

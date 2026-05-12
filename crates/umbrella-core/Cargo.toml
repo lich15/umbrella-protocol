@@ -1,0 +1,19 @@
+[package]
+name = "umbrella-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Базовые типы и errors для Umbrella Protocol. Base types and errors for Umbrella Protocol."
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+indexing_slicing = "warn"
+unwrap_used = "warn"
+
+[dependencies]
+thiserror = { workspace = true }

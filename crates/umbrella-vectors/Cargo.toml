@@ -1,0 +1,35 @@
+[package]
+name = "umbrella-vectors"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Генератор и валидатор test vectors для Umbrella Protocol Extensions (KT, Sealed Sender, Backup, NIST FIPS 203/204/205 KAT)."
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+#  (production release active mode): integration test
+# `tests/test_F_74_checksum_integrity.rs` верифицирует SHA-256 каждого
+# `data/*.json` против `CHECKSUMS.txt`. Закрывает silent integrity gap
+# где `data/SOURCES.md` нормативно требует «mismatch при build = CI fail»
+# но автоматической проверки не было (no build.rs, не охвачено
+# `reproducibility-check.yml`).
+#
+#  (production release active mode): the integration test
+# `tests/test_F_74_checksum_integrity.rs` verifies the SHA-256 of every
+# `data/*.json` against `CHECKSUMS.txt`. Closes the silent integrity gap
+# where `data/SOURCES.md` normatively required "any mismatch at build
+# time = CI fail" but no automatic check existed (no build.rs, not covered
+# by `reproducibility-check.yml`).
+sha2 = { workspace = true }

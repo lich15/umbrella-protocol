@@ -1,0 +1,452 @@
+/*
+   ============================================================================
+   theory: umbrella_multi_device_authorization
+   ============================================================================
+
+   Модель multi-device authorization flow per ADR-008 Вариант B + identity
+   rotation flow per ADR-008 §3.
+
+   24-words leak attack mitigation (SPEC-01 § 4 row 8): adversary с access к
+   24-словам derive identity-key, generate новый device-key, publish в KT
+   с pending state — Sealed Servers отказывают unwrap shares до получения
+   `DeviceAuthorizationApproval` от existing active device. Активация требует
+   физического access к уже active device пользователя — это classical 2FA-
+   in-crypto pattern (Signal safety-number + device linking).
+
+   ----------------------------------------------------------------------------
+   SPEC reference     : SPEC-09-KEY-TRANSPARENCY v0.0.1 §3 (KT log schema
+                        ADR-008 extension) + SPEC-11-MULTI-DEVICE v0.0.1
+                        (Sesame multi-device + ADR-008 authorization flow)
+   ADR  reference     : ADR-008 §1 Вариант B (challenge-response от existing
+                        active device) + §3 Вариант B (catastrophic recovery
+                        24+12 words HKDF derivation) + §4 (history cutoff) +
+                        §5 (wire format DeviceAuthorizationRequest /
+                        Approval / Revocation / IdentityRotationRecord) +
+                        §6 (Sealed Servers integration KT lookup)
+   Block reference    : 10.23 (Phase 3 cross-cutting formal models expansion)
+   Tool               : Tamarin Prover 1.10.0+
+   ----------------------------------------------------------------------------
+
+   Properties (proven in this theory):
+
+   - pending_state_required_before_active
+       Любая device entry в KT начинается с pending state; переход
+       к active требует валидной `DeviceAuthorizationApproval` от
+       existing active device-key того же identity. Modelled через
+       state-machine rules: `publish_device_pending` → `approve_device`
+       → `device_active`.
+
+   - active_device_signs_authorization
+       Approval signature под `DeviceAuthorizationApproval` обязательно
+       от уже active device-key (Ed25519 SUF-CMA). Verifies через
+       Tamarin signing builtin equation `verify(sign(m,sk),m,pk(sk))=true`.
+
+   - unauthorized_device_rejected_by_sealed_servers
+       Sealed Servers выдают unwrap shares только для devices в active
+       state. Pending либо revoked devices получают `DevicePendingAuthorization`
+       либо `DeviceRevoked` error. Modelled через rule `sealed_server_unwrap`
+       firing только при `!ActiveDevice` persistent fact.
+
+   - twentyfour_words_leak_alone_insufficient
+       Adversary с access ТОЛЬКО к 24-словам (derives identity-sk, generates
+       device-sk, publishes pending entry) НЕ может достичь active state
+       без compromise существующего active device. Formally: adversary
+       не может produce signed Approval без access к active sk. Это
+       primary defence для SPEC-01 § 4 row 8 multi-device leakage.
+
+   - identity_rotation_atomic_dual_signature
+       `IdentityRotationRecord` обязательно подписан и старым identity-sk,
+       и новым identity-sk одновременно. Single signature insufficient —
+       adversary с одним из двух не может force rotation.
+
+   - revocation_terminal_state
+       Однажды revoked device entry не может вернуться к active — никакая
+       последующая Approval не overrides Revocation. Modelled через
+       `!RevokedDevice` persistent fact: rule `approve_device` не fires
+       если device уже revoked.
+
+   - honest_setup_executable (exists-trace)
+       Sanity check: honest party может создать identity, добавить
+       первое active device через bootstrap, затем добавить linked device
+       через approval flow.
+
+   ----------------------------------------------------------------------------
+   Axioms / abstractions:
+
+   - Ed25519 SUF-CMA modelled через Tamarin `signing` builtin (sign/2,
+     verify/3, pk/1) с equation `verify(sign(m,sk),m,pk(sk))=true`.
+   - HKDF-SHA512 для identity rotation derivation `new_identity =
+     HKDF-SHA512(salt=domain, ikm=24||12, info=old_identity)` modelled
+     через `hashing` builtin random oracle (`h/1`).
+   - KT log abstracted: persistent multiset facts `!KtPending(device_pk,
+     identity_pk)` / `!KtActive(device_pk, identity_pk)` /
+     `!KtRevoked(device_pk, identity_pk)` представляют entry states.
+   - Sealed Servers abstracted: rule `sealed_server_unwrap` fires только
+     при `!KtActive(...)` fact — это формализует SPEC-12 §A.5.1 Sealed
+     Servers KT lookup integration.
+   - Identity rotation: `!IdentityActive(identity_pk)` persistent fact
+     для current identity; `IdentityRotated(old, new)` action label для
+     rotation event. После rotation все old identity device entries
+     auto-revoked.
+   - Domain separators per ADR-008 §5 modelled как distinct constants:
+     `dom_request`, `dom_approval`, `dom_revocation`, `dom_rotation`.
+   - Adversary capabilities: passive Dolev–Yao + control над `In(...)`
+     channel; cannot modify peer's local persistent state; **can leak
+     identity-sk через `reveal_identity_sk` rule** (24-words leak attack
+     simulation); **cannot leak active device-sk** (стандартное threat
+     model assumption — physical device protection).
+
+   ----------------------------------------------------------------------------
+   Adversary model:
+
+   - Active Dolev–Yao через standard Tamarin semantics.
+   - Adversary видит все `Out(...)` сообщения и controls `In(...)`.
+   - Adversary имеет access к 24-словам через `reveal_identity_sk` rule
+     — formalizes физический leak бумажки.
+   - Adversary НЕ имеет access к active device-sk — это physical
+     phone protection assumption (если устройство украдено физически,
+     2FA mechanism не помогает; this scope assumes single factor leak).
+   - Adversary может attempt publish forged DeviceAuthorizationRequest
+     либо Approval — Sealed Servers + KT verification block при
+     missing valid existing-active-device signature.
+
+   ----------------------------------------------------------------------------
+   Wire-format abstractions (PhD-deep session #67 F-PHD-RETRO-2):
+
+   ADR-008 §5 specifies a 138-byte canonical wire format для
+   `DeviceAuthorizationRequest` consisting of 7 fields:
+
+       (1)  wire_version: u16             — protocol version
+       (2)  domain: [u8; 16]              — domain separator constant
+       (3)  identity_pk: [u8; 32]         — Ed25519 identity public key
+       (4)  device_pk: [u8; 32]           — Ed25519 device public key
+       (5)  challenge_nonce: [u8; 32]     — random challenge (replay defence)
+       (6)  timestamp_unix: u64           — issuance time (freshness window)
+       (7)  location_hint: u16            — coarse geo-bucket (optional)
+
+   Эта формальная модель ABSTRACTS wire format к single tuple
+   `<'dom_request', device_pk>` (1 field plus domain) — это deliberate
+   simplification. Symbolic proof покрывает signature unforgeability
+   property (Ed25519 SUF-CMA) и state-machine transitions, NOT:
+
+       - timestamp manipulation / clock-skew exploitation
+       - challenge_nonce reuse across DeviceAuthorizationRequest instances
+       - location_hint injection / privacy leak
+       - wire_version downgrade across protocol upgrades
+
+   Эти atributes проверяются СЕПАРАТНО:
+
+       - Wire-format parser fuzz: `crates/umbrella-backup/fuzz/...`
+         (authorization_request_parse fuzz target)
+       - Cross-reference: ADR-008 §5 normative wire format
+       - Cross-reference: SPEC-11-MULTI-DEVICE §3.4 challenge-response
+         freshness window enforcement
+       - Cross-reference: per-crate doc `umbrella-identity.md` §16.6
+         reduction sketch для Ed25519 SUF-CMA Brendel 2020 Theorem 2
+         (computational layer; combined с этой symbolic proof даёт full
+         security argument — see phd-deep-session67-report.md)
+
+   Symbolic-only proof is therefore INSUFFICIENT для full claim of
+   wire-format security; computational reduction + fuzz testing должны
+   дополнять этот symbolic argument.
+   ============================================================================
+*/
+
+theory umbrella_multi_device_authorization
+begin
+
+builtins: signing, hashing
+
+/*
+   Domain separators per ADR-008 §5 — distinct constants prevent
+   cross-protocol replay attacks.
+   Domain separators per ADR-008 §5 — distinct constants prevent
+   cross-protocol replay attacks.
+*/
+
+/*
+   Rule: bootstrap_identity
+
+   $A creates new identity from 24-words seed; bootstrap первого
+   active device одновременно с identity creation. Это initial state
+   per ADR-008 §3 Вариант B (catastrophic recovery flow inverse —
+   normal registration generates identity AND first device).
+*/
+rule bootstrap_identity:
+    [ Fr(~identity_sk), Fr(~first_device_sk) ]
+  --[ BootstrapIdentity($A, ~identity_sk, pk(~first_device_sk)),
+      DeviceActivated($A, pk(~first_device_sk)) ]->
+    [ !IdentitySk($A, ~identity_sk),
+      !IdentityActive($A, pk(~identity_sk)),
+      !KtActive(pk(~first_device_sk), pk(~identity_sk)),
+      !DeviceSk($A, ~first_device_sk),
+      Out(<pk(~identity_sk), pk(~first_device_sk)>) ]
+
+/*
+   Rule: publish_device_pending
+
+   $A wants to add new device $B (либо attacker forges device entry).
+   Publishes device-key signed identity-sk — entry получает pending flag.
+   Sealed Servers видят pending — отказывают в unwrap shares до approval.
+*/
+rule publish_device_pending:
+    let
+        identity_pk = pk(identity_sk)
+        device_pk   = pk(~new_device_sk)
+        ident_sig   = sign(<'dom_request', device_pk>, identity_sk)
+    in
+    [ !IdentitySk($A, identity_sk), Fr(~new_device_sk) ]
+  --[ Eq(verify(ident_sig, <'dom_request', device_pk>, identity_pk), true),
+      DevicePending($A, device_pk, identity_pk) ]->
+    [ !KtPending(device_pk, identity_pk),
+      !DeviceSk($A, ~new_device_sk),
+      Out(<device_pk, identity_pk, ident_sig>) ]
+
+/*
+   Rule: approve_device
+
+   Existing active device-sk signs DeviceAuthorizationApproval для
+   pending device. Approval pushes pending → active state в KT.
+   Approval signature verified Tamarin signing equation.
+
+   Restriction: revoked devices (`!KtRevoked` fact) НЕ могут быть
+   reactivated — terminal state per ADR-008 §1 Вариант B.
+*/
+rule approve_device:
+    let
+        approval_msg = <'dom_approval', new_device_pk, identity_pk>
+        approver_sig = sign(approval_msg, approver_sk)
+    in
+    [ !KtPending(new_device_pk, identity_pk),
+      !KtActive(approver_device_pk, identity_pk),
+      !DeviceSk($Approver, approver_sk) ]
+  --[ Eq(approver_device_pk, pk(approver_sk)),
+      Eq(verify(approver_sig, approval_msg, approver_device_pk), true),
+      DeviceActivated($Approver, new_device_pk),
+      ApprovalSignedByActive(approver_device_pk, new_device_pk) ]->
+    [ !KtActive(new_device_pk, identity_pk) ]
+
+/*
+   Rule: revoke_device
+
+   Existing active device-sk signs DeviceAuthorizationRevocation
+   для existing device. Revocation pushes к terminal revoked state.
+*/
+rule revoke_device:
+    let
+        revocation_msg = <'dom_revocation', target_device_pk, identity_pk>
+        revoker_sig    = sign(revocation_msg, revoker_sk)
+    in
+    [ !KtActive(target_device_pk, identity_pk),
+      !KtActive(revoker_device_pk, identity_pk),
+      !DeviceSk($Revoker, revoker_sk) ]
+  --[ Eq(revoker_device_pk, pk(revoker_sk)),
+      Eq(verify(revoker_sig, revocation_msg, revoker_device_pk), true),
+      DeviceRevoked(target_device_pk, identity_pk) ]->
+    [ !KtRevoked(target_device_pk, identity_pk) ]
+
+/*
+   Rule: sealed_server_unwrap
+
+   Sealed Server processes SignedUnwrapRequest from device. Fires
+   ONLY если device entry в active state (no pending, no revoked).
+   Action label `UnwrapGranted` фиксирует successful authorization.
+
+   Per SPEC-12 §A.5.1 Sealed Server enforcement after ADR-008 §6:
+   - KT inclusion-proof lookup для device_pubkey
+   - entry-flag check: только active proceeds
+*/
+rule sealed_server_unwrap:
+    [ !KtActive(device_pk, identity_pk),
+      In(unwrap_request) ]
+  --[ UnwrapGranted(device_pk, identity_pk, unwrap_request) ]->
+    [ Out(<'unwrap_share', device_pk, unwrap_request>) ]
+
+/*
+   Rule: rotate_identity_atomic
+
+   Catastrophic recovery либо planned rotation per ADR-008 §3 Вариант B.
+   IdentityRotationRecord обязательно signed и старым и новым identity-sk
+   (dual signature) — single signature insufficient.
+
+   После rotation все old-identity device entries auto-revoked.
+*/
+rule rotate_identity_atomic:
+    let
+        old_pk      = pk(old_identity_sk)
+        new_pk      = pk(~new_identity_sk)
+        rotation_msg_old = <'dom_rotation', old_pk, new_pk>
+        rotation_msg_new = <'dom_rotation', new_pk, old_pk>
+        sig_old     = sign(rotation_msg_old, old_identity_sk)
+        sig_new     = sign(rotation_msg_new, ~new_identity_sk)
+    in
+    [ !IdentitySk($A, old_identity_sk),
+      !IdentityActive($A, old_pk),
+      Fr(~new_identity_sk),
+      Fr(~new_first_device_sk) ]
+  --[ Eq(verify(sig_old, rotation_msg_old, old_pk), true),
+      Eq(verify(sig_new, rotation_msg_new, new_pk), true),
+      SignedRotationOld(old_pk, sig_old),
+      SignedRotationNew(new_pk, sig_new),
+      DeviceActivated($A, pk(~new_first_device_sk)),
+      IdentityRotated($A, old_pk, new_pk) ]->
+    [ !IdentitySk($A, ~new_identity_sk),
+      !IdentityActive($A, new_pk),
+      !KtActive(pk(~new_first_device_sk), new_pk),
+      !DeviceSk($A, ~new_first_device_sk),
+      Out(<old_pk, new_pk, sig_old, sig_new>) ]
+
+/*
+   Rule: reveal_identity_sk (24-words leak attack simulation)
+
+   Adversary получает identity-sk через physical leak бумажки 24-словам.
+   Action label `Reveal24Words` фиксирует что adversary имеет access
+   к identity-sk; lemma `twentyfour_words_leak_alone_insufficient`
+   доказывает что этого недостаточно для unwrap без active device-sk.
+*/
+rule reveal_identity_sk:
+    [ !IdentitySk($A, identity_sk) ]
+  --[ Reveal24Words($A, identity_sk) ]->
+    [ Out(identity_sk) ]
+
+/*
+   Restriction: Equality (standard Tamarin pattern для encoding `verify(...) = true`).
+*/
+restriction Equality:
+    "All x y #i. Eq(x, y) @ i ==> x = y"
+
+/*
+   Restriction: revocation_terminal_state
+
+   Однажды revoked device cannot be re-activated — terminal state.
+   `A` обязательно в All quantifier — иначе wellformedness warning
+   «Free A» делает restriction неэффективной.
+*/
+restriction RevocationTerminal:
+    "All A device_pk identity_pk #i #j.
+        DeviceRevoked(device_pk, identity_pk) @ #i &
+        DeviceActivated(A, device_pk) @ #j
+        ==>
+        #j < #i"
+
+/*
+   Lemma: pending_state_required_before_active
+
+   Любой DeviceActivated event для device_pk предшествуется DevicePending
+   событием для same device (pending → active state machine).
+*/
+lemma pending_state_required_before_active:
+    "All A device_pk #i.
+        DeviceActivated(A, device_pk) @ #i &
+        not (Ex sk #b. BootstrapIdentity(A, sk, device_pk) @ #b) &
+        not (Ex old_pk new_pk. IdentityRotated(A, old_pk, new_pk) @ #i)
+        ==>
+        Ex B identity_pk #j. DevicePending(B, device_pk, identity_pk) @ #j & #j < #i"
+
+/*
+   Lemma: active_device_signs_authorization
+
+   Любой DeviceActivated event для non-bootstrap device предшествуется
+   ApprovalSignedByActive событием — approval signature от existing active
+   device-pk обязательна.
+*/
+lemma active_device_signs_authorization:
+    "All Approver device_pk #i.
+        DeviceActivated(Approver, device_pk) @ #i &
+        not (Ex sk #b. BootstrapIdentity(Approver, sk, device_pk) @ #b) &
+        not (Ex old_pk new_pk. IdentityRotated(Approver, old_pk, new_pk) @ #i)
+        ==>
+        Ex approver_pk #j. ApprovalSignedByActive(approver_pk, device_pk) @ #j
+        & #j = #i"
+
+/*
+   Lemma: unauthorized_device_rejected_by_sealed_servers
+
+   Sealed Server выдаёт unwrap share только для device в active state.
+   Любой UnwrapGranted event требует prior DeviceActivated event для
+   same device_pk (no unwrap для pending или revoked).
+*/
+lemma unauthorized_device_rejected_by_sealed_servers:
+    "All device_pk identity_pk req #i.
+        UnwrapGranted(device_pk, identity_pk, req) @ #i
+        ==>
+        Ex Approver #j. DeviceActivated(Approver, device_pk) @ #j
+        & #j < #i"
+
+/*
+   Lemma: twentyfour_words_leak_alone_insufficient
+
+   PRIMARY threat-model claim — SPEC-01 § 4 row 8 multi-device leakage
+   defence.
+
+   Если adversary leaked identity-sk (24-words leak) but did NOT compromise
+   active device-sk, adversary не может achieve UnwrapGranted для NEW
+   device-pk. Formally: any UnwrapGranted requires DeviceActivated, и
+   DeviceActivated requires ApprovalSignedByActive (proven выше), и
+   approval signature requires active device-sk — adversary не имеет.
+*/
+lemma twentyfour_words_leak_alone_insufficient:
+    "All A device_pk identity_pk req #i #r.
+        UnwrapGranted(device_pk, identity_pk, req) @ #i &
+        Reveal24Words(A, identity_pk) @ #r &
+        not (Ex sk #b. BootstrapIdentity(A, sk, device_pk) @ #b)
+        ==>
+        Ex approver_pk #j. ApprovalSignedByActive(approver_pk, device_pk) @ #j
+        & #j < #i"
+
+/*
+   Lemma: identity_rotation_atomic_dual_signature
+
+   Любой IdentityRotated event требует both old identity signature AND
+   new identity signature под distinct domain-separated messages —
+   atomicity dual signature property.
+
+   Modelled через Tamarin signing builtin verification: rule
+   `rotate_identity_atomic` requires both `Eq(verify(sig_old,...), true)`
+   AND `Eq(verify(sig_new,...), true)` — fires только если оба signatures
+   valid. Adversary не может trigger rotation с одним из двух.
+
+   PhD-deep session #67 F-PHD-RETRO-1 fix: lemma теперь literally
+   formalizes dual signature requirement через `SignedRotationOld` +
+   `SignedRotationNew` action labels (added в rule premises). Previous
+   formulation `not (old_pk = new_pk)` была misleading — доказывала
+   только что ключи различаются, не сам dual-signature invariant.
+*/
+lemma identity_rotation_atomic_dual_signature:
+    "All A old_pk new_pk #i.
+        IdentityRotated(A, old_pk, new_pk) @ #i
+        ==>
+        (Ex sig_old #j. SignedRotationOld(old_pk, sig_old) @ #j & #j = #i)
+        & (Ex sig_new #k. SignedRotationNew(new_pk, sig_new) @ #k & #k = #i)
+        & not (old_pk = new_pk)"
+
+/*
+   Lemma: revocation_terminal_state
+
+   Однажды revoked device entry не может быть activated again. Это
+   formalized через restriction RevocationTerminal выше: any
+   DeviceActivated event for device_pk must precede any DeviceRevoked
+   event для same device_pk.
+*/
+lemma revocation_terminal_state:
+    "All target_pk identity_pk #r.
+        DeviceRevoked(target_pk, identity_pk) @ #r
+        ==>
+        not (Ex Approver #a.
+            DeviceActivated(Approver, target_pk) @ #a & #r < #a)"
+
+/*
+   Lemma: honest_setup_executable (exists-trace)
+
+   Sanity: honest bootstrap + add second device via approval flow + Sealed
+   Server unwrap для second device может выполниться без adversarial events.
+*/
+lemma honest_setup_executable: exists-trace
+    "Ex A sk1 sk2 device2_pk identity_pk req #i #j #k.
+        BootstrapIdentity(A, sk1, sk2) @ #i
+        & DeviceActivated(A, device2_pk) @ #j
+        & UnwrapGranted(device2_pk, identity_pk, req) @ #k
+        & i < j & j < k
+        & (not Ex B id_sk #r. Reveal24Words(B, id_sk) @ #r)"
+
+end

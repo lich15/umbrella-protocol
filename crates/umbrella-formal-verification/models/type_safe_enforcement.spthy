@@ -1,0 +1,332 @@
+/*
+   ============================================================================
+   theory: umbrella_type_safe_enforcement
+   ============================================================================
+
+   Модель ADR-006 Вариант C type-safe разграничения Cloud vs Secret режимов
+   на уровне фасадов `umbrella-client`. Compile-time enum `ChatMode { Cloud,
+   Secret }` precludes mixing modes; runtime invariants при unwrap ceremony
+   enforced Sealed Servers per ADR-006 §«Принятое решение».
+
+   Symbolically captures invariant что:
+   - Cloud-mode требует обязательного Sealed Servers 3-of-5 unwrap (E2E
+     undelivery без сервер-side participation impossible)
+   - Secret-mode полностью bypass'ит Sealed Servers (pure MLS ratchet;
+     никогда не attempts unwrap request)
+   - Mode separation invariant: невозможно случайно cloud-sync на
+     SecretChatHandle через type-system (compile-fail E0599 doctest verifies
+     в umbrella-client/tests/compile_fail_secret_chat_no_cloud_sync.rs)
+
+   Multi-device leakage row 8 closure (different from ADR-008 authorization
+   flow): focus здесь на mode-level enforcement что Sealed Servers
+   participation only для Cloud chats; Secret chats полностью isolated от
+   Sealed Server attack surface.
+
+   ----------------------------------------------------------------------------
+   SPEC reference     : Private protocol overview v1.0.0 §4.1 (Cloud vs Secret modes
+                        at protocol level) + SPEC-12-BACKUP §A (Cloud
+                        threshold-wrap; Secret QR/Noise_IK device transfer)
+   ADR  reference     : ADR-006 §«Принятое решение» (Variant C: primitives
+                        в base крейте + facades в umbrella-client) +
+                        ADR-010 (FFI ABI 0.0.11)
+   Block reference    : 10.23 (Phase 3 cross-cutting formal models expansion)
+   Tool               : Tamarin Prover 1.10.0+
+   ----------------------------------------------------------------------------
+
+   Properties (proven in this theory):
+
+   - cloud_chat_requires_sealed_servers
+       Any successful ReadCloudHistory event для CloudChat предшествуется
+       SealedServerUnwrap event — Cloud mode НЕ имеет pure-MLS path.
+       Это формализует private protocol overview §4.1 «Cloud-режим: история живёт на
+       Почтальоне в зашифрованном виде, требует Sealed Servers 3-of-5 для
+       unwrap».
+
+   - secret_chat_no_cloud_unwrap
+       Any ReadSecretMessage event для SecretChat не предшествуется
+       SealedServerUnwrap event — Secret mode pure MLS ratchet,
+       никогда не interacts с Sealed Servers. Это формализует ADR-006
+       Вариант C compile-time enforcement через absence cloud_sync_history
+       method на SecretChatHandle.
+
+   - mode_separation_invariant
+       Single chat session не может одновременно execute Cloud-path AND
+       Secret-path. Compile-time enum + facade type-safety обеспечивают.
+       Modelled через `ChatMode(chat_id, mode)` persistent fact:
+       single chat имеет fixed mode permanently.
+
+   - secret_chat_three_of_five_servers_compromise_irrelevant
+       Compromise of 3-of-5 Sealed Servers (worst-case scenario per
+       SPEC-01 § 4 row 13 регулятор требует backdoor) does NOT compromise
+       SecretChat content — Secret messages никогда не leave устройства
+       в form unwrap'able by Sealed Servers.
+
+   - honest_setup_executable_both_modes (exists-trace)
+       Sanity: и CloudChat и SecretChat могут exist parallel в same
+       account; их messages routed через distinct paths.
+
+   ----------------------------------------------------------------------------
+   Axioms / abstractions:
+
+   - ChatMode enum represented через action label `ChatCreated(chat_id,
+     mode)` где mode ∈ {'cloud', 'secret'}. Persistent fact
+     `!ChatMode(chat_id, mode)` enforces single-mode invariant.
+   - Cloud message flow: rule `cloud_send` produces wrapped_key; rule
+     `cloud_unwrap_threshold` requires 3-of-5 Sealed Server interaction;
+     rule `cloud_read` requires unwrap completion.
+   - Secret message flow: rule `secret_send` уses MLS ratchet directly;
+     rule `secret_read` decrypts via local MLS state — NO Sealed Server
+     interaction.
+   - Sealed Servers abstracted: persistent fact `!SealedServer(i)` для
+     i ∈ {1..5}; threshold counted через rule `cloud_unwrap_threshold`
+     requiring 3 distinct `!SealedServer` facts.
+   - Compile-time type-safety abstracted as runtime invariant: rule
+     `cloud_read` fires только при `!ChatMode(chat_id, 'cloud')`;
+     rule `secret_read` fires только при `!ChatMode(chat_id, 'secret')`.
+     В реальном коде это compile-fail E0599 на SecretChatHandle::cloud_sync_history.
+
+   ----------------------------------------------------------------------------
+   Adversary model:
+
+   - Passive Dolev–Yao через standard Tamarin semantics.
+   - Adversary видит все `Out(...)` сообщения (network).
+   - Adversary может compromise up to 2 Sealed Servers через
+     `compromise_sealed_server` rule (modelled below).
+   - Adversary НЕ имеет access к user device (active devices protected
+     physically) либо MLS group key.
+   ============================================================================
+*/
+
+theory umbrella_type_safe_enforcement
+begin
+
+builtins: hashing
+
+functions: aead_seal/3, aead_open/3
+equations: aead_open(k, aead_seal(k, m, aad), aad) = m
+
+/*
+   Rule: setup_user_with_sealed_servers
+
+   Initial setup — user $A creates 5 Sealed Servers. Each имеет own
+   share of master wrapping key (per ADR-007 threshold-wrap setup
+   ceremony).
+*/
+rule setup_user_with_sealed_servers:
+    [ Fr(~user_id), Fr(~master_key) ]
+  --[ UserCreated($A, ~user_id) ]->
+    [ !User($A, ~user_id),
+      !SealedServer(~user_id, '1'),
+      !SealedServer(~user_id, '2'),
+      !SealedServer(~user_id, '3'),
+      !SealedServer(~user_id, '4'),
+      !SealedServer(~user_id, '5'),
+      !MasterKey(~user_id, ~master_key) ]
+
+/*
+   Rule: create_cloud_chat
+
+   $A создаёт CloudChat с Bob. Mode = 'cloud' permanently set.
+*/
+rule create_cloud_chat:
+    [ !User($A, user_id), Fr(~chat_id) ]
+  --[ ChatCreated(~chat_id, 'cloud'),
+      CloudChatCreated($A, ~chat_id) ]->
+    [ !ChatMode(~chat_id, 'cloud'),
+      !ChatOwner($A, ~chat_id) ]
+
+/*
+   Rule: create_secret_chat
+
+   $A создаёт SecretChat с Bob. Mode = 'secret' permanently set.
+*/
+rule create_secret_chat:
+    [ !User($A, user_id), Fr(~chat_id) ]
+  --[ ChatCreated(~chat_id, 'secret'),
+      SecretChatCreated($A, ~chat_id) ]->
+    [ !ChatMode(~chat_id, 'secret'),
+      !ChatOwner($A, ~chat_id) ]
+
+/*
+   Rule: cloud_send
+
+   CloudChat send: encrypt message с one-time AEAD key; Sealed Servers
+   wrap key через threshold protocol; ciphertext + wrapped_key sent
+   через Postman.
+*/
+rule cloud_send:
+    let
+        wrapped_key = h(<~msg_key, master_key, chat_id, 'wrap'>)
+    in
+    [ !ChatMode(chat_id, 'cloud'),
+      !ChatOwner($A, chat_id),
+      !User($A, user_id),
+      !MasterKey(user_id, master_key),
+      Fr(~msg_key), Fr(~plaintext) ]
+  --[ CloudSend(chat_id, ~plaintext, wrapped_key) ]->
+    [ Out(<chat_id, aead_seal(~msg_key, ~plaintext, chat_id), wrapped_key>) ]
+
+/*
+   Rule: secret_send
+
+   SecretChat send: pure MLS ratchet; no Sealed Server interaction.
+   Modelled через application AEAD под MLS application_secret
+   (abstracted из MLS group state; out-of-scope detailed MLS modelling
+   covered `mls_ed25519.spthy`).
+*/
+rule secret_send:
+    let
+        ct = aead_seal(~mls_app_secret, ~plaintext, chat_id)
+    in
+    [ !ChatMode(chat_id, 'secret'),
+      !ChatOwner($A, chat_id),
+      Fr(~plaintext), Fr(~mls_app_secret) ]
+  --[ SecretSend(chat_id, ~plaintext) ]->
+    [ Out(<chat_id, ct>) ]
+
+/*
+   Rule: cloud_unwrap_threshold (3-of-5 Sealed Servers)
+
+   Cloud message read on new device: 3 distinct Sealed Servers cooperate
+   к unwrap message key. Modelled через rule requiring 3 distinct
+   !SealedServer facts (i, j, k all distinct).
+
+   Mode-binding premise `!ChatMode(chat_id, 'cloud')` ensures unwrap
+   ceremony fires только для Cloud chats — Secret chats никогда не
+   inducible через adversary-controlled In(...) c arbitrary chat_id.
+
+   Action label `SealedServerUnwrap` fires once per successful unwrap.
+
+   Output linear fact `UnwrapComplete($A, chat_id)` consumed by
+   `cloud_read` — это authentic indicator от unwrap ceremony, не
+   adversary-replayable wire bytes.
+*/
+rule cloud_unwrap_threshold:
+    [ !ChatMode(chat_id, 'cloud'),
+      !User($A, user_id),
+      !SealedServer(user_id, i),
+      !SealedServer(user_id, j),
+      !SealedServer(user_id, k),
+      !MasterKey(user_id, master_key),
+      In(<chat_id, ct, wrapped_key>) ]
+  --[ NotEq(i, j), NotEq(j, k), NotEq(i, k),
+      SealedServerUnwrap(chat_id, $A, wrapped_key) ]->
+    [ UnwrapComplete($A, chat_id) ]
+
+/*
+   Rule: cloud_read
+
+   CloudChat read on device: requires consumption linear `UnwrapComplete`
+   fact produced by `cloud_unwrap_threshold` rule.
+*/
+rule cloud_read:
+    [ !ChatMode(chat_id, 'cloud'),
+      !ChatOwner($A, chat_id),
+      UnwrapComplete($A, chat_id) ]
+  --[ ReadCloudHistory($A, chat_id) ]->
+    [ ]
+
+/*
+   Rule: secret_read
+
+   SecretChat read: pure MLS ratchet via local state. NO Sealed Server
+   interaction. Modelled через event `ReadSecretMessage` без
+   prerequisite `SealedServerUnwrap`.
+*/
+rule secret_read:
+    [ !ChatMode(chat_id, 'secret'),
+      !ChatOwner($A, chat_id),
+      In(<chat_id, ct>) ]
+  --[ ReadSecretMessage($A, chat_id) ]->
+    [ ]
+
+/*
+   Rule: compromise_sealed_server (adversary capability)
+
+   Adversary compromises up to 2 Sealed Servers. Action label
+   `CompromiseSealedServer` фиксирует.
+*/
+rule compromise_sealed_server:
+    [ !SealedServer(user_id, i) ]
+  --[ CompromiseSealedServer(user_id, i) ]->
+    [ Out(i) ]
+
+/*
+   Restriction: NotEq (helper for sealed_servers threshold).
+*/
+restriction NotEq:
+    "All x #i. NotEq(x, x) @ #i ==> F"
+
+/*
+   Lemma: cloud_chat_requires_sealed_servers
+
+   Любой ReadCloudHistory event обязательно предшествуется
+   SealedServerUnwrap event для same chat — Cloud mode НЕ имеет
+   pure-MLS path.
+*/
+lemma cloud_chat_requires_sealed_servers:
+    "All A chat_id #i.
+        ReadCloudHistory(A, chat_id) @ #i
+        ==>
+        Ex wrapped_key #j. SealedServerUnwrap(chat_id, A, wrapped_key) @ #j
+        & #j < #i"
+
+/*
+   Lemma: secret_chat_no_cloud_unwrap
+
+   Любой ReadSecretMessage event НЕ предшествуется SealedServerUnwrap
+   event для same chat — Secret mode pure MLS, no Sealed Server interaction.
+*/
+lemma secret_chat_no_cloud_unwrap:
+    "All A chat_id #i.
+        ReadSecretMessage(A, chat_id) @ #i
+        ==>
+        not (Ex wk B #j. SealedServerUnwrap(chat_id, B, wk) @ #j)"
+
+/*
+   Lemma: mode_separation_invariant
+
+   Single chat не может одновременно быть Cloud AND Secret. ChatCreated
+   event для chat_id fires once с unique mode tag.
+*/
+lemma mode_separation_invariant:
+    "All chat_id mode1 mode2 #i #j.
+        ChatCreated(chat_id, mode1) @ #i &
+        ChatCreated(chat_id, mode2) @ #j
+        ==>
+        #i = #j & mode1 = mode2"
+
+/*
+   Lemma: secret_chat_three_of_five_servers_compromise_irrelevant
+
+   Even при compromise 3+ Sealed Servers (worst-case row 13 регулятор
+   требует backdoor): SecretChat ReadSecretMessage events НЕ require
+   any sealed-server interaction — secret messages decrypted purely
+   через local MLS ratchet. Compromise неактуален для Secret content.
+*/
+lemma secret_chat_three_of_five_servers_compromise_irrelevant:
+    "All A chat_id user_id #r1 #r2 #r3 #read.
+        CompromiseSealedServer(user_id, '1') @ #r1 &
+        CompromiseSealedServer(user_id, '2') @ #r2 &
+        CompromiseSealedServer(user_id, '3') @ #r3 &
+        ReadSecretMessage(A, chat_id) @ #read
+        ==>
+        not (Ex wk B #j. SealedServerUnwrap(chat_id, B, wk) @ #j & #j < #read)"
+
+/*
+   Lemma: honest_setup_executable_both_modes (exists-trace)
+
+   Sanity: и CloudChat и SecretChat могут coexist в одном user account;
+   их read paths distinct.
+*/
+lemma honest_setup_executable_both_modes: exists-trace
+    "Ex A user_id chat_cloud chat_secret #u #c #s #rc #rs.
+        UserCreated(A, user_id) @ #u
+        & CloudChatCreated(A, chat_cloud) @ #c
+        & SecretChatCreated(A, chat_secret) @ #s
+        & ReadCloudHistory(A, chat_cloud) @ #rc
+        & ReadSecretMessage(A, chat_secret) @ #rs
+        & u < c & u < s
+        & not (chat_cloud = chat_secret)"
+
+end

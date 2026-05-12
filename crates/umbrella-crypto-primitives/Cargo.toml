@@ -1,0 +1,23 @@
+[package]
+name = "umbrella-crypto-primitives"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Обёртка над RustCrypto/dalek с zeroize и constant-time. RustCrypto/dalek wrappers with zeroize and constant-time."
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+ed25519-dalek = { workspace = true }
+x25519-dalek = { workspace = true }
+chacha20poly1305 = { workspace = true }
+sha2 = { workspace = true }
+hkdf = { workspace = true }
+zeroize = { workspace = true }
+subtle = { workspace = true }
+rand_core = { workspace = true }
+thiserror = { workspace = true }

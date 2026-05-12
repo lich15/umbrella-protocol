@@ -1,0 +1,59 @@
+[package]
+name = "umbrella-mls"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Обёртка над openmls с Ed25519-only policy и отключёнными external operations для приватных групп."
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+umbrella-crypto-primitives = { workspace = true }
+umbrella-identity = { workspace = true }
+# umbrella-pq — optional, активируется под feature `pq`. Single source of truth для PQ примитивов
+# (ML-KEM-768 + X-Wing combiner draft-10 KAT). Никаких прямых импортов libcrux-* вне umbrella-pq.
+# umbrella-pq — optional, activated under feature `pq`. Single source of truth for PQ primitives
+# (ML-KEM-768 + X-Wing combiner draft-10 KAT). No direct libcrux-* imports outside umbrella-pq.
+umbrella-pq = { workspace = true, optional = true }
+openmls = { workspace = true }
+openmls_rust_crypto = { workspace = true }
+openmls_traits = { workspace = true }
+tls_codec = { workspace = true }
+zeroize = { workspace = true }
+secrecy = { workspace = true }
+thiserror = { workspace = true }
+# Зависимости HPKE base mode RFC 9180 §5.1 для DHKEM(X-Wing) — только под feature `pq`.
+# HPKE base mode RFC 9180 §5.1 dependencies for DHKEM(X-Wing) — only under feature `pq`.
+sha2 = { workspace = true, optional = true }
+hkdf = { workspace = true, optional = true }
+chacha20poly1305 = { workspace = true, optional = true }
+rand_core = { workspace = true, optional = true }
+
+[features]
+# Hybrid Post-Quantum opt-in (v1.0.0 release, production design Решение 4): активирует UmbrellaXWingProvider
+# для ciphersuite 0x004D (MLS_256_XWING_CHACHA20POLY1305_SHA256_Ed25519). Без феature
+# 0x004D НЕ декларируется в KeyPackage capabilities (postулат 14: иначе провайдер
+# panic'ает на HpkeKemType::XWingKemDraft6 через openmls_rust_crypto unimplemented!).
+#
+# Hybrid Post-Quantum opt-in (v1.0.0 release, production design Decision 4): activates UmbrellaXWingProvider
+# for ciphersuite 0x004D (MLS_256_XWING_CHACHA20POLY1305_SHA256_Ed25519). Without the feature,
+# 0x004D is NOT declared in KeyPackage capabilities (postulate 14: otherwise the provider
+# would panic on HpkeKemType::XWingKemDraft6 via openmls_rust_crypto unimplemented!).
+default = []
+pq = [
+    "dep:umbrella-pq",
+    "umbrella-pq/ml-kem",
+    "dep:sha2",
+    "dep:hkdf",
+    "dep:chacha20poly1305",
+    "dep:rand_core",
+]
+
+[dev-dependencies]
+proptest = { workspace = true }
+ed25519-dalek = { workspace = true }
+rand_core = { workspace = true }

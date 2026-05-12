@@ -1,0 +1,20 @@
+[package]
+name = "umbrella-padding"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Bucketed padding (256/1K/4K/16K/64K/256K/1M) и opt-in cover traffic для metadata hygiene."
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+zeroize = { workspace = true }
+subtle = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

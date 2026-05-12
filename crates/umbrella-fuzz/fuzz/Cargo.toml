@@ -1,0 +1,284 @@
+[package]
+name = "umbrella-fuzz-targets"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Отдельный workspace: `libfuzzer-sys` требует nightly Rust и не должен мешать основному
+# workspace (stable MSRV 1.88; F-75 block 10.27 inline-fix update от прежнего «1.87»
+# которое drift'ло пост блок 9.8b RUSTSEC-2026-0009 1.87 → 1.88 lockstep).
+# Запуск: `cargo +nightly fuzz run parse_mls_envelope`.
+# Separate workspace: `libfuzzer-sys` requires nightly Rust and must not disrupt the main
+# workspace (stable MSRV 1.88; F-75 block 10.27 inline-fix updated from the prior "1.87"
+# which drifted post block 9.8b RUSTSEC-2026-0009 1.87 → 1.88 lockstep).
+# Run: `cargo +nightly fuzz run parse_mls_envelope`.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# Активация feature `pq` тянет 8 PQ harnesses (Этап 9 блок 9.6 + Block 10.27
+# `ml_kem_decapsulate_fuzz` 1 GAP closure col 1 row 10 KyberSlash в threat-
+# crate-matrix) поверх 18 classical targets — итого **27 binary entries**
+# post Этап 11 блок 10.5b-active-retro session #65
+# (`aead_malleability_fuzz` defence-in-depth для AEAD ChaCha20-Poly1305 decrypt —
+# закрывает GAP Level 7 Fuzz × Row 10 KyberSlash) + 11.3
+# (`oprf_lagrange_fuzz` defence-in-depth для OPRF Lagrange determinism property
+# поверх 14 regression-guard tests из block 11.2).
+# OSS-Fuzz buildscript (oss-fuzz/build.sh) использует этот Cargo.toml —
+# все 26 binary entry'я компилируются в один cargo fuzz build pass.
+#
+# F-75 block 10.27 inline-fix counts: предыдущий комментарий цитировал
+# «23 binary entries» что было drift'ом — фактически 24 файла в
+# `fuzz_targets/` post block 9.6, 25 post block 10.27, 26 post
+# block 11.3, теперь 27 post block 10.5b-active-retro session #65.
+#
+# The `pq` feature activation pulls in 8 PQ harnesses (Stage 9 block 9.6 +
+# block 10.27 `ml_kem_decapsulate_fuzz` 1 GAP closure for col 1 row 10
+# KyberSlash in the threat-crate matrix) on top of 18 classical targets —
+# **27 binary entries** total post Stage 11 block 10.5b-active-retro session #65
+# (`aead_malleability_fuzz` defence-in-depth for AEAD ChaCha20-Poly1305 decrypt —
+# closes the Level 7 Fuzz × Row 10 KyberSlash GAP) + 11.3
+# (`oprf_lagrange_fuzz` defence-in-depth for the OPRF Lagrange determinism
+# property on top of the 14 regression-guard tests in block 11.2). The OSS-Fuzz build script
+# (oss-fuzz/build.sh) uses this Cargo.toml — all 27 binary entries compile
+# in a single `cargo fuzz build` pass.
+#
+# F-75 block 10.27 inline-fix counts: the prior comment cited "23 binary
+# entries" which was drift — actually 24 files in `fuzz_targets/` post
+# block 9.6, 25 post block 10.27, 26 post block 11.3, now 27 post block
+# 10.5b-active-retro session #65.
+umbrella-fuzz = { path = "..", features = ["pq"] }
+
+[[bin]]
+name = "parse_mls_envelope"
+path = "fuzz_targets/parse_mls_envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "strip_padding"
+path = "fuzz_targets/strip_padding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "verify_inclusion"
+path = "fuzz_targets/verify_inclusion.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "oprf_parse_blinded_request"
+path = "fuzz_targets/oprf_parse_blinded_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "oprf_parse_server_evaluation"
+path = "fuzz_targets/oprf_parse_server_evaluation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "oprf_threshold_combine"
+path = "fuzz_targets/oprf_threshold_combine.rs"
+test = false
+doc = false
+bench = false
+
+# Этап 11 блок 11.3 — defence-in-depth поверх блока 11.2 (test_lagrange_determinism.rs
+# 14 regression-guard tests). Verifies Lagrange determinism property via
+# `same input + different valid 3-of-5 subset → bit-identical OprfLabel`
+# assertion fuzz coverage с миллионами random (input, subset_a, subset_b)
+# combinations.
+# Stage 11 block 11.3 — defence-in-depth on top of block 11.2
+# (test_lagrange_determinism.rs 14 regression-guard tests). Verifies the
+# Lagrange determinism property via the assertion `same input + different
+# valid 3-of-5 subset → bit-identical OprfLabel` over millions of random
+# (input, subset_a, subset_b) combinations.
+[[bin]]
+name = "oprf_lagrange_fuzz"
+path = "fuzz_targets/oprf_lagrange_fuzz.rs"
+test = false
+doc = false
+bench = false
+
+# Этап 11 блок 10.5b-active-retro session #65 — defence-in-depth fuzz target для
+# AEAD ChaCha20-Poly1305 decrypt malleability. Закрывает GAP Level 7 Fuzz × Row 10
+# KyberSlash из block 10.5b 8-test-level matrix submatrix (`docs/audits/internal-
+# self-audit/per-crate/umbrella-crypto-primitives.md` line 484). Random fuzz input
+# должен либо decrypt либо вернуть `AeadAuthFailure` без panic.
+# Stage 11 block 10.5b-active-retro session #65 — defence-in-depth fuzz target for
+# AEAD ChaCha20-Poly1305 decrypt malleability. Closes the Level 7 Fuzz × Row 10
+# KyberSlash GAP from the block 10.5b 8-test-level matrix submatrix (`docs/audits/
+# internal-self-audit/per-crate/umbrella-crypto-primitives.md` line 484). Random
+# fuzz input must either decrypt or return `AeadAuthFailure` without panicking.
+[[bin]]
+name = "aead_malleability_fuzz"
+path = "fuzz_targets/aead_malleability_fuzz.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wrapped_key_parse"
+path = "fuzz_targets/wrapped_key_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "unwrap_share_parse"
+path = "fuzz_targets/unwrap_share_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "qr_payload_parse"
+path = "fuzz_targets/qr_payload_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "noise_responder_msg1"
+path = "fuzz_targets/noise_responder_msg1.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "noise_initiator_msg2"
+path = "fuzz_targets/noise_initiator_msg2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "authorization_request_parse"
+path = "fuzz_targets/authorization_request_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "authorization_approval_parse"
+path = "fuzz_targets/authorization_approval_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "authorization_revocation_parse"
+path = "fuzz_targets/authorization_revocation_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "identity_rotation_parse"
+path = "fuzz_targets/identity_rotation_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_sframe_header_parse"
+path = "fuzz_targets/fuzz_sframe_header_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_sframe_frame_parse"
+path = "fuzz_targets/fuzz_sframe_frame_parse.rs"
+test = false
+doc = false
+bench = false
+
+# =============================================================================
+# Post-quantum wire-format fuzz targets (Этап 9, блок 9.6 OSS-Fuzz onboarding)
+# Post-quantum wire-format fuzz targets (Stage 9, block 9.6 OSS-Fuzz onboarding)
+# =============================================================================
+#
+# Семь дополнительных libFuzzer binary targets для PQ wire-форматов из блоков
+# 8.4-8.7 (X-Wing combiner, hybrid signature, KT v2, sealed-sender V2,
+# backup wrap V2, MLS KeyPackage). Активируются вместе с feature
+# `umbrella-fuzz/pq` (см. dependency declaration выше).
+#
+# Seven additional libFuzzer binary targets for PQ wire-formats from blocks
+# 8.4-8.7 (X-Wing combiner, hybrid signature, KT v2, sealed-sender V2,
+# backup wrap V2, MLS KeyPackage). Activated together with the
+# `umbrella-fuzz/pq` feature (see dependency declaration above).
+
+[[bin]]
+name = "xwing_pubkey_parser"
+path = "fuzz_targets/xwing_pubkey_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xwing_ciphertext_parser"
+path = "fuzz_targets/xwing_ciphertext_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "hybrid_signature_parser"
+path = "fuzz_targets/hybrid_signature_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "kt_entry_v2_parser"
+path = "fuzz_targets/kt_entry_v2_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sealed_sender_v2_parser"
+path = "fuzz_targets/sealed_sender_v2_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wrapped_key_v2_parser"
+path = "fuzz_targets/wrapped_key_v2_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mls_keypackage_parser"
+path = "fuzz_targets/mls_keypackage_parser.rs"
+test = false
+doc = false
+bench = false
+
+# Block 10.27 (Phase 3 cross-cutting dev crates audit) — `ml_kem_decapsulate_fuzz`
+# закрывает 1 GAP col 1 row 10 KyberSlash в threat × crate matrix block 10.22
+# (FIPS 203 implicit rejection structural no-panic property).
+#
+# Block 10.27 (Phase 3 cross-cutting dev crates audit) — `ml_kem_decapsulate_fuzz`
+# closes the 1 GAP at col 1 row 10 KyberSlash in the block 10.22 threat × crate
+# matrix (FIPS 203 implicit rejection structural no-panic property).
+[[bin]]
+name = "ml_kem_decapsulate_fuzz"
+path = "fuzz_targets/ml_kem_decapsulate_fuzz.rs"
+test = false
+doc = false
+bench = false

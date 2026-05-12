@@ -1,0 +1,11 @@
+warning: `todo!()` is not allowed in library code (QUALITY_STANDARDS §1 §3: production must be complete on `main`)
+  --> $DIR/no_todo_in_lib.rs:13:5
+   |
+LL |     todo!()
+   |     ^^^^^^^
+   |
+   = note: implement the function fully or remove it from the library surface until completion; intermediate implementations belong in a feature-branch, not on `main`; see QUALITY_STANDARDS §1 «промежуточный прогресс живёт в feature-branch» + ADR-015 §Decision 5 criterion 5
+   = note: `#[warn(no_todo_in_lib)]` on by default
+
+warning: 1 warning emitted
+

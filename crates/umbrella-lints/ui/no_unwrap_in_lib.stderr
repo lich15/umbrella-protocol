@@ -1,0 +1,19 @@
+warning: `.unwrap()` is not allowed in library code
+  --> $DIR/no_unwrap_in_lib.rs:15:5
+   |
+LL |     value.unwrap()
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: return a `Result`, use `let ... else { ... }`, or move this expression to a `tests/` module
+   = note: `#[warn(no_unwrap_in_lib)]` on by default
+
+warning: `.expect()` is not allowed in library code
+  --> $DIR/no_unwrap_in_lib.rs:19:5
+   |
+LL |     value.expect("value is req$DIRred")
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: return a `Result`, use `let ... else { ... }`, or move this expression to a `tests/` module
+
+warning: 2 warnings emitted
+

@@ -1,0 +1,94 @@
+Umbrella Protocol - Public Access Manifest v1.0.0
+=================================================
+
+English
+-------
+
+Package version: 1.0.0 production-ready
+Package date: 2026-05-10
+Manifest updated: 2026-05-12
+License: Umbrella Public Access License
+Rust toolchain: stable 1.95.0
+Status: source-available production package for non-commercial security and
+cryptographic testing.
+
+Primary public materials:
+  README.md
+  PUBLIC_ACCESS.md
+  SECURITY.md
+  CONTRIBUTING.md
+  docs/README.md
+  UmbrellaX_protocol_public_en.pdf
+  UmbrellaX_protocol_public_ru.pdf
+
+Verification artifacts:
+  docs/security/sbom-v1.0.0.json
+  docs/security/release-manifest-v1.0.0.txt
+  Cargo.lock
+
+Recommended local verification:
+  cargo fmt --all -- --check
+  cargo check --workspace --all-targets --all-features --locked
+  cargo check --workspace --no-default-features --locked
+  RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace --all-features
+  cargo audit
+  bash scripts/audit-public-access-notices.sh
+  bash scripts/audit-github-actions.sh
+  bash scripts/audit-pq-backend-policy.sh
+
+Production note:
+  Production-ready does not mean risk-free. Operators should keep dependencies
+  current, monitor deployments, protect release keys, and run recurring
+  verification.
+
+Public Access note:
+  This package is public for inspection, reproducible builds, non-commercial
+  security testing, cryptographic testing, and responsible disclosure. It does
+  not grant commercial use or redistribution rights beyond LICENSE.
+
+Русский
+-------
+
+Версия пакета: 1.0.0 production-ready
+Дата пакета: 2026-05-10
+Манифест обновлён: 2026-05-12
+Лицензия: Umbrella Public Access License
+Rust toolchain: stable 1.95.0
+Статус: source-available production package для некоммерческой проверки
+безопасности и криптографического тестирования.
+
+Основные публичные материалы:
+  README.md
+  PUBLIC_ACCESS.md
+  SECURITY.md
+  CONTRIBUTING.md
+  docs/README.md
+  UmbrellaX_protocol_public_en.pdf
+  UmbrellaX_protocol_public_ru.pdf
+
+Проверочные артефакты:
+  docs/security/sbom-v1.0.0.json
+  docs/security/release-manifest-v1.0.0.txt
+  Cargo.lock
+
+Рекомендуемая локальная проверка:
+  cargo fmt --all -- --check
+  cargo check --workspace --all-targets --all-features --locked
+  cargo check --workspace --no-default-features --locked
+  RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace --all-features
+  cargo audit
+  bash scripts/audit-public-access-notices.sh
+  bash scripts/audit-github-actions.sh
+  bash scripts/audit-pq-backend-policy.sh
+
+Production note:
+  Production-ready не означает нулевой риск. Операторы должны обновлять
+  зависимости, мониторить deployment, защищать release keys и регулярно
+  запускать проверки.
+
+Public Access note:
+  Пакет опубликован для проверки, воспроизводимых сборок, некоммерческого
+  security testing, cryptographic testing и responsible disclosure. Он не даёт
+  прав на commercial use или redistribution сверх LICENSE.
+
+End of manifest.

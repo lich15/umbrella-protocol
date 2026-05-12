@@ -1,0 +1,6 @@
+[toolchain]
+# Latest stable Rust verified on 2026-05-10 via rustup and the Rust release index.
+# The local stable toolchain currently resolves to 1.95.0.
+channel = "stable"
+components = ["rustfmt", "clippy", "rust-src"]
+profile = "minimal"

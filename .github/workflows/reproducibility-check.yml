@@ -1,0 +1,115 @@
+# Cross-machine reproducible builds verification через diffoscope. Собирает
+# release-binary на двух Ubuntu 22.04 runners параллельно с deterministic flags
+# (см. `docs/audits/reproducible-builds.md`), сравнивает байт-в-байт. Если
+# отличаются — diffoscope показывает структурный diff и job упадёт.
+#
+# Триггер: weekly cron (sunday 05:00 UTC, чтобы не пересекаться с другими
+# weekly cron'ами — cargo-deny понедельник 06:00 UTC, miri-weekly воскресенье
+# 04:00 UTC, cargo-fuzz-weekly вторник) + workflow_dispatch.
+
+name: reproducibility-check
+
+on:
+  schedule:
+    - cron: '0 5 * * 0'
+  workflow_dispatch:
+
+# read-only checkout sufficient — actions/{upload,download}-artifact use
+# default GITHUB_TOKEN scope which does not require additional permissions.
+# read-only checkout is sufficient — actions/{upload,download}-artifact
+# use the default GITHUB_TOKEN scope which requires no additional permissions.
+permissions:
+  contents: read
+
+env:
+  # Deterministic build flags per docs/audits/reproducible-builds.md.
+  # SOURCE_DATE_EPOCH = 1735689600 = 2025-01-01 00:00:00 UTC (canonical value
+  # from docs/audits/reproducible-builds.md §«Команда сборки»).  update
+  # 1735689600 to remove documentation drift between CI and operational doc.
+  # SOURCE_DATE_EPOCH = 1735689600 = 2025-01-01 00:00:00 UTC (canonical value
+  # from docs/audits/reproducible-builds.md §«Build command»).  update
+  # 1735689600 to remove documentation drift between CI and operational doc.
+  SOURCE_DATE_EPOCH: '1735689600'
+  RUSTFLAGS: '--remap-path-prefix=/home/runner/work/umbrella-protocol/umbrella-protocol=/build'
+  CARGO_TARGET_DIR: target
+
+jobs:
+  build:
+    name: Build on runner ${{ matrix.runner }}
+    strategy:
+      matrix:
+        runner: [a, b]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install Rust toolchain (pinned via rust-toolchain.toml)
+        run: |
+          rustup show
+          rustc --version
+
+      - name: Build release binary (umbrella-ffi cdylib)
+        run: |
+          cargo build --release --workspace --all-features --locked
+
+      - name: Hash and upload built artefacts
+        run: |
+          mkdir -p out
+          # umbrella-ffi cdylib (libumbrella_ffi.so) — main reproducible target.
+          cp target/release/libumbrella_ffi.so out/libumbrella_ffi-${{ matrix.runner }}.so
+          sha256sum out/libumbrella_ffi-${{ matrix.runner }}.so > out/sha256-${{ matrix.runner }}.txt
+          cat out/sha256-${{ matrix.runner }}.txt
+
+      - name: Upload artefact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: build-${{ matrix.runner }}
+          path: out/
+          retention-days: 7
+
+  diffoscope:
+    name: Compare via diffoscope
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download artefacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          path: ./artefacts
+
+      - name: Install diffoscope
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y diffoscope
+
+      - name: Compare sha256 hashes
+        run: |
+          A=$(awk '{print $1}' artefacts/build-a/sha256-a.txt)
+          B=$(awk '{print $1}' artefacts/build-b/sha256-b.txt)
+          echo "Runner A sha256: $A"
+          echo "Runner B sha256: $B"
+          if [ "$A" = "$B" ]; then
+            echo "✓ Reproducible: byte-identical builds across runners"
+            exit 0
+          fi
+          echo "✗ NOT reproducible — running diffoscope for structural diff"
+          exit 1
+
+      - name: Run diffoscope on hash mismatch
+        if: failure()
+        run: |
+          diffoscope \
+            --max-report-size 10485760 \
+            artefacts/build-a/libumbrella_ffi-a.so \
+            artefacts/build-b/libumbrella_ffi-b.so \
+            > diffoscope-report.txt 2>&1 || true
+          head -200 diffoscope-report.txt
+
+      - name: Upload diffoscope report on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: diffoscope-report
+          path: diffoscope-report.txt
+          retention-days: 30

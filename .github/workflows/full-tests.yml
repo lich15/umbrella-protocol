@@ -1,0 +1,59 @@
+name: Full Test Suite
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 2 * * 0'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+  RUST_BACKTRACE: 1
+
+jobs:
+  full-tests:
+    name: full tests (debian-trixie, 1.95.0)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Cargo tests in Debian Trixie
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            -e CARGO_TERM_COLOR=always \
+            -e RUSTFLAGS="-D warnings" \
+            -e RUST_BACKTRACE=1 \
+            -e CARGO_HOME=/tmp/cargo \
+            -e RUSTUP_HOME=/tmp/rustup \
+            -e CARGO_TARGET_DIR=/tmp/umbrella-target \
+            debian:trixie \
+            bash -lc '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                ca-certificates \
+                clang \
+                cmake \
+                curl \
+                git \
+                make \
+                perl \
+                pkg-config \
+                build-essential
+              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
+                | sh -s -- -y --profile minimal --default-toolchain 1.95.0
+              . "$CARGO_HOME/env"
+              rustc --version
+              cargo --version
+              cargo test --workspace --all-features --locked
+            '

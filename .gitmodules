@@ -1,0 +1,6 @@
+[submodule "crates/umbrella-tests/cross_impl/openmls"]
+	path = crates/umbrella-tests/cross_impl/openmls
+	url = https://github.com/openmls/openmls.git
+[submodule "crates/umbrella-tests/cross_impl/aws_mls_rs"]
+	path = crates/umbrella-tests/cross_impl/aws_mls_rs
+	url = https://github.com/awslabs/mls-rs.git

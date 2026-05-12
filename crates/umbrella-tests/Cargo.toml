@@ -1,0 +1,114 @@
+[package]
+name = "umbrella-tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "End-to-end интеграционные и interop-тесты для Umbrella Protocol."
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[features]
+default = []
+# Hybrid post-quantum opt-in (v1.0.0 release production release ).
+# Активирует pq_milestone.rs (`#![cfg(feature = "pq")]`) и пробрасывает
+# pq в downstream test deps (umbrella-client + umbrella-identity + umbrella-kt
+# + umbrella-sealed-sender + umbrella-backup + umbrella-pq) — без этого
+# scenarios не компилируются.
+#
+# Hybrid post-quantum opt-in (v1.0.0 release Release milestone ).
+# Activates pq_milestone.rs (`#![cfg(feature = "pq")]`) and forwards pq
+# to downstream test deps (umbrella-client + umbrella-identity + umbrella-kt
+# + umbrella-sealed-sender + umbrella-backup + umbrella-pq) — without this
+# the scenarios do not compile.
+pq = [
+    "umbrella-client/pq",
+    "umbrella-identity/pq",
+    "umbrella-kt/pq",
+    "umbrella-sealed-sender/pq",
+    "umbrella-backup/pq",
+    "umbrella-mls/pq",
+    "dep:umbrella-pq",
+]
+
+[dependencies]
+# umbrella-pq — direct optional dep активируется feature pq.
+# Cargo не разрешает optional в dev-dependencies (E0463), так что umbrella-pq
+# живёт в [dependencies] но `optional = true` — он не компилируется когда
+# pq отключён. Используется только в `tests/pq_milestone.rs` под cfg pq.
+#
+# umbrella-pq — a direct optional dep activated by feature pq. Cargo does not
+# allow optional in dev-dependencies (E0463), so umbrella-pq lives in
+# [dependencies] with `optional = true` — it does not compile when pq is off.
+# Used only by `tests/pq_milestone.rs` under cfg pq.
+umbrella-pq = { workspace = true, optional = true }
+
+[dev-dependencies]
+umbrella-identity = { workspace = true }
+umbrella-mls = { workspace = true }
+umbrella-server-blind-postman = { workspace = true }
+umbrella-sealed-sender = { workspace = true }
+umbrella-padding = { workspace = true }
+umbrella-kt = { workspace = true }
+umbrella-oprf = { workspace = true }
+umbrella-backup = { workspace = true }
+umbrella-calls = { workspace = true }
+# umbrella-client — production release integration (ffi_milestone.rs):
+# end-to-end scenarios через UmbrellaClient + CloudChat/SecretChat facades.
+#
+# umbrella-client — Release milestone integration (ffi_milestone.rs):
+# end-to-end scenarios via UmbrellaClient + CloudChat/SecretChat facades.
+umbrella-client = { workspace = true }
+# rand::rngs::OsRng для генерации тестовых IdentitySeed через CSPRNG.
+# rand::rngs::OsRng for generating test IdentitySeed via CSPRNG.
+rand = { workspace = true }
+secrecy = { workspace = true }
+umbrella-crypto-primitives = { workspace = true }
+# subtle 2.6+ — `ConstantTimeEq` trait scope для dudect bench tests
+# `tests/dudect_constant_time.rs` (production v1.0.0 release 3 cross-cutting).
+# subtle 2.6+ — the `ConstantTimeEq` trait scope for the dudect bench
+# tests in `tests/dudect_constant_time.rs` (production v1.0.0 release 3
+# cross-cutting).
+subtle = { workspace = true }
+curve25519-dalek = { workspace = true }
+ed25519-dalek = { workspace = true }
+x25519-dalek = { workspace = true }
+openmls = { workspace = true }
+openmls_basic_credential = { workspace = true }
+openmls_rust_crypto = { workspace = true }
+openmls_traits = { workspace = true }
+# Cross-implementation interop (production release): AWS Labs альтернативная Rust-
+# реализация MLS RFC 9420. Используется только в `tests/cross_impl_mls_rs.rs`
+# для двусторонней wire-format проверки `UmbrellaGroup` ↔ `mls_rs::Client`.
+# Pinned через workspace `mls-rs = "0.55"` — match со снимком submodule
+# `cross_impl/aws_mls_rs/` (tag 0.55.0). mls-rs остаётся тестовой зависимостью:
+# independent wire decoder даёт защитную ценность, production crates его не
+# поставляют.
+# Cross-implementation interop (production release): AWS Labs alternate Rust MLS
+# RFC 9420 implementation. Used only by `tests/cross_impl_mls_rs.rs` for a
+# two-directional wire-format check between `UmbrellaGroup` and
+# `mls_rs::Client`. Pinned via workspace `mls-rs = "0.55"`, matching the
+# submodule snapshot at `cross_impl/aws_mls_rs/` (tag 0.55.0). mls-rs remains a
+# test dependency: the independent wire decoder is valuable, while production
+# crates do not ship it.
+mls-rs = { workspace = true }
+# Pure-Rust crypto provider для mls-rs (избегаем системных OpenSSL/aws-lc-sys
+# зависимостей в test-only path). Используется только в
+# `tests/cross_impl_mls_rs.rs`.
+# Pure Rust crypto provider for mls-rs (avoids system OpenSSL/aws-lc-sys
+# deps on a test-only path). Used only by `tests/cross_impl_mls_rs.rs`.
+mls-rs-crypto-rustcrypto = { workspace = true }
+# `serde_json` для парсинга test_vectors из openmls submodule (RFC 9420 §A
+# vectors snapshot). Используется только в `tests/cross_impl_openmls.rs`
+# для итерации JSON-файлов и assert byte-equivalent roundtrip.
+# `serde_json` is used for parsing test_vectors from the openmls submodule
+# (RFC 9420 §A vectors snapshot). Used only in `tests/cross_impl_openmls.rs`
+# to iterate JSON files and assert byte-equivalent roundtrip.
+serde_json = { workspace = true }
+hex = { workspace = true }
+rand_core = { workspace = true, features = ["getrandom"] }
+tokio = { workspace = true }

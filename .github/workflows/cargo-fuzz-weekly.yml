@@ -1,0 +1,89 @@
+#
+# Запускает все fuzz target'ы, обнаруженные через `cargo +nightly fuzz list`,
+# с bounded execution через `cargo +nightly fuzz run -- -max_total_time=<N>`.
+# Альтернатива Google OSS-Fuzz CI до момента submission в google/oss-fuzz repo.
+#
+# Runs all fuzz targets discovered through `cargo +nightly fuzz list` with
+# bounded execution via `cargo +nightly fuzz run -- -max_total_time=<N>`. An
+# alternative to Google OSS-Fuzz CI until the submission to the google/oss-fuzz
+# repo lands.
+#
+# security pre-commit hook на `.github/workflows/*.yml` Write.
+#
+# the security pre-commit hook on `.github/workflows/*.yml` Write.
+
+name: cargo-fuzz Weekly
+
+on:
+  schedule:
+    # Каждое воскресенье 03:00 UTC — после weekly Tamarin/ProVerif (00:00 UTC)
+    # чтобы не конкурировать за GitHub Actions runners одновременно.
+    # Every Sunday 03:00 UTC — after the weekly Tamarin/ProVerif run (00:00 UTC)
+    # so we don't compete for the same GitHub Actions runners.
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      time-per-target:
+        description: 'Seconds per fuzz target (default 600 = 10 min × all discovered targets)'
+        required: false
+        default: '600'
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-fuzz:
+    name: cargo-fuzz weekly run
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      TIME_PER_TARGET: ${{ inputs.time-per-target || '600' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install nightly Rust toolchain
+        uses: dtolnay/rust-toolchain@5b842231ba77f5c045dba54ac5560fed2db780e2
+        with:
+          components: rust-src
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Cache cargo deps
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            crates/umbrella-fuzz/fuzz/target
+          key: cargo-fuzz-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', 'crates/umbrella-fuzz/fuzz/Cargo.toml') }}
+
+      - name: Build all fuzz targets
+        working-directory: crates/umbrella-fuzz/fuzz
+        run: cargo +nightly fuzz build -O --debug-assertions
+
+      - name: Run all fuzz targets (bounded)
+        run: scripts/run-fuzz-overnight.sh "$TIME_PER_TARGET"
+
+      - name: Upload fuzz results (logs + crash artefacts)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fuzz-results-${{ github.run_id }}
+          path: |
+            target/fuzz-overnight/
+            crates/umbrella-fuzz/fuzz/artifacts/
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Open issue on FAIL
+        if: failure()
+        uses: peter-evans/create-issue-from-file@e8ef132d6df98ed982188e460ebb3b5d4ef3a9cd
+        with:
+          title: "cargo-fuzz weekly run failed (run ${{ github.run_id }})"
+          content-filepath: target/fuzz-overnight/*/summary.txt
+          labels: |
+            fuzz
+            production release
+            P0

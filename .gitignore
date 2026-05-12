@@ -1,0 +1,53 @@
+target/
+# Cargo.lock — committed per docs/audits/reproducible-builds.md (Pinned
+# parameters): эта workspace производит FFI binaries (umbrella-ffi-swift +
+# umbrella-ffi-kotlin) + audit deliverables (sbom.json), reproducibility
+# требует фиксированных transitive deps. Удалено из gitignore в блоке
+# 9.8b (process maturity quality gates) когда cargo-deny strict выявил
+# несоответствие документу.
+# Cargo.lock — committed per docs/audits/reproducible-builds.md (Pinned
+# parameters): this workspace produces FFI binaries (umbrella-ffi-swift +
+# umbrella-ffi-kotlin) + audit deliverables (sbom.json); reproducibility
+# requires pinned transitive deps. Removed from gitignore in block 9.8b
+# (process maturity quality gates) when cargo-deny strict surfaced the
+# discrepancy with the document.
+*.swp
+*.swo
+.DS_Store
+.vscode/
+.idea/
+*.log
+fuzz/corpus/
+fuzz/artifacts/
+fuzz/coverage/
+**/proptest-regressions/
+.envrc
+.direnv/
+node_modules/
+
+# Swift Package Manager + Xcode (examples/ios-harness, examples/*-harness).
+# Swift Package Manager + Xcode.
+.build/
+*.xcodeproj/
+DerivedData/
+.swiftpm/
+
+# Gradle + Android Studio (examples/android-harness).
+# Gradle + Android Studio.
+.gradle/
+build/
+.externalNativeBuild/
+.cxx/
+local.properties
+
+# Sigstore приватный ключ — НИКОГДА не коммитить.
+# Sigstore private key — NEVER commit.
+# See docs/audits/sigstore-signing.md.
+cosign.key
+
+# Временный файл с парольной фразой cosign — пользователь обязан скопировать
+# в 1Password Business / HashiCorp Vault и удалить файл вручную после записи.
+# Cosign passphrase recording temporary file — user must copy to vault and
+# delete this file manually after recording.
+.cosign-passphrase-*.txt
+**/.cosign-passphrase-*.txt

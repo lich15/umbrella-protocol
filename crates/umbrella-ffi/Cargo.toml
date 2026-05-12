@@ -1,0 +1,66 @@
+[package]
+name = "umbrella-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "uniffi FFI слой + ABI-stable UmbrellaError enum для Swift/Kotlin биндингов (v1.0.0 release, production design)."
+
+[lints.rust]
+# uniffi 0.28 через proc-macro генерирует `unsafe extern "C"` FFI функции;
+# разрешение ограничено FFI границей, miri + Tamarin проверки покроют корректность.
+# uniffi 0.28 proc-macros generate `unsafe extern "C"` FFI functions;
+# relaxation scoped to the FFI boundary, miri + Tamarin checks in CI.
+unsafe_code = "warn"
+
+[features]
+default = []
+# Hybrid post-quantum opt-in (v1.0.0 release production release , production design Решение 7).
+# FFI зонтичный feature пробрасывает pq в umbrella-client (которая сама собирает
+# zonтичный pq для всех downstream крейтов). Активирует FFI surface
+# `UmbrellaClientHandle::bootstrap_pq` (отдельный конструктор для PQ-режима);
+# существующие FFI типы (`UmbrellaError`, `ClientConfigFfi`, `CloudChatHandle`,
+# `SecretChatHandle`) не меняются — ABI 0.0.11 invariant сохранён (production design,
+# постулат 14).
+#
+# Без feature `pq` FFI exposes только classical path (existing 0.0.11 Swift /
+# Kotlin приложения работают без изменений).
+#
+# Hybrid post-quantum opt-in (v1.0.0 release Release milestone , production design
+# Decision 7). The FFI umbrella feature propagates pq to umbrella-client (which
+# in turn aggregates pq across all downstream crates). It activates the
+# `UmbrellaClientHandle::bootstrap_pq` FFI surface (a parallel PQ-mode
+# constructor); existing FFI types (`UmbrellaError`, `ClientConfigFfi`,
+# `CloudChatHandle`, `SecretChatHandle`) are unchanged — the 0.0.11 ABI
+# invariant holds (production design, postulate 14).
+#
+# Without feature `pq` the FFI exposes only the classical path (existing 0.0.11
+# Swift/Kotlin apps continue to work unchanged).
+pq = ["umbrella-client/pq", "umbrella-identity/pq", "umbrella-backup/pq"]
+
+[dependencies]
+umbrella-client = { workspace = true }
+# Внутренние крейты для FFI types/conversion: umbrella-backup
+# (WrappingParams + ThresholdConfig для ClientConfigFfi),
+# umbrella-identity (IdentitySeed::from_mnemonic для bootstrap),
+# umbrella-calls (CallPolicy + PeerId + RoutingMode для CallPolicyFfi).
+#
+# Internal crates for FFI types/conversion: umbrella-backup
+# (WrappingParams + ThresholdConfig for ClientConfigFfi),
+# umbrella-identity (IdentitySeed::from_mnemonic for bootstrap),
+# umbrella-calls (CallPolicy + PeerId + RoutingMode for CallPolicyFfi).
+umbrella-backup = { workspace = true }
+umbrella-identity = { workspace = true }
+umbrella-calls = { workspace = true }
+
+# uniffi proc-macro + tokio async runtime (production design Решения 2, 3).
+# uniffi proc-macro + tokio async runtime (production design Decisions 2, 3).
+uniffi = { workspace = true }
+thiserror = { workspace = true }
+
+[build-dependencies]
+# Scaffold генерация через uniffi::build в build.rs (v1.0.0 release).
+# Scaffold generation via uniffi::build in build.rs (v1.0.0 release).
+uniffi = { workspace = true, features = ["build"] }

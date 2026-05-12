@@ -1,0 +1,116 @@
+# =============================================================================
+# Кастомные dylint-правила Umbrella Protocol — sub-workspace, не входящий в
+# основной Cargo workspace.
+# Custom dylint lints for Umbrella Protocol — a sub-workspace that is NOT
+# part of the main Cargo workspace.
+# =============================================================================
+#
+# v1.0.0 release — Hardening, production release (process maturity quality gates).
+# v1.0.0 release — Hardening, production release (process maturity quality gates).
+#
+# Зачем sub-workspace (Pattern U из WORKING_RULES.md):
+#   - dylint требует nightly Rust (`#![feature(rustc_private)]`), а основной
+#     workspace зафиксирован на stable 1.95 (rust-toolchain.toml).
+#   - dylint_linting 5.0.0 ↔ clippy_utils git rev совместимы только с
+#     конкретной nightly датой (см. `rust-toolchain` ниже).
+#   - Изолированный sub-workspace не тянет workspace-deps / workspace-lints
+#     основного репозитория, что позволяет nightly-only API без затрагивания
+#     stable-сборки.
+# Why a sub-workspace (Pattern U from WORKING_RULES.md):
+#   - dylint requires nightly Rust (`#![feature(rustc_private)]`), while the
+#     main workspace is pinned to stable 1.95 (rust-toolchain.toml).
+#   - dylint_linting 5.0.0 ↔ clippy_utils git rev are compatible only with a
+#     specific nightly date (see `rust-toolchain` below).
+#   - The isolated sub-workspace does not pull workspace-deps / workspace-lints
+#     of the main repository, allowing nightly-only APIs without affecting
+#     the stable build.
+#
+# Аналогичный паттерн уже применён в `crates/umbrella-fuzz/fuzz/Cargo.toml`
+# (libfuzzer-sys требует nightly).
+# The same pattern is already used in `crates/umbrella-fuzz/fuzz/Cargo.toml`
+# (libfuzzer-sys requires nightly).
+#
+# Запуск локально (см. `docs/audits/dylint-rules.md`):
+#   cargo install cargo-dylint dylint-link
+#   cd crates/umbrella-lints && cargo build
+#   cd ../.. && cargo dylint --all --workspace \
+#     --manifest-path crates/umbrella-lints/Cargo.toml -- --workspace
+# Local invocation (see `docs/audits/dylint-rules.md`):
+#   cargo install cargo-dylint dylint-link
+#   cd crates/umbrella-lints && cargo build
+#   cd ../.. && cargo dylint --all --workspace \
+#     --manifest-path crates/umbrella-lints/Cargo.toml -- --workspace
+
+[package]
+# `umbrella_lints` (snake_case) — конвенция dylint: cdylib генерирует
+# `libumbrella_lints.{so,dylib,dll}`, символ `dylint_version` ищется по
+# базовому имени без дефисов.
+# `umbrella_lints` (snake_case) — dylint convention: cdylib produces
+# `libumbrella_lints.{so,dylib,dll}`, the `dylint_version` symbol is
+# looked up by the base name without hyphens.
+name = "umbrella_lints"
+version = "1.0.0"
+authors = ["UmbrellaX LLP <security@umbrellax.io>"]
+description = "Custom dylint lints for Umbrella Protocol — constant-time enforcement on Zeroize types, no .unwrap()/.expect() in lib.rs, mandatory RU+EN docstrings on public API."
+edition = "2024"
+license = "LicenseRef-UPAL-1.0"
+repository = "https://github.com/umbrellax/umbrella-protocol"
+publish = false
+
+[lib]
+# cdylib — динамическая библиотека без Rust ABI (загружается dylint-driver
+# по имени файла + символ `dylint_version`).
+# cdylib — a dynamic library without the Rust ABI (loaded by the dylint
+# driver via filename + `dylint_version` symbol).
+crate-type = ["cdylib"]
+
+[dependencies]
+# clippy_utils зафиксирован на git rev, совместимом с nightly из
+# `rust-toolchain` (см. ниже). Обновление пары clippy_utils+nightly —
+# единственный способ поддерживать dylint в актуальном состоянии и
+# делается синхронно (см. `docs/audits/dylint-rules.md` → секция «Bump»).
+# clippy_utils is pinned to a git rev compatible with the nightly in
+# `rust-toolchain` (see below). Bumping clippy_utils + nightly together is
+# the only way to keep dylint up to date and must be done in sync (see
+# `docs/audits/dylint-rules.md` → "Bump" section).
+clippy_utils = { git = "https://github.com/rust-lang/rust-clippy", rev = "20ce69b9a63bcd2756cd906fe0964d1e901e042a" }
+dylint_linting = "5.0.0"
+
+[dev-dependencies]
+# dylint_testing запускает ui-тесты (compile-fail / compile-pass), сравнивая
+# stderr с эталонами в `ui/*.stderr`. Bless через `cargo test -- --bless`.
+# dylint_testing runs ui tests (compile-fail / compile-pass) by comparing
+# stderr against the goldens in `ui/*.stderr`. Bless via `cargo test -- --bless`.
+dylint_testing = "5.0.0"
+
+# `zeroize` нужен только example-сценарию `no_eq_for_secret.rs` (positive
+# case с пользовательским `impl Zeroize`). Версия — последний 1.x major.
+# `zeroize` is needed only for the `no_eq_for_secret.rs` example scenario
+# (positive case with a user-defined `impl Zeroize`). Version — latest 1.x major.
+zeroize = "1"
+
+# Examples живут в `examples/`, потому что `dylint_testing::ui_test_examples`
+# нуждается в полном Cargo dev-dependency graph (в отличие от `ui_test`,
+# который компилирует каждый файл standalone). Только positive-сценарий с
+# `zeroize` требует такого режима — остальные ui-файлы остаются в `ui/`.
+# Examples live in `examples/` because `dylint_testing::ui_test_examples`
+# requires a full Cargo dev-dependency graph (unlike `ui_test`, which
+# compiles each file standalone). Only the positive `zeroize` scenario
+# needs that mode — the remaining UI files stay in `ui/`.
+[[example]]
+name = "no_eq_for_secret"
+path = "examples/no_eq_for_secret.rs"
+
+# Empty `[workspace]` — sub-workspace marker. Без этой секции Cargo поднялся
+# бы по дереву и нашёл основной workspace, что сломало бы isolation.
+# Empty `[workspace]` — sub-workspace marker. Without this section Cargo
+# would walk up the tree and locate the main workspace, breaking isolation.
+[workspace]
+
+[package.metadata.rust-analyzer]
+# rust-analyzer использует `rustc_private`-API для индексации dylint-крейтов;
+# без флага IDE не показывает типы из `rustc_lint`/`rustc_hir`/etc.
+# rust-analyzer uses the `rustc_private` API to index dylint crates;
+# without the flag the IDE does not surface types from
+# `rustc_lint`/`rustc_hir`/etc.
+rustc_private = true

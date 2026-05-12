@@ -1,0 +1,11 @@
+warning: `unreachable!()` is not allowed in library code (ADR-015 §Decision 5 criterion 5: panics on assumption breach)
+  --> $DIR/no_unreachable_in_lib.rs:22:14
+   |
+LL |         _ => unreachable!("Mode is exhaustive"),
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: express unreachability through the type system (`Infallible`, sealed traits, exhaustive matches); return `Result::Err(...)` for runtime cases that can actually occur; use `debug_assert!(false, ...)` or `core::hint::unreachable_unchecked()` (under `unsafe` with a justification) if you must mark an impossible path without a runtime panic
+   = note: `#[warn(no_unreachable_in_lib)]` on by default
+
+warning: 1 warning emitted
+

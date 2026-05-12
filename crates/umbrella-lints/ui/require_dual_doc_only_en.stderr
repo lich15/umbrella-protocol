@@ -1,0 +1,22 @@
+warning: public docstring is missing Cyrillic text — RU+EN req$DIRred
+  --> $DIR/req$DIRre_dual_doc_only_en.rs:9:1
+   |
+LL | / pub fn answer() -> u32 {
+LL | |     42
+LL | | }
+   | |_^
+   |
+   = help: add a paragraph in the missing language; see постулат 14 in docs/WORKING_RULES.md
+   = note: `#[warn(req$DIRre_dual_doc)]` on by default
+
+warning: public docstring is missing Cyrillic text — RU+EN req$DIRred
+  --> $DIR/req$DIRre_dual_doc_only_en.rs:14:1
+   |
+LL | / pub struct Holder {
+LL | |     pub value: u32,
+LL | | }
+   | |_^
+   |
+   = help: add a paragraph in the missing language; see постулат 14 in docs/WORKING_RULES.md
+
+warning: 2 warnings emitted

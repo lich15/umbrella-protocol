@@ -1,0 +1,53 @@
+[package]
+name = "umbrella-ffi-kotlin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "AAR + Kotlin module биндинг для Android клиентов UmbrellaX (cdylib target, JNI через uniffi-bindgen-kotlin, production design)."
+
+[lib]
+# cdylib → `libumbrella_ffi_kotlin.so` grouped by ABI в jniLibs/ Gradle;
+# rlib чтобы `[[bin]]` `uniffi-bindgen-kotlin` мог `use umbrella_ffi_kotlin`.
+# Kotlin не поддерживает staticlib (в отличие от iOS XCFramework).
+#
+# cdylib → `libumbrella_ffi_kotlin.so` grouped by ABI in jniLibs/ Gradle;
+# rlib so the `[[bin]]` `uniffi-bindgen-kotlin` can `use umbrella_ffi_kotlin`.
+# Kotlin does not support staticlib (unlike iOS XCFramework).
+crate-type = ["cdylib", "rlib"]
+name = "umbrella_ffi_kotlin"
+
+# uniffi-bindgen-kotlin CLI: генератор Kotlin биндингов из .so,
+# запускается build-aar.sh.
+#
+# uniffi-bindgen-kotlin CLI: generates Kotlin bindings from a .so,
+# invoked by build-aar.sh.
+[[bin]]
+name = "uniffi-bindgen-kotlin"
+path = "uniffi-bindgen/main.rs"
+
+[lints.rust]
+# uniffi_reexport_scaffolding! генерирует unsafe FFI re-exports.
+# uniffi_reexport_scaffolding! emits unsafe FFI re-exports.
+unsafe_code = "warn"
+
+[features]
+default = []
+# Hybrid post-quantum opt-in (v1.0.0 release production release , production design Решение 7).
+# Прокидывает pq в umbrella-ffi → umbrella-client → all PQ-aware downstream
+# крейты. AAR сборщик `build-aar.sh` может собрать как classical (default), так
+# и PQ (`--features pq`) вариант — для phased rollout PQ Kotlin приложения
+# (поэтапный rollout без принудительного PQ для всех Android пользователей).
+#
+# Hybrid post-quantum opt-in (v1.0.0 release Release milestone , production design
+# Decision 7). Forwards pq to umbrella-ffi → umbrella-client → all PQ-aware
+# downstream crates. The `build-aar.sh` script can produce either the classical
+# (default) or PQ (`--features pq`) variant — supporting a phased Kotlin
+# rollout without forcing PQ on every Android user.
+pq = ["umbrella-ffi/pq"]
+
+[dependencies]
+umbrella-ffi = { workspace = true }
+uniffi = { workspace = true }

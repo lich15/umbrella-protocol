@@ -1,0 +1,55 @@
+[package]
+name = "umbrella-ffi-swift"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Swift Package + XCFramework биндинг для iOS/macOS клиентов UmbrellaX (cdylib + staticlib target, production design)."
+
+[lib]
+# staticlib для XCFramework embedding в Swift Package;
+# cdylib для development symbol resolution + CI smoke-tests;
+# rlib чтобы binary [[bin]] внутри крейта мог использовать `use umbrella_ffi_swift::*`
+# (без rlib uniffi_bindgen_main не увидит re-export'ов).
+#
+# staticlib for XCFramework embedding in Swift Package;
+# cdylib for development symbol resolution + CI smoke-tests;
+# rlib so the [[bin]] inside the crate can `use umbrella_ffi_swift::*`
+# (without rlib, the bindgen bin cannot see our re-exports).
+crate-type = ["staticlib", "cdylib", "rlib"]
+name = "umbrella_ffi_swift"
+
+# uniffi-bindgen-swift CLI: генератор Swift биндингов из .dylib/.a,
+# запускается build-xcframework.sh (production design Решение 2).
+#
+# uniffi-bindgen-swift CLI: generates Swift bindings from a .dylib/.a,
+# invoked by build-xcframework.sh (production design Decision 2).
+[[bin]]
+name = "uniffi-bindgen-swift"
+path = "uniffi-bindgen/main.rs"
+
+[lints.rust]
+# uniffi_reexport_scaffolding! генерирует unsafe FFI re-exports.
+# uniffi_reexport_scaffolding! emits unsafe FFI re-exports.
+unsafe_code = "warn"
+
+[features]
+default = []
+# Hybrid post-quantum opt-in (v1.0.0 release production release , production design Решение 7).
+# Прокидывает pq в umbrella-ffi → umbrella-client → all PQ-aware downstream
+# крейты. XCFramework сборщик `build-xcframework.sh` может собрать как classical
+# (default), так и PQ (`--features pq`) вариант — для phased rollout PQ Swift
+# приложения (поэтапный rollout без принудительного PQ для всех iOS пользователей).
+#
+# Hybrid post-quantum opt-in (v1.0.0 release Release milestone , production design
+# Decision 7). Forwards pq to umbrella-ffi → umbrella-client → all PQ-aware
+# downstream crates. The `build-xcframework.sh` script can produce either the
+# classical (default) or PQ (`--features pq`) variant — supporting a phased
+# Swift rollout without forcing PQ on every iOS user.
+pq = ["umbrella-ffi/pq"]
+
+[dependencies]
+umbrella-ffi = { workspace = true }
+uniffi = { workspace = true }

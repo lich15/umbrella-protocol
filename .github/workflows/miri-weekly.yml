@@ -1,0 +1,129 @@
+name: miri-weekly
+
+# Pattern K из memory feedback_15_postulates.md: weekly cron для дорогих
+# проверок (miri примерно ×10 медленнее обычного теста). Pattern S: yml
+# пишется через Bash heredoc (sandbox-safe).
+#
+# Pattern K from memory feedback_15_postulates.md: weekly cron for expensive
+# checks (miri is roughly ×10 slower than a regular test). Pattern S: yml
+# is emitted via a Bash heredoc (sandbox-safe).
+#
+# Цель — детектировать undefined behaviour (UB) в FFI-слое:
+# `umbrella-ffi`/`umbrella-ffi-swift`/`umbrella-ffi-kotlin` используют
+# uniffi-генерируемые обёртки, которые при macro expansion раскладываются в
+# `unsafe extern "C"` вызовы. Miri — интерпретатор Rust, который проверяет
+# модель памяти (Stacked/Tree Borrows), валидность указателей, инициализацию
+# и data race на каждом шаге выполнения.
+#
+# Goal — detect undefined behaviour (UB) in the FFI layer:
+# `umbrella-ffi`/`umbrella-ffi-swift`/`umbrella-ffi-kotlin` rely on
+# uniffi-generated wrappers that expand into `unsafe extern "C"` calls.
+# Miri is a Rust interpreter that validates the memory model (Stacked/Tree
+# Borrows), pointer validity, initialisation, and data races at every step.
+#
+
+on:
+  schedule:
+    # Каждое воскресенье 04:00 UTC — отдельно от cargo-deny (понедельник)
+    # и cargo-fuzz weekly (вторник), чтобы пиковая нагрузка размазывалась
+    # по неделе.
+    # Every Sunday 04:00 UTC — separated from cargo-deny (Monday) and
+    # cargo-fuzz weekly (Tuesday) so the peak load spreads across the week.
+    - cron: '0 4 * * 0'
+  workflow_dispatch:
+    # Ручной запуск через GitHub UI или `gh workflow run miri-weekly.yml`
+    # — нужен для проверки изменений в FFI до weekly cron.
+    # Manual trigger via the GitHub UI or `gh workflow run miri-weekly.yml`
+    # — used to validate FFI changes ahead of the weekly cron.
+
+permissions:
+  contents: read
+
+jobs:
+  miri:
+    name: miri test ${{ matrix.crate }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    # Matrix запускает три FFI-крейта параллельно. fail-fast=false — если
+    # один крейт упал, два других всё равно дают сигнал; per-крейтная
+    # видимость ускоряет триаж.
+    # The matrix runs three FFI crates in parallel. fail-fast=false — if
+    # one crate fails, the other two still report; per-crate visibility
+    # speeds up triage.
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - umbrella-ffi
+          - umbrella-ffi-swift
+          - umbrella-ffi-kotlin
+          # 9 fast adversarial tests test_lagrange_determinism (Lagrange
+          # determinism property + adversarial duplicates/threshold/corruption).
+          # 4 slow tests (1000-iter / 10k-iter / 8-thread concurrent / proptest 256)
+          # excluded через #[cfg_attr(miri, ignore)] потому что curve25519-dalek
+          # scalar multiplication × N iterations under miri interpreter ~часы.
+          # fast adversarial tests in test_lagrange_determinism (Lagrange
+          # determinism property + adversarial duplicates/threshold/corruption).
+          # 4 slow tests excluded via #[cfg_attr(miri, ignore)] because
+          # curve25519-dalek scalar multiplication × N iterations is ~hours
+          # under the miri interpreter. Random defence-in-depth coverage is
+          - umbrella-oprf
+
+    env:
+      # MIRIFLAGS — конфигурация интерпретатора:
+      #   `-Zmiri-disable-isolation` — разрешает доступ к окружению (env
+      #     vars, файловая система, время) для FFI-тестов, которые
+      #     инициализируют uniffi из реальных артефактов.
+      #   `-Zmiri-permissive-provenance` — отключает предупреждения для
+      #     int-to-pointer cast, неизбежных в uniffi-сгенерированном коде
+      #     (handle ↔ pointer обмен через `usize`).
+      #   `-Zmiri-ignore-leaks` — uniffi refcount cleanup происходит вне
+      #     scope текущих тестов; leak в interpreter не означает leak в
+      #     prod-сборке.
+      #
+      # MIRIFLAGS — interpreter configuration:
+      #   `-Zmiri-disable-isolation` — allows access to the environment
+      #     (env vars, file system, time) for FFI tests that bootstrap
+      #     uniffi from real artefacts.
+      #   `-Zmiri-permissive-provenance` — disables warnings for the
+      #     int-to-pointer casts that uniffi-generated code performs
+      #     unavoidably (handle ↔ pointer exchange via `usize`).
+      #   `-Zmiri-ignore-leaks` — uniffi refcount cleanup happens outside
+      #     the scope of current tests; a leak in the interpreter does not
+      #     mean a leak in a production build.
+      MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-permissive-provenance -Zmiri-ignore-leaks"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install nightly toolchain with miri component
+        # `rustup toolchain install nightly` подтягивает свежую nightly;
+        # компоненты `miri` + `rust-src` обязательны для запуска
+        # `cargo +nightly miri test` — `miri` приносит сам интерпретатор,
+        # `rust-src` нужен для перекомпиляции std под miri-режим.
+        # `rustup toolchain install nightly` pulls the freshest nightly;
+        # the `miri` + `rust-src` components are required to run
+        # `cargo +nightly miri test` — `miri` brings the interpreter
+        # itself, `rust-src` is needed to rebuild std under miri mode.
+        run: |
+          rustup toolchain install nightly --profile minimal --component miri --component rust-src
+          cargo +nightly miri --version
+
+      - name: Run cargo +nightly miri test on ${{ matrix.crate }}
+        run: |
+          cargo +nightly miri test \
+            --no-default-features \
+            -p ${{ matrix.crate }} \
+            --lib --tests
+        # `--no-default-features` отрезает default uniffi-runtime,
+        # который зависит от платформенных API (динамические библиотеки),
+        # которые miri не интерпретирует. Конкретные тесты, требующие FFI
+        # за рамками miri, помечаются `#[cfg_attr(miri, ignore)]` с
+        # комментарием в runbook'е.
+        # `--no-default-features` strips the default uniffi runtime,
+        # which depends on platform APIs (dynamic libraries) that miri
+        # does not interpret. Specific tests requiring FFI beyond miri
+        # are marked `#[cfg_attr(miri, ignore)]` with a comment in the
+        # runbook.

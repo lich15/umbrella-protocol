@@ -1,0 +1,6 @@
+witness_id,public_key_hex,organization,admin_domain,cloud_account,signing_hsm,release_repo,monitoring_channel,jurisdiction,public_observation_url
+witness-de,0000000000000000000000000000000000000000000000000000000000000001,Example Witness DE,ops-de.example.invalid,aws-account-de,hsm-de,repo-de,monitor-de,Germany,https://example.invalid/witness-de
+witness-us,0000000000000000000000000000000000000000000000000000000000000002,Example Witness US,ops-us.example.invalid,gcp-account-us,hsm-us,repo-us,monitor-us,United States,https://example.invalid/witness-us
+witness-ch,0000000000000000000000000000000000000000000000000000000000000003,Example Witness CH,ops-ch.example.invalid,azure-account-ch,hsm-ch,repo-ch,monitor-ch,Switzerland,https://example.invalid/witness-ch
+witness-sg,0000000000000000000000000000000000000000000000000000000000000004,Example Witness SG,ops-sg.example.invalid,cloud-account-sg,hsm-sg,repo-sg,monitor-sg,Singapore,https://example.invalid/witness-sg
+witness-br,0000000000000000000000000000000000000000000000000000000000000005,Example Witness BR,ops-br.example.invalid,cloud-account-br,hsm-br,repo-br,monitor-br,Brazil,https://example.invalid/witness-br

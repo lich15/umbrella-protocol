@@ -1,0 +1,171 @@
+Umbrella Public Access License (UPAL), Version 1.0
+Copyright (c) 2026 UmbrellaX LLP. All rights reserved.
+
+This License governs use of the accompanying Work, and your use of the Work
+constitutes acceptance of this License.
+
+THIS IS A SOURCE-AVAILABLE LICENSE, NOT AN OPEN-SOURCE LICENSE AS DEFINED BY
+THE OPEN SOURCE INITIATIVE. THE WORK IS RELEASED FOR PUBLIC INSPECTION,
+NON-COMMERCIAL SECURITY TESTING, CRYPTOGRAPHIC TESTING, EDUCATION, AND
+RESPONSIBLE VULNERABILITY DISCLOSURE ONLY. COMMERCIAL USE AND DERIVATIVE WORKS
+FOR DISTRIBUTION ARE EXPRESSLY PROHIBITED.
+
+1. DEFINITIONS
+
+1.1 "Work" means the source code, documentation, build artifacts, test vectors,
+and any other materials made available by the Licensor under this License,
+including all files in the repository at
+https://github.com/umbrellax/umbrella-protocol and any successor location.
+
+1.2 "Licensor" means UmbrellaX LLP, a limited liability partnership organized
+under the laws of the Republic of Kazakhstan, holder of all copyright in the
+Work.
+
+1.3 "Licensee" or "You" means any individual or legal entity exercising
+permissions granted by this License.
+
+1.4 "Commercial Use" means any use of the Work, in whole or in part, intended
+for or directed toward commercial advantage, monetary compensation, or business
+operation of any kind, including selling, licensing, sublicensing, renting,
+leasing, distributing, embedding, hosting, or using the Work as part of a
+product or service.
+
+1.5 "Derivative Work" means any work based upon the Work, including
+modifications, translations, adaptations, ports, incorporation into other
+software, or any other transformation that requires copyright permission.
+
+1.6 "Security Research" means good-faith activity intended to discover,
+evaluate, or report security vulnerabilities in the Work, including reverse
+engineering, code analysis, fuzzing, formal verification, penetration testing,
+timing analysis, cryptographic testing, and academic study.
+
+2. GRANT OF LICENSE
+
+Subject to the terms and conditions of this License, the Licensor grants You a
+worldwide, royalty-free, non-exclusive, non-transferable license to:
+
+a) Read, view, study, and inspect the Work.
+
+b) Compile, build, and execute the Work locally on Your own systems for
+personal, non-commercial evaluation, education, and Security Research.
+
+c) Conduct Security Research on the Work, including reverse engineering
+necessary for that purpose, to the extent permitted by law.
+
+d) Run local non-commercial cryptographic testing, fuzzing, formal
+verification, reproducible-build checks, benchmark experiments, and
+interoperability checks.
+
+e) Submit vulnerability reports under SECURITY.md.
+
+f) Submit contributions to the Work, provided You execute the Contributor
+License Agreement maintained by the Licensor.
+
+g) Quote, cite, and reference small excerpts of the Work and its specifications
+in academic publications, security advisories, and similar non-commercial works,
+subject to customary attribution.
+
+h) Create local, non-distributed modifications of the Work solely as needed for
+Security Research, cryptographic testing, reproducible-build checks,
+vulnerability reporting, or preparation of a contribution under the CLA process.
+
+3. RESTRICTIONS
+
+You are NOT permitted, without prior written authorization from the Licensor,
+to:
+
+a) Use the Work or any Derivative Work for any Commercial Use.
+
+b) Distribute, publish, sublicense, sell, rent, lease, host, or otherwise make
+available copies of the Work or any Derivative Work to third parties, except as
+required to report a vulnerability to the Licensor or to a coordinated
+disclosure process.
+
+c) Create, prepare, modify, adapt, port, translate, or otherwise produce any
+Derivative Work for distribution to third parties.
+
+d) Embed the Work or any Derivative Work into a commercial messenger, wallet,
+SDK, hosted service, infrastructure service, consulting deliverable, or other
+business product.
+
+e) Use the names "Umbrella", "UmbrellaX", "Umbrella Protocol", or any
+confusingly similar mark to identify any product, service, or work other than
+the Work itself, except as expressly authorized in writing by the Licensor.
+
+f) Remove, alter, or obscure any copyright, trademark, attribution, or license
+notice in the Work.
+
+g) Use the Work in any manner that violates applicable law, including sanctions
+regimes and export controls.
+
+4. SECURITY RESEARCH SAFE HARBOR
+
+The Licensor will not pursue legal action against good-faith Security
+Researchers acting consistently with SECURITY.md. Reverse engineering for
+Security Research is permitted to the extent allowed by law.
+
+5. PATENT NON-AGGRESSION
+
+5.1 The Licensor grants You a non-exclusive, worldwide, royalty-free patent
+license to make, have made, use, offer to sell, sell, import, and otherwise
+transfer the Work, where such license applies only to patent claims licensable
+by the Licensor that are necessarily infringed by the Work.
+
+5.2 If You initiate patent litigation alleging that the Work or a contribution
+incorporated within the Work infringes a patent, the patent license granted to
+You under this License terminates as of the date such litigation is filed.
+
+6. CONTRIBUTIONS
+
+6.1 Any contribution submitted by You for inclusion in the Work is governed by
+the Contributor License Agreement maintained by the Licensor.
+
+6.2 By submitting a contribution, You grant the Licensor a perpetual,
+worldwide, non-exclusive, royalty-free license to use, reproduce, modify,
+distribute, sublicense, and exploit Your contribution under any license the
+Licensor chooses.
+
+7. NO WARRANTY
+
+THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE, NON-INFRINGEMENT, OR ANY WARRANTY ARISING OUT OF OR IN
+CONNECTION WITH THE USE OR OTHER DEALINGS IN THE WORK.
+
+8. LIMITATION OF LIABILITY
+
+IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES, INCLUDING LOSS OF USE, DATA,
+PROFITS, OR BUSINESS INTERRUPTION, HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY ARISING IN ANY WAY OUT OF THE USE OF THE WORK, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+9. TERMINATION
+
+9.1 This License terminates automatically upon any material breach by You. Upon
+termination, You shall destroy all copies of the Work in Your possession or
+control.
+
+9.2 Sections 4, 7, 8, and 10 survive termination.
+
+10. GOVERNING LAW AND DISPUTE RESOLUTION
+
+This License is governed by the laws of the Republic of Kazakhstan, excluding
+its conflict of laws principles. Any dispute arising under this License shall
+be resolved exclusively in the courts of Almaty, Kazakhstan, unless otherwise
+required by mandatory law.
+
+11. ENTIRE AGREEMENT
+
+This License constitutes the entire agreement between You and the Licensor
+regarding the Work and supersedes any prior or contemporaneous understandings.
+
+12. SEVERABILITY
+
+If any provision of this License is held unenforceable, the remaining
+provisions shall remain in full force and effect.
+
+END OF TERMS AND CONDITIONS
+
+For commercial licensing inquiries: licensing@umbrellax.io
+For security disclosure: security@umbrellax.io

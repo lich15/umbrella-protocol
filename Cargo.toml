@@ -1,0 +1,235 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/umbrella-core",
+    "crates/umbrella-crypto-primitives",
+    "crates/umbrella-pq",
+    "crates/umbrella-identity",
+    "crates/umbrella-mls",
+    "crates/umbrella-kt",
+    "crates/umbrella-oprf",
+    "crates/umbrella-sealed-sender",
+    "crates/umbrella-padding",
+    "crates/umbrella-backup",
+    "crates/umbrella-calls",
+    "crates/umbrella-client",
+    "crates/umbrella-server-blind-postman",
+    "crates/umbrella-ffi",
+    "crates/umbrella-ffi-swift",
+    "crates/umbrella-ffi-kotlin",
+    "crates/umbrella-tests",
+    "crates/umbrella-fuzz",
+    "crates/umbrella-formal-verification",
+    "crates/umbrella-vectors",
+    "xtask",
+]
+
+# Git submodules в `crates/umbrella-tests/cross_impl/` — read-only consumption
+# test vectors / source code трёх reference implementation для cross-impl
+# interop verification (production release). НЕ являются workspace members; explicit
+# exclude страхует от accidental inclusion даже если в будущем members
+# мигрируют на glob-pattern. Workspace их не строит — только тесты под
+# `crates/umbrella-tests/tests/cross_impl_*.rs` читают JSON-файлы напрямую.
+# Git submodules in `crates/umbrella-tests/cross_impl/` — read-only consumption
+# of test vectors / source code for three reference MLS implementations to
+# verify cross-impl interop (production release). Not workspace members; explicit
+# exclude protects against accidental inclusion if members ever migrate to a
+# glob pattern. The workspace does not build them — only tests under
+# `crates/umbrella-tests/tests/cross_impl_*.rs` read JSON files directly.
+exclude = [
+    "crates/umbrella-tests/cross_impl/openmls",
+    "crates/umbrella-tests/cross_impl/aws_mls_rs",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.95"
+license = "LicenseRef-UPAL-1.0"
+authors = ["UmbrellaX LLP <security@umbrellax.io>"]
+repository = "https://github.com/umbrellax/umbrella-protocol"
+homepage = "https://umbrellax.io"
+publish = false
+
+[workspace.dependencies]
+# Внутренние крейты
+# Internal crates
+umbrella-core = { path = "crates/umbrella-core", version = "1.0.0" }
+umbrella-crypto-primitives = { path = "crates/umbrella-crypto-primitives", version = "1.0.0" }
+umbrella-pq = { path = "crates/umbrella-pq", version = "1.0.0" }
+umbrella-identity = { path = "crates/umbrella-identity", version = "1.0.0" }
+umbrella-mls = { path = "crates/umbrella-mls", version = "1.0.0" }
+umbrella-kt = { path = "crates/umbrella-kt", version = "1.0.0" }
+umbrella-oprf = { path = "crates/umbrella-oprf", version = "1.0.0" }
+umbrella-sealed-sender = { path = "crates/umbrella-sealed-sender", version = "1.0.0" }
+umbrella-padding = { path = "crates/umbrella-padding", version = "1.0.0" }
+umbrella-backup = { path = "crates/umbrella-backup", version = "1.0.0" }
+umbrella-calls = { path = "crates/umbrella-calls", version = "1.0.0" }
+umbrella-client = { path = "crates/umbrella-client", version = "1.0.0" }
+umbrella-server-blind-postman = { path = "crates/umbrella-server-blind-postman", version = "1.0.0" }
+umbrella-ffi = { path = "crates/umbrella-ffi", version = "1.0.0" }
+umbrella-vectors = { path = "crates/umbrella-vectors", version = "1.0.0" }
+
+# Crypto primitives
+zeroize = { version = "1.8.2", features = ["derive"] }
+subtle = "2.6.1"
+secrecy = "0.10.3"
+rand_core = "0.6"
+sha2 = "0.11"
+hmac = "0.13"
+hkdf = "0.13"
+chacha20poly1305 = "0.10"
+# AEAD для SFrame — RustCrypto, Apache-2.0. Используется в tls-rustls,
+# signal-protocol, многих production Rust проектах. Default resolver —
+# pure Rust; HW-accel через aes crate intrinsics на ARMv8-Crypto.
+# AEAD for SFrame — RustCrypto, Apache-2.0. Used in tls-rustls,
+# signal-protocol, and many production Rust projects. Default resolver is
+# pure Rust; HW-accel via aes crate intrinsics on ARMv8-Crypto.
+aes-gcm = "0.10"
+ed25519-dalek = "2.2"
+x25519-dalek = { version = "2.0.1", features = ["static_secrets", "reusable_secrets"] }
+curve25519-dalek = { version = "4.1.3", default-features = false, features = ["alloc", "zeroize", "rand_core", "precomputed-tables"] }
+voprf = { version = "0.5", default-features = false, features = ["ristretto255-ciphersuite"] }
+bip39 = "2.2"
+
+# ——— Post-Quantum primitives (v1.0.0 release, production design) ———
+# PQ backends are pinned exactly because upstream assurance and security fixes
+# are release-specific. libcrux formal-verification claims are scoped, not a
+# blanket proof for every wrapper or admitted module.
+# PQ-бэкенды pinned exact, потому что upstream assurance и security fixes
+# привязаны к конкретному release. libcrux formal-verification claims scoped,
+# не blanket proof для всех wrapper/admitted modules.
+libcrux-ml-kem = { version = "=0.0.8", default-features = false, features = ["mlkem768"] }
+libcrux-kem    = { version = "=0.0.7", default-features = false }
+libcrux-ml-dsa = { version = "=0.0.8", default-features = false, features = ["mldsa65"] }
+fips205        = { version = "=0.4.1", default-features = false, features = ["slh_dsa_sha2_128f"] }
+
+# SHA-3 для X-Wing combiner fallback (если libcrux-kem API изменится).
+# SHA-3 for X-Wing combiner fallback (if libcrux-kem API changes).
+sha3 = "0.10"
+
+# Noise Protocol Framework (for Secret device-transfer in umbrella-backup v1.0.0 release).
+# Production use: Lightning Network (~200k nodes, billions of handshakes/yr),
+# IPFS/libp2p (5M+ peers), cjdns, BoringTun WireGuard alt. MIT/Apache-2.0.
+# Default resolver = pure Rust through curve25519-dalek + chacha20poly1305 + sha2.
+snow = { version = "0.10", default-features = false, features = ["std", "default-resolver", "use-curve25519", "use-chacha20poly1305", "use-sha2", "use-getrandom"] }
+
+# QR encoding for Secret device-pairing (RFC 4648 base32, no padding).
+data-encoding = "2.11"
+
+# MLS (RFC 9420). Pinned major.minor; конкретный hash через Cargo.lock.
+# MLS (RFC 9420). Pinned major.minor; specific hash pinned via Cargo.lock.
+openmls = "0.8"
+openmls_rust_crypto = "0.5"
+openmls_traits = "0.5"
+openmls_basic_credential = "0.5"
+tls_codec = "0.4"
+
+# AWS Labs alternate MLS implementation (RFC 9420). Используется ИСКЛЮЧИТЕЛЬНО
+# в `crates/umbrella-tests/tests/cross_impl_mls_rs.rs` для проверки
+# wire-format совместимости двух Rust-реализаций MLS (cross-impl interop,
+# production release). НЕ shipping в production: scope ограничен `[dev-dependencies]`
+# крейта `umbrella-tests`. mls-rs остаётся тестовой зависимостью: independent
+# wire decoder даёт защитную ценность, а production crates его не поставляют.
+# AWS Labs alternate MLS implementation (RFC 9420). Used EXCLUSIVELY in
+# `crates/umbrella-tests/tests/cross_impl_mls_rs.rs` to verify wire-format
+# compatibility between two Rust MLS implementations (cross-impl interop,
+# production release). NOT shipped in production: scope is limited to the
+# `[dev-dependencies]` of the `umbrella-tests` crate. mls-rs remains a test
+# dependency: the independent wire decoder is valuable, while production crates
+# do not ship it.
+mls-rs = "0.55"
+# Pure-Rust crypto provider для mls-rs (избегаем системных OpenSSL/aws-lc-sys
+# зависимостей в test-only path). Pinned 0.22 — совпадает с major.minor
+# release tracking mls-rs 0.55.0. Используется только в `tests/cross_impl_mls_rs.rs`.
+# Pure Rust crypto provider for mls-rs (avoids system OpenSSL/aws-lc-sys
+# deps on a test-only path). Pinned 0.22 — matches the major.minor release
+# tracking of mls-rs 0.55.0. Used only by `tests/cross_impl_mls_rs.rs`.
+mls-rs-crypto-rustcrypto = { version = "0.22", default-features = false, features = ["std"] }
+
+# Errors and types
+thiserror = "2.0"
+anyhow = "1.0.102"
+heapless = "0.9"
+
+# ——— Async runtime (production design Решение 3) ———
+# ——— Async runtime (production design Decision 3) ———
+# Pinned 1.41: webrtc-rs и reqwest требуют tokio; features минимально необходимые.
+# Pinned 1.41: webrtc-rs and reqwest require tokio; minimal feature set.
+tokio = { version = "1.52", default-features = false, features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
+async-trait = "0.1.89"
+
+# ——— FFI toolchain (v1.0.0 release, production design Решение 2) ———
+# ——— FFI toolchain (v1.0.0 release, production design Decision 2) ———
+# uniffi 0.31+ через proc-macro (не UDL); tokio async support встроен.
+# Release toolchain update: bumped 0.28 → 0.31.1 чтобы
+# выкорчевать unmaintained legacy serializer + `paste 1.0.15` транзитивно
+# через uniffi_macros + uniffi_bindgen + uniffi_core.
+# uniffi 0.31+ proc-macro (not UDL); built-in tokio async support.
+# Release toolchain update: bumped 0.28 → 0.31.1 to
+# eliminate a transitively unmaintained legacy serializer plus `paste 1.0.15`
+# via uniffi_macros + uniffi_bindgen + uniffi_core.
+uniffi = { version = "0.31.1", features = ["build", "cli", "tokio"] }
+uniffi_macros = "0.31.1"
+
+# ——— HTTP/2 + TLS 1.3 (production release) ———
+# ——— HTTP/2 + TLS 1.3 (Release milestone) ———
+# rustls-tls (не OpenSSL) + HTTP/2 required; gzip/brotli — server responses.
+# rustls-tls (not OpenSSL) + HTTP/2 required; gzip/brotli for server responses.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "gzip", "brotli"] }
+# rustls 0.23: TLS 1.3 всегда включён; feature `tls12` не включаем — только TLS 1.3
+# (рекомендация SPEC-06/10). `ring` — проверенный crypto provider с FIPS-draft.
+# rustls 0.23: TLS 1.3 always enabled; `tls12` feature not enabled — TLS 1.3 only
+# (SPEC-06/10 hardening). `ring` — audited crypto provider with FIPS-draft.
+rustls = { version = "0.23.40", default-features = false, features = ["std", "logging", "ring"] }
+rustls-native-certs = "0.8"
+
+# ——— WebRTC сетевой слой (production design Решение 4, production release) ———
+# ——— WebRTC networking layer (production design Decision 4, Release milestone) ———
+# Production links ICE/SRTP plus identity-bound DTLS fingerprint glue in
+# umbrella-calls. A DTLS engine stays outside the normal dependency tree until
+# a maintained path exists without `bincode`.
+webrtc-ice = "0.17"
+webrtc-srtp = "0.17"
+
+# ——— SQLite метаданные (production design Решение 5, production release) ———
+# ——— SQLite metadata (production design Decision 5, Release milestone) ———
+# bundled: reproducible build без system SQLite dependency.
+# bundled: reproducible build without system SQLite dependency.
+rusqlite = { version = "0.39", features = ["bundled"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.33"
+
+# ——— Tracing (structured logs через FFI callback) ———
+# ——— Tracing (structured logs via FFI callback) ———
+tracing = "0.1"
+
+# ——— Util ———
+rand = "0.8"
+hex = "0.4.3"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+
+# ——— Dev tooling ———
+tempfile = "3.27"
+wiremock = "0.6.5"
+
+# Tests
+proptest = "1.11"
+
+# ——— Deterministic RNG для KAT тестов (v1.0.0 release, dev-only) ———
+# ——— Deterministic RNG for KAT tests (v1.0.0 release, dev-only) ———
+rand_chacha = "0.3"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+opt-level = 3
+
+[profile.bench]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+debug = true

@@ -1,0 +1,19 @@
+warning: `panic!()` is not allowed in library code (ADR-015 §Decision 5 criterion 5: zero panics in lib code)
+  --> $DIR/no_panic_in_lib.rs:15:5
+   |
+LL |     panic!("never returns")
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: return `Result::Err(SomeError::SpecificCase)` with a concrete variant; panic in library code can: (1) DoS users via malformed wire input, (2) leak secrets through panic message and stack frames, (3) create timing side-channel (panic handling is slower than the `Err` path)
+   = note: `#[warn(no_panic_in_lib)]` on by default
+
+warning: `panic!()` is not allowed in library code (ADR-015 §Decision 5 criterion 5: zero panics in lib code)
+  --> $DIR/no_panic_in_lib.rs:19:5
+   |
+LL |     panic!("failure: {}", reason)
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: return `Result::Err(SomeError::SpecificCase)` with a concrete variant; panic in library code can: (1) DoS users via malformed wire input, (2) leak secrets through panic message and stack frames, (3) create timing side-channel (panic handling is slower than the `Err` path)
+
+warning: 2 warnings emitted
+

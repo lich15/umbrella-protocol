@@ -1,0 +1,19 @@
+{
+  "algorithm": "slh-dsa-128f",
+  "source": "umbrella-pq stability KAT — generated 2026-04-25 from fips205 0.4.1 slh_dsa_sha2_128f::KG. Hedged signing — signature не deterministic; vectors проверяют keygen + verify acceptance.",
+  "vectors": [
+    {
+      "vector_id": 0,
+      "seed_hex": "0707070707070707070707070707070707070707070707070707070707070707",
+      "expected_pk_hex": null,
+      "expected_sk_hex": null,
+      "message_hex": "6261636b75702072656c6f6164",
+      "context_hex": "736c682d6473612d626163",
+      "expected_signature_hex": null,
+      "expected_ciphertext_hex": null,
+      "expected_shared_secret_hex": null,
+      "encaps_seed_hex": null,
+      "note": "32-byte keygen seed для CSPRNG; ASCII message 'backup reload'; ASCII context 'slh-dsa-bac'. Test ассертит sign → verify roundtrip + wrong message rejection."
+    }
+  ]
+}

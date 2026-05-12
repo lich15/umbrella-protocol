@@ -1,0 +1,90 @@
+name: dylint
+
+# Pattern S: yml пишется через Bash heredoc (sandbox-safe).
+# Pattern S: yml is emitted via a Bash heredoc (sandbox-safe).
+#
+# Кастомные dylint-правила Umbrella Protocol находятся в
+# `crates/umbrella-lints/` (sub-workspace, не входит в основной workspace).
+# CI компилирует sub-workspace на nightly Rust, после чего применяет
+# правила к основному workspace под stable Rust.
+#
+# Custom Umbrella Protocol dylint lints live in `crates/umbrella-lints/`
+# (sub-workspace, not part of the main workspace). CI compiles the
+# sub-workspace on nightly Rust and then applies the rules to the main
+# workspace on stable Rust.
+#
+# Правила / Rules:
+#   - no_eq_for_secret    — постулат 4 (constant-time enforcement).
+#   - no_unwrap_in_lib    — постулат 3 (no panic in lib code).
+#   - require_dual_doc    — постулат 14 (RU+EN docstrings).
+#
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/umbrella-lints/**'
+      - '.github/workflows/dylint.yml'
+      - 'crates/**/*.rs'
+      - 'xtask/**/*.rs'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    # Manual trigger через GitHub UI или `gh workflow run dylint.yml`.
+    # Manual trigger via the GitHub UI or `gh workflow run dylint.yml`.
+
+permissions:
+  contents: read
+
+jobs:
+  dylint:
+    name: cargo dylint --workspace
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install nightly toolchain (umbrella-lints)
+        # Nightly date зафиксирована в `crates/umbrella-lints/rust-toolchain`
+        # — rustup автоматически переключится на нужный канал при
+        # `cargo build` внутри sub-workspace.
+        # Nightly date pinned in `crates/umbrella-lints/rust-toolchain`
+        # — rustup auto-switches to the required channel on `cargo build`
+        # inside the sub-workspace.
+        run: |
+          rustup show active-toolchain || rustup toolchain install stable --profile minimal
+          # Прогрев nightly-цепочки (pinned date в rust-toolchain) — иначе
+          # первый `cargo build` инициализирует её на лету и засоряет лог.
+          # Warm up the nightly chain (pinned date in rust-toolchain) — otherwise
+          # the first `cargo build` initialises it on the fly and pollutes the log.
+          (cd crates/umbrella-lints && rustup show)
+
+      - name: Install cargo-dylint + dylint-link
+        # Версии pinned для reproducibility; bump в quarterly process maturity
+        # check (см. `docs/audits/dylint-rules.md` → секция «Bump»).
+        # Versions pinned for reproducibility; bumped during the quarterly
+        # process maturity check (see `docs/audits/dylint-rules.md` → "Bump").
+        run: |
+          cargo install cargo-dylint --version 5.0.0 --locked
+          cargo install dylint-link    --version 5.0.0 --locked
+
+      - name: Build umbrella-lints (sub-workspace, nightly)
+        run: |
+          cd crates/umbrella-lints
+          cargo build --release
+
+      - name: Run dylint against the main workspace
+        # `--manifest-path` указывает на sub-workspace, чтобы cargo-dylint
+        # подхватил собранный cdylib `libumbrella_lints.{so,dylib}`. Затем
+        # `--workspace` (после `--`) применяет lints ко всем крейтам
+        # основного workspace.
+        # `--manifest-path` points at the sub-workspace so cargo-dylint
+        # picks up the built cdylib `libumbrella_lints.{so,dylib}`. Then
+        # `--workspace` (after `--`) applies the lints to every crate in
+        # the main workspace.
+        run: |
+          cargo dylint --all \
+            --manifest-path crates/umbrella-lints/Cargo.toml \
+            -- --workspace --all-targets --all-features

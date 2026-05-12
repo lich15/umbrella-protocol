@@ -1,0 +1,56 @@
+[package]
+name = "umbrella-sealed-sender"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Sealed Sender: HPKE-style envelope для скрытия отправителя от Delivery Service."
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[features]
+# Hybrid post-quantum sealed-sender envelope opt-in (v1.0.0 release, production design Решение 4
+# расширение для блока 8.6).
+#
+# Активирует:
+# - `SealedSenderEnvelopeV2` — wire-format с leading byte `0x02`, X-Wing
+#   ephemeral KEM (вместо classical X25519 ECDH), inner-protocol identical с V1
+#   (sender_identity_pub || ed25519_signature || message + padding bucket).
+# - `seal_v2` / `unseal_v2` API — отдельные функции от V1 `seal` / `unseal`;
+#   принимают `XWingPublicKey` recipient (вместо classical X25519) + `XWingSecretSeed`
+#   recipient (для unseal). KeyStore extension для X-Wing — отдельный блок (8.8).
+# - Wire-level dispatcher на peek первого байта; первый байт `0x02` без feature
+#   `pq` → `SealedSenderError::PqFeatureRequired { version }` (постулат 14: no
+#   silent fallback).
+#
+# Без feature `pq` — V1 path работает identical (existing 0.0.11 wire-format
+# invariant сохранён; test corpus existing tests passes без изменений).
+#
+# Hybrid post-quantum sealed-sender envelope opt-in (v1.0.0 release, production design Decision 4
+# extension for production release).
+default = []
+pq = ["dep:umbrella-pq", "umbrella-pq/ml-kem", "dep:secrecy"]
+
+[dependencies]
+umbrella-crypto-primitives = { workspace = true }
+umbrella-identity = { workspace = true }
+umbrella-padding = { workspace = true }
+rand_core = { workspace = true }
+zeroize = { workspace = true }
+thiserror = { workspace = true }
+
+# Hybrid post-quantum (feature-gated, v1.0.0 release production design Решение 4 расширение).
+# `secrecy` нужен только под `pq` для `SecretBox<[u8; 32]>` shared secret из
+# `xwing_encaps` / `xwing_decaps` API.
+#
+# Hybrid post-quantum (feature-gated, v1.0.0 release production design Decision 4 extension).
+# `secrecy` is needed only under `pq` for the `SecretBox<[u8; 32]>` shared
+# secret returned by `xwing_encaps` / `xwing_decaps`.
+umbrella-pq = { workspace = true, optional = true }
+secrecy = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

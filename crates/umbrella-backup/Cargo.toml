@@ -1,0 +1,74 @@
+[package]
+name = "umbrella-backup"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Backup & Recovery: Cloud threshold-wrap (3-of-5 Sealed Servers) + Secret device-transfer (Noise_IK)."
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[features]
+default = []
+# Hybrid post-quantum cloud-wrap layer (v1.0.0 release production release, production design Решение 4 расширение).
+# Подключает X-Wing envelope над V1 WrappedKey: post-quantum confidentiality
+# recovery key через outer X-Wing layer; existing V1 threshold-ElGamal layer
+# unchanged. Sealed Server ceremony (`server implementation`) **не меняется**.
+#
+# Hybrid post-quantum cloud-wrap layer (v1.0.0 release production release, production design Decision 4 extension).
+# Enables an X-Wing envelope over V1 WrappedKey: post-quantum confidentiality of the
+# recovery key via an outer X-Wing layer; existing V1 threshold-ElGamal layer is
+# unchanged. The Sealed Server ceremony (`server implementation`) is **not** affected.
+pq = ["dep:umbrella-pq", "umbrella-pq/ml-kem", "dep:secrecy", "umbrella-identity/pq"]
+
+[dependencies]
+umbrella-identity = { workspace = true }
+
+# Ristretto255 scalar/point ops для threshold-wrap
+curve25519-dalek = { workspace = true }
+
+# Noise Protocol Framework для Secret device-transfer (Noise_IK_25519_ChaChaPoly_SHA512)
+snow = { workspace = true }
+
+# Base32 encoding для QR payload
+data-encoding = { workspace = true }
+
+# AEAD для wrap-blob
+chacha20poly1305 = { workspace = true }
+
+# Ed25519 для device-signature в SignedUnwrapRequest
+ed25519-dalek = { workspace = true }
+
+# KDF и hash для shared-secret derivation
+hkdf = { workspace = true }
+sha2 = { workspace = true }
+
+# Memory hygiene
+zeroize = { workspace = true }
+
+# RNG
+rand_core = { workspace = true }
+
+# Shared types
+heapless = { workspace = true }
+thiserror = { workspace = true }
+
+# Hybrid post-quantum (feature-gated, v1.0.0 release production release).
+# umbrella-pq для X-Wing primitives; secrecy для SecretBox<[u8; 32]> shared secret.
+#
+# Hybrid post-quantum (feature-gated, v1.0.0 release production release).
+# umbrella-pq for X-Wing primitives; secrecy for SecretBox<[u8; 32]> shared secret.
+umbrella-pq = { workspace = true, optional = true }
+secrecy = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand_core = { workspace = true, features = ["getrandom"] }
+# Для тестов device_transfer handshake: генерация X25519 static keys.
+x25519-dalek = { workspace = true }
+# Для tests pq_threshold_wrap: генерация X-Wing keypair напрямую без feature pq в lib.
+# Pulled только в dev-build когда feature pq активна workspace-wide.
+umbrella-pq = { workspace = true }

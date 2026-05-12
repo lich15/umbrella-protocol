@@ -1,0 +1,123 @@
+[package]
+name = "umbrella-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Высокоуровневый orchestration — фасад для FFI; объединяет identity+mls+kt+oprf+sealed-sender+padding+backup+calls."
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[features]
+default = []
+# Hybrid post-quantum opt-in (v1.0.0 release production release , production design Решение 7
+# umbrella feature aggregator). Зонтичный pq для umbrella-client пробрасывает
+# pq features во все downstream PQ-aware крейты (umbrella-mls, umbrella-identity,
+# umbrella-kt, umbrella-sealed-sender, umbrella-backup) и подключает umbrella-pq
+# напрямую — для использования X-Wing primitives и SLH-DSA backup в фасаде.
+#
+# Без feature `pq` крейт компилируется без PQ зависимостей; existing classical
+# путь (Ed25519 identity + ciphersuite 0x0003) не меняется (FFI ABI invariant
+# production design, постулат 14).
+#
+# Hybrid post-quantum opt-in (v1.0.0 release Release milestone , production design Decision 7
+# umbrella feature aggregator). The umbrella `pq` feature on umbrella-client
+# propagates pq features to all PQ-aware downstream crates (umbrella-mls,
+# umbrella-identity, umbrella-kt, umbrella-sealed-sender, umbrella-backup) and
+# enables the PQ implementations in downstream crates.
+#
+# Without feature `pq` the crate builds without PQ dependencies; the existing
+# classical path (Ed25519 identity + ciphersuite 0x0003) stays untouched
+# (FFI ABI invariant production design, postulate 14).
+pq = [
+    "umbrella-mls/pq",
+    "umbrella-identity/pq",
+    "umbrella-kt/pq",
+    "umbrella-sealed-sender/pq",
+    "umbrella-backup/pq",
+]
+
+[dependencies]
+umbrella-identity = { workspace = true }
+umbrella-mls = { workspace = true }
+umbrella-kt = { workspace = true }
+umbrella-oprf = { workspace = true }
+umbrella-sealed-sender = { workspace = true }
+umbrella-padding = { workspace = true }
+umbrella-backup = { workspace = true }
+umbrella-calls = { workspace = true }
+
+# Async runtime (production design Решение 3) и async-trait для UnwrapTransport impls.
+# Async runtime (production design Decision 3) and async-trait for UnwrapTransport impls.
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# HTTP/2 transport (production release) + TLS 1.3.
+# HTTP/2 transport (Release milestone) + TLS 1.3.
+reqwest = { workspace = true }
+
+# SQLite метаданные (production release) + connection pool.
+# SQLite metadata (Release milestone) + connection pool.
+rusqlite = { workspace = true }
+r2d2 = { workspace = true }
+r2d2_sqlite = { workspace = true }
+
+# WebRTC сетевой слой (production release). DTLS engine не линкуется в production
+# tree, пока нет поддерживаемого пути без bincode.
+# WebRTC networking layer (Release milestone). The DTLS engine is not linked into
+# the production tree until a maintained path exists without bincode.
+webrtc-ice = { workspace = true }
+
+# Symmetric AEAD для per-row encryption в SqliteMetadataStore (production release)
+# и zeroize/secrecy для секретов. HKDF-SHA512 — deterministic nonce derive
+# из (master_key, context||row_id) для RowCipher (production design Решение 5.1.2).
+# `subtle` — constant-time `ConstantTimeEq` для nonce comparison в
+# `RowCipher::decrypt_row` ( update production release;  pattern recurrence
+# update — заменяет timing-observable `expected_nonce != nonce` на
+# `subtle::ConstantTimeEq::ct_eq` для defense-in-depth даже когда
+# practical impact LOW per design §5.1).
+# Symmetric AEAD for per-row encryption in SqliteMetadataStore (Release milestone)
+# and zeroize/secrecy for secret material. HKDF-SHA512 for deterministic
+# nonce derivation from (master_key, context||row_id) in RowCipher
+# (production design Decision 5.1.2). `subtle` — constant-time `ConstantTimeEq` for
+# nonce comparison in `RowCipher::decrypt_row` ( update production release;
+#  pattern recurrence update — replaces the timing-observable
+# `expected_nonce != nonce` with `subtle::ConstantTimeEq::ct_eq` as
+# defense-in-depth even when the practical impact is LOW per design §5.1).
+chacha20poly1305 = { workspace = true }
+zeroize = { workspace = true }
+secrecy = { workspace = true }
+subtle = { workspace = true }
+rand = { workspace = true }
+hkdf = { workspace = true }
+sha2 = { workspace = true }
+
+# Errors + structured logs.
+thiserror = { workspace = true }
+
+# Serde для config/metadata marshalling и hex-encoding для REST path-сегментов
+# (account_id, message_id, peer_id в Http2KtTransport / Http2PostmanTransport /
+# Http2CallRelayTransport — production release).
+#
+# Serde for config/metadata marshalling and hex encoding for REST path
+# segments (account_id, message_id, peer_id in Http2KtTransport /
+# Http2PostmanTransport / Http2CallRelayTransport — Release milestone).
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
+proptest = { workspace = true }
+tempfile = { workspace = true }
+wiremock = { workspace = true }
+
+# Ed25519 device-signing в тестах attestation flow (production release): используется
+# реальный keypair для seal_unwrap_request_with_async_attestation + verify.
+# Ed25519 device signing in attestation-flow tests (Release milestone): real keypair
+# used for seal_unwrap_request_with_async_attestation + verify.
+ed25519-dalek = { workspace = true }
+rand_core = { workspace = true }

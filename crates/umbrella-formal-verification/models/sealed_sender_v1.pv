@@ -1,0 +1,302 @@
+(* ============================================================================
+   process: umbrella_sealed_sender_v1
+   ============================================================================
+
+   ProVerif модель sealed-sender V1 envelope sender privacy в classical threat
+   model. Analogue к sealed_sender_v2.pv (block 9.4) но для V1 envelope
+   (X25519 ECDH only, no X-Wing combiner). Adversary observing X25519
+   ephemeral pubkey + AEAD ciphertext + version stamp по public каналу
+   не может recover sender identity при classical adversary (без quantum
+   capabilities — V1 не provides h-n-d-l protection, это V2 только).
+
+   ----------------------------------------------------------------------------
+   SPEC reference     : SPEC-08-SEALED-SENDER v0.0.1 §3-§5 (V1 envelope wire
+                        format + protocol seal/unseal)
+   ADR  reference     : ADR-006 Решение C (Cloud/Secret type-safe фасады) +
+                        ADR-012 Решение 3 (Tamarin/ProVerif авторинг in-house)
+   Block reference    : 9.5 (formal models — classical protocols KT V1 +
+                        sealed-sender V1 + MLS Ed25519-only)
+   Tool               : ProVerif 2.05+
+   ----------------------------------------------------------------------------
+
+   Properties (proven via queries below):
+
+   - sender_privacy_classical
+       Free private secret `sender_id_v1` не достижим adversary через
+       observation public канала при classical adversary capabilities.
+       AEAD encrypted под key derived из X25519 ECDH shared secret;
+       DDH assumption holds против classical adversary (pre-quantum).
+
+   - cross_protocol_replay_v1_v2_blocked
+       V1 envelope (DOMAIN_SEP_V1 = "umbrellax-sealed-sender-v1") не
+       может быть replay'ен как V2 (DOMAIN_SEP_V2 = "umbrellax-sealed-
+       sender-v2"). Distinct domain separators yield independent HKDF
+       outputs. Companion property к sealed_sender_v2.pv block 9.4
+       same lemma.
+
+   - aead_aad_binding
+       AEAD AAD = version || eph_pub || recipient_x25519_pubkey binds
+       ciphertext к specific envelope version + recipient. Любая
+       substitution AAD fields → AEAD verification fails.
+
+   - recipient_bound_hkdf_info
+       HKDF info binds the transcript material and recipient public key:
+       v1_hkdf_info(eph_pub, recipient_x25519_pubkey) for V1 and
+       v2_hkdf_info(xwing_ct, recipient_xwing_pubkey) for parallel V2.
+       This is a model-shape invariant, not a forward-secrecy claim.
+
+   ----------------------------------------------------------------------------
+   Axioms / abstractions:
+
+   - X25519 DDH assumption modelled через function symbol
+     `x25519_ecdh(pubkey, privkey)` returning fresh symkey for each
+     unique input pair. Classical adversary cannot recover ss из
+     eph_pub + recipient_pk без knowledge eph_sk либо recipient_sk.
+   - X25519 ephemeral pubkey computed как `x25519_pub(eph_sk) =
+     g^eph_sk` (Diffie-Hellman public exponent — modelled abstractly
+     через function symbol).
+   - ChaCha20-Poly1305 AEAD authentication standard constructor +
+     destructor pair (как в sealed_sender_v2.pv block 9.4).
+   - HKDF-SHA256 modelled as random oracle через function symbol
+     hkdf(ikm, salt, info) returning fresh symkey для each unique
+     input triple. `info` is explicitly constructed as
+     v1_hkdf_info(eph_pub, recipient_x25519_pubkey) for V1 or
+     v2_hkdf_info(xwing_ct, recipient_xwing_pubkey) for V2. `[private]`
+     annotation предотвращает adversary computing на произвольных terms.
+   - Inner Ed25519 sig over DOMAIN_SEP || eph_pub || message
+     abstracted — sender_identity_pubkey + signature не expose'ятся
+     adversary через AEAD encryption (encrypted под aead_key).
+   - V2 envelope structure (DOMAIN_SEP_V2) modelled параллельно для
+     cross-protocol replay query with a distinct X-Wing public-key function.
+   - Bucket padding (умbrella-padding 7 buckets per SPEC-08 §4.1)
+     out of scope этой модели; модель focuses на wire envelope
+     structure + AEAD protection.
+
+   ----------------------------------------------------------------------------
+   Adversary model:
+
+   - Active Dolev–Yao через standard ProVerif `attacker` semantics.
+   - Adversary видит все out(c, ...) сообщения и контролирует все
+     in(c, ...) сообщения.
+   - Adversary не получает recipient X25519 private key либо
+     ephemeral X25519 private key (если бы получил — confidentiality
+     нарушается тривиально).
+   - Adversary НЕ имеет прямого access к sender_id_v1 / sender_id_v2
+     (доказывается через query attacker(sender_id_v1) returning false).
+   - Classical capability — V1 не provides post-quantum protection
+     (это V2 только); V1 secure только против classical Dolev–Yao
+     adversary без quantum capabilities (pre-CRQC threat model).
+   - This model does not contain key-compromise/reveal epochs. It proves
+     sender privacy and transcript/AAD/KDF binding, not forward secrecy
+     after explicit session-key compromise.
+   ============================================================================
+*)
+
+set ignoreTypes = false.
+
+(* ----------------------------------------------------------------------------
+   Channel + types.
+   ---------------------------------------------------------------------------- *)
+free c: channel.
+
+type pubkey.
+type privkey.
+type symkey.
+type aead_ciphertext.
+
+(* ----------------------------------------------------------------------------
+   Domain separators (per SPEC-08 §3 + SPEC-13 §7.3).
+
+   V1 = "umbrellax-sealed-sender-v1" (existing 0.0.11 wire format).
+   V2 = "umbrellax-sealed-sender-v2" (block 8.6 added; X-Wing).
+   Independent separators yield independent HKDF outputs — cross-
+   protocol replay impossible.
+   ---------------------------------------------------------------------------- *)
+const DOMAIN_SEP_V1: bitstring [data].
+const DOMAIN_SEP_V2: bitstring [data].
+const VERSION_V1: bitstring [data].
+const VERSION_V2: bitstring [data].
+
+(* ----------------------------------------------------------------------------
+   Free private secrets — confidentiality targets.
+
+   sender_id_v1 — sender identity wrapped в V1 envelope. Property:
+       attacker(sender_id_v1) returns false (sender privacy classical).
+
+   sender_id_v2 — sender identity wrapped в V2 envelope (parallel
+       process для cross-protocol replay query).
+   ---------------------------------------------------------------------------- *)
+free sender_id_v1: bitstring [private].
+free sender_id_v2: bitstring [private].
+
+(* ----------------------------------------------------------------------------
+   X25519 abstraction (DDH assumption against classical adversary).
+
+   x25519_pub(eph_sk) — public part X25519 keypair (analogue g^x).
+   x25519_ecdh(pubkey, privkey) — Diffie-Hellman shared secret.
+   `[private]` означает adversary не может compute shared secret через
+   произвольные terms; derive только когда rule имеет access к одному
+   из private keys (либо eph_sk, либо recipient_sk).
+   ---------------------------------------------------------------------------- *)
+fun x25519_pub(privkey): pubkey.
+fun x25519_ecdh(pubkey, privkey): symkey [private].
+
+(* DDH symmetry: x25519_ecdh(x25519_pub(a), b) = x25519_ecdh(x25519_pub(b), a). *)
+equation forall a: privkey, b: privkey;
+    x25519_ecdh(x25519_pub(a), b) = x25519_ecdh(x25519_pub(b), a).
+
+(* ----------------------------------------------------------------------------
+   X-Wing combiner abstraction (для V2 parallel process).
+
+   Same as в sealed_sender_v2.pv block 9.4 — combiner security axiom
+   backed by the verified xwing_combiner.spthy block 9.2 model.
+   ---------------------------------------------------------------------------- *)
+fun xwing_pk(privkey): pubkey.
+fun xwing_ct(pubkey, bitstring): bitstring.
+fun xwing_ss(pubkey, bitstring): symkey [private].
+
+reduc forall sk: privkey, r: bitstring;
+    xwing_decaps(sk, xwing_ct(xwing_pk(sk), r)) = xwing_ss(xwing_pk(sk), r).
+
+(* ----------------------------------------------------------------------------
+   HKDF-SHA256 как random oracle.
+   ---------------------------------------------------------------------------- *)
+fun v1_hkdf_info(pubkey, pubkey): bitstring.
+fun v2_hkdf_info(bitstring, pubkey): bitstring.
+fun hkdf(symkey, bitstring, bitstring): symkey [private].
+
+(* ----------------------------------------------------------------------------
+   ChaCha20-Poly1305 AEAD constructor + destructor.
+   ---------------------------------------------------------------------------- *)
+fun aead_seal(symkey, bitstring, bitstring): aead_ciphertext.
+reduc forall k: symkey, m: bitstring, aad: bitstring;
+    aead_open(k, aead_seal(k, m, aad), aad) = m.
+
+(* ----------------------------------------------------------------------------
+   Events для correspondence queries.
+   ---------------------------------------------------------------------------- *)
+event SendV1(bitstring, pubkey, pubkey).
+event ReceiveV1(bitstring, pubkey, pubkey).
+event SendV2(bitstring, pubkey, bitstring).
+event ReceiveV2(bitstring, pubkey, bitstring).
+
+(* ----------------------------------------------------------------------------
+   Queries — formal properties.
+   ---------------------------------------------------------------------------- *)
+
+(* lemma: sender_privacy_classical *)
+(* Property: classical adversary observing public канал не может recover
+   sender_id_v1. AEAD ciphertext encrypted под key derived из X25519 ECDH
+   shared secret; DDH assumption holds против classical adversary. *)
+query attacker(sender_id_v1).
+
+(* lemma: cross_protocol_replay_v1_v2_blocked *)
+(* Property: V1 envelope cannot be replayed как V2 (или наоборот).
+   Distinct domain separators DOMAIN_SEP_V1 vs DOMAIN_SEP_V2 yield
+   independent HKDF outputs; AEAD AAD includes version stamp.
+   Modelled через transcript-bound correspondence ReceiveV1 ⇒ SendV1
+   (each receive corresponds к a V1 send with the same ephemeral X25519
+   public key). This is non-injective because the model has no replay cache;
+   same-protocol replay is handled by higher message-layer state, not claimed
+   here. *)
+query sid: bitstring, recip: pubkey, eph_pub: pubkey;
+    event(ReceiveV1(sid, recip, eph_pub)) ==> event(SendV1(sid, recip, eph_pub)).
+
+(* lemma: aead_aad_binding *)
+(* Property: AEAD AAD field (version || eph_pub || recipient_pk) binds
+   ciphertext к specific envelope version + recipient. Любая
+   substitution AAD fields → aead_open fails → ReceiveV1 не fires.
+   Correspondence ReceiveV1 ⇒ SendV1 (with same transcript args) verifies
+   exact AAD match. *)
+query sid: bitstring, recip: pubkey, eph_pub: pubkey;
+    event(ReceiveV1(sid, recip, eph_pub)) ==> event(SendV1(sid, recip, eph_pub)).
+
+(* lemma: recipient_bound_hkdf_info *)
+(* Model invariant: every V1 HKDF call uses v1_hkdf_info(eph_pub, recip_pk),
+   and every parallel V2 HKDF call uses v2_hkdf_info(ct, recip_pk). This is
+   enforced by model_consistency.rs because ProVerif correspondences cannot
+   introspect HKDF argument-shape directly. This is not a forward-secrecy claim. *)
+
+(* ----------------------------------------------------------------------------
+   Process: sealed_sender_v1_send.
+
+   Honest sender V1:
+   1. Generate fresh ephemeral X25519 keypair (eph_sk, eph_pub).
+   2. ECDH: shared_secret = x25519_ecdh(recipient_pk, eph_sk).
+   3. HKDF-SHA256: aead_key = hkdf(shared_secret, DOMAIN_SEP_V1,
+      eph_pub || recipient_pk).
+   4. AEAD seal sender_id_v1 под aead_key с aad = (VERSION_V1, eph_pub,
+      recipient_pk).
+   5. Output (VERSION_V1, eph_pub, inner_ct) on c.
+   ---------------------------------------------------------------------------- *)
+let sealed_sender_v1_send(recip_pk: pubkey) =
+    new eph_sk: privkey;
+    let eph_pub = x25519_pub(eph_sk) in
+    let ss = x25519_ecdh(recip_pk, eph_sk) in
+    let aead_key = hkdf(ss, DOMAIN_SEP_V1, v1_hkdf_info(eph_pub, recip_pk)) in
+    let aad = (VERSION_V1, eph_pub, recip_pk) in
+    let inner_ct = aead_seal(aead_key, sender_id_v1, aad) in
+    event SendV1(sender_id_v1, recip_pk, eph_pub);
+    out(c, (VERSION_V1, eph_pub, inner_ct)).
+
+(* ----------------------------------------------------------------------------
+   Process: sealed_sender_v1_recv.
+
+   Honest recipient V1:
+   1. Receive (VERSION_V1, eph_pub, inner_ct) from c.
+   2. ECDH: shared_secret = x25519_ecdh(eph_pub, recipient_sk).
+   3. HKDF derives aead_key.
+   4. AEAD opens inner_ct с aad = (VERSION_V1, eph_pub, recipient_pk).
+   ---------------------------------------------------------------------------- *)
+let sealed_sender_v1_recv(sk: privkey) =
+    in(c, (=VERSION_V1, eph_pub: pubkey, inner_ct: aead_ciphertext));
+    let ss = x25519_ecdh(eph_pub, sk) in
+    let recip_pk = x25519_pub(sk) in
+    let aead_key = hkdf(ss, DOMAIN_SEP_V1, v1_hkdf_info(eph_pub, recip_pk)) in
+    let aad = (VERSION_V1, eph_pub, recip_pk) in
+    let plain = aead_open(aead_key, inner_ct, aad) in
+    event ReceiveV1(plain, recip_pk, eph_pub).
+
+(* ----------------------------------------------------------------------------
+   Process: sealed_sender_v2_send (parallel V2 process для replay query).
+
+   Same structure как в sealed_sender_v2.pv block 9.4 — X-Wing encaps +
+   HKDF + AEAD seal.
+   ---------------------------------------------------------------------------- *)
+let sealed_sender_v2_send(recip_pk: pubkey) =
+    new r: bitstring;
+    let ct = xwing_ct(recip_pk, r) in
+    let ss = xwing_ss(recip_pk, r) in
+    let aead_key = hkdf(ss, DOMAIN_SEP_V2, v2_hkdf_info(ct, recip_pk)) in
+    let aad = (VERSION_V2, ct, recip_pk) in
+    let inner_ct = aead_seal(aead_key, sender_id_v2, aad) in
+    event SendV2(sender_id_v2, recip_pk, ct);
+    out(c, (VERSION_V2, ct, inner_ct)).
+
+(* ----------------------------------------------------------------------------
+   Process: sealed_sender_v2_recv.
+   ---------------------------------------------------------------------------- *)
+let sealed_sender_v2_recv(sk: privkey) =
+    in(c, (=VERSION_V2, ct: bitstring, inner_ct: aead_ciphertext));
+    let ss = xwing_decaps(sk, ct) in
+    let recip_pk = xwing_pk(sk) in
+    let aead_key = hkdf(ss, DOMAIN_SEP_V2, v2_hkdf_info(ct, recip_pk)) in
+    let aad = (VERSION_V2, ct, recip_pk) in
+    let plain = aead_open(aead_key, inner_ct, aad) in
+    event ReceiveV2(plain, recip_pk, ct).
+
+(* ----------------------------------------------------------------------------
+   Top-level process: setup recipient keypair + parallel V1 + V2 senders +
+   recipients. Replication (`!`) позволяет multiple sessions.
+   ---------------------------------------------------------------------------- *)
+process
+    new x25519_sk: privkey;
+    new xwing_sk: privkey;
+    out(c, x25519_pub(x25519_sk));
+    out(c, xwing_pk(xwing_sk));
+    (
+        !sealed_sender_v1_send(x25519_pub(x25519_sk))
+      | !sealed_sender_v1_recv(x25519_sk)
+      | !sealed_sender_v2_send(xwing_pk(xwing_sk))
+      | !sealed_sender_v2_recv(xwing_sk)
+    )

@@ -1,0 +1,23 @@
+[package]
+name = "umbrella-server-blind-postman"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Серверная часть: парсинг и роутинг MLSMessage без расшифровки. НЕ зависит от identity."
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+openmls = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+# Намеренно НЕТ umbrella-identity — на сервере не должно быть приватных ключей даже в типах.
+# Намеренно НЕТ openmls_rust_crypto — сервер не делает криптооперации, только wire-format валидация.
+# Intentionally NO umbrella-identity — the server must not have private keys even in types.
+# Intentionally NO openmls_rust_crypto — the server performs no crypto, only wire-format validation.
+
+[dev-dependencies]

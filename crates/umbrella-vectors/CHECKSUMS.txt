@@ -1,0 +1,4 @@
+b7dd8bbfc9478249271528fe5e91b21126016f4bffec54569676688633f996a5  data/stability-ml-dsa-65.json
+98caf3b68e15a186722344e20a0ae1708034e8bdb1008a983d1ebadaca1befdb  data/stability-ml-kem-768.json
+81cc20bd4a5144a1c2d06eb37ad577d2a56b021f07a9e34b5e06326efd01e5ea  data/stability-slh-dsa-128f.json
+80a90d3b557ae20b87faa300345511292366fd57529db880e21043e4bbe31da2  data/stability-x-wing.json

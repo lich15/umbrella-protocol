@@ -1,0 +1,65 @@
+# Auto-regenerate SBOM (Software Bill of Materials) on every release tag and
+# committed `docs/audits/sbom.json` once for repo state baseline; this workflow
+# keeps SBOM in sync with each release.
+#
+# Триггер: создание git tag вида `v*` (например, `v1.0.0`).
+# Trigger: creation of a git tag matching `v*` (e.g., `v1.0.0`).
+
+name: release-pipeline
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to regenerate SBOM for (e.g., v1.0.0)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  regenerate-sbom:
+    name: Regenerate SBOM (CycloneDX 1.6) and attach to release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install Rust toolchain
+        run: |
+          rustup show
+          rustc --version
+
+      - name: Install cargo-sbom
+        run: |
+          cargo install cargo-sbom --version 0.9.1 --locked
+
+      - name: Regenerate SBOM (CycloneDX 1.6 JSON)
+        run: |
+          cargo sbom --output-format cyclone_dx_json_1_6 > docs/audits/sbom.json
+          ls -la docs/audits/sbom.json
+          # Sanity check: SBOM is non-empty + valid JSON.
+          test -s docs/audits/sbom.json
+          python3 -c 'import json,sys; json.load(open("docs/audits/sbom.json"))'
+
+      - name: Verify SBOM content
+        run: |
+          # SBOM должен содержать workspace crates как components.
+          jq '.components | length' docs/audits/sbom.json
+          jq '.metadata.timestamp' docs/audits/sbom.json
+
+      - name: Attach SBOM to release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: docs/audits/sbom.json
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

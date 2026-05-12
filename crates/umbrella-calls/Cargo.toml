@@ -1,0 +1,26 @@
+[package]
+name = "umbrella-calls"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "DTLS-SRTP для 1-1 звонков и MLS+SFrame для групповых видео; интеграция с LiveKit вне крейта."
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+umbrella-mls = { workspace = true }
+aes-gcm = { workspace = true }
+hkdf = { workspace = true }
+sha2 = { workspace = true }
+secrecy = { workspace = true }
+subtle = { workspace = true }
+zeroize = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+umbrella-vectors = { workspace = true }

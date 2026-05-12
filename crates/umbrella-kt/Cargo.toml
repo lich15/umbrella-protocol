@@ -1,0 +1,75 @@
+[package]
+name = "umbrella-kt"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Key Transparency client с self-monitoring и multi-witness — митигация ghost participant."
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[features]
+# Hybrid post-quantum KT v2 schema opt-in (v1.0.0 release, production design Решение 6).
+# Активирует:
+# - `KtEntryV2` (identity announcement entry с hybrid Ed25519+ML-DSA-65 pubkey
+#   и optional SLH-DSA-128f backup-recovery pubkey) с leading version-байтом 0x02.
+# - V1 ↔ V2 coexistence в KT log mirror — V1 device-snapshot entries (existing
+#   wire-format без leading byte) и V2 identity-announcement entries сосуществуют
+#   в одном append-only Merkle log на одном account_id.
+# - Расширение self-monitoring (`HybridOwnExpectations` + `verify_own_v2_entry`)
+#   которое проверяет что hybrid identity в V2 entry соответствует ожиданиям
+#   клиента — closes ghost-participant атаку для PQ identity layer.
+#
+# Без feature `pq` крейт компилируется без PQ зависимостей; existing V1
+# behaviour не меняется (Merkle leaf hash invariant сохраняется).
+#
+# Hybrid post-quantum KT v2 schema opt-in (v1.0.0 release, production design Decision 6).
+# Activates:
+# - `KtEntryV2` (identity-announcement entry with hybrid Ed25519+ML-DSA-65 pubkey
+#   and optional SLH-DSA-128f backup-recovery pubkey) prefixed by version byte 0x02.
+# - V1 ↔ V2 coexistence in the KT log mirror — V1 device-snapshot entries (existing
+#   wire format without a leading byte) and V2 identity-announcement entries live
+#   side-by-side in the same append-only Merkle log under the same account_id.
+# - Self-monitoring extension (`HybridOwnExpectations` + `verify_own_v2_entry`)
+#   that checks the hybrid identity in a V2 entry against the client's expectations
+#   — closes the ghost-participant attack at the PQ identity layer.
+#
+# Without feature `pq` the crate compiles with no PQ dependencies; the V1
+# behaviour is untouched (the Merkle leaf hash invariant is preserved).
+default = []
+pq = [
+    "dep:umbrella-pq",
+    "umbrella-pq/ml-dsa",
+    "umbrella-pq/slh-dsa",
+    "umbrella-identity/pq",
+]
+
+[dependencies]
+umbrella-crypto-primitives = { workspace = true }
+umbrella-identity = { workspace = true }
+# production design: authorization wire-format records (DeviceAuthorizationApproval /
+# Revocation / IdentityRotationRecord) и DeviceEntryState живут в
+# umbrella-backup::cloud_wrap; umbrella-kt переиспользует их как единый
+# источник правды wire-format. Обратной циркулярной зависимости нет —
+# umbrella-backup не импортирует umbrella-kt.
+#
+# production design: authorization wire-format records (DeviceAuthorizationApproval /
+# Revocation / IdentityRotationRecord) and DeviceEntryState live in
+# umbrella-backup::cloud_wrap; umbrella-kt reuses them as the single source
+# of truth for the wire format. There is no reverse cycle —
+# umbrella-backup does not import umbrella-kt.
+umbrella-backup = { workspace = true }
+sha2 = { workspace = true }
+zeroize = { workspace = true }
+thiserror = { workspace = true }
+
+# Hybrid post-quantum (feature-gated, v1.0.0 release production design Решение 6).
+# Hybrid post-quantum (feature-gated, v1.0.0 release production design Decision 6).
+umbrella-pq = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand_core = { workspace = true }

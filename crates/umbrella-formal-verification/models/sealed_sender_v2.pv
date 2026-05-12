@@ -1,0 +1,310 @@
+(* ============================================================================
+   process: umbrella_sealed_sender_v2
+   ============================================================================
+
+   ProVerif модель sealed-sender V2 envelope sender privacy в quantum threat
+   model. Adversary observing X-Wing ciphertext + AEAD ciphertext + version
+   stamp по public каналу не может recover sender identity. X25519 ephemeral
+   pubkey не expose'ен — он встроен внутри xwing_ct per draft-connolly-cfrg-
+   xwing-kem-06 §3 X-Wing combiner; combiner joint security is
+   axiomatized via the verified xwing_combiner.spthy block 9.2 model
+   (используется здесь как axiom).
+
+   ----------------------------------------------------------------------------
+   SPEC reference     : SPEC-13-PQ-HYBRID v0.0.1 §7 (Sealed Sender V2 envelope)
+   ADR  reference     : ADR-011 Решение 4 (MLS X-Wing провайдер) +
+                        ADR-012 Решение 3 (Tamarin/ProVerif авторинг in-house)
+   Block reference    : 9.4 (formal models — sealed-sender V2 + backup wrap V2 +
+                        downgrade resistance)
+   Tool               : ProVerif 2.05+
+   ----------------------------------------------------------------------------
+
+   Properties (proven via queries below):
+
+   - sender_privacy_under_quantum_adversary
+       Free private secret `sender_id_v2` не достижим adversary через
+       observation public канала. AEAD encrypted под key derived из
+       X-Wing combiner shared secret; combiner joint security holds
+       против passive adversary (даже с partial reveal X25519 либо
+       ML-KEM-768 component).
+
+   - cross_protocol_replay_v1_v2_blocked
+       V1 envelope (DOMAIN_SEP_V1 = "umbrellax-sealed-sender-v1") не
+       может быть replay'ен как V2 (DOMAIN_SEP_V2 = "umbrellax-sealed-
+       sender-v2") — distinct domain separators yield independent HKDF
+       outputs + AEAD AAD includes version stamp + cross-protocol
+       confusion blocked through type discipline и parallel V1 + V2
+       processes в этой модели.
+
+   - aead_aad_binding
+       AEAD AAD = version || xwing_ct || recipient_xwing_pubkey binds
+       ciphertext к specific envelope version + recipient. Любая
+       substitution AAD fields → AEAD verification fails (modelled
+       через aead_open destructor returning failure при AAD mismatch).
+
+   - recipient_bound_hkdf_info
+       HKDF info binds the transcript material and recipient public key:
+       v2_hkdf_info(xwing_ct, recipient_xwing_pubkey) for V2 and
+       v1_hkdf_info(eph_pub, recipient_x25519_pubkey) for parallel V1.
+       This is a model-shape invariant, not a forward-secrecy claim.
+
+   ----------------------------------------------------------------------------
+   Axioms / abstractions:
+
+   - X-Wing combiner security принимается как axiom (backed by the verified
+     xwing_combiner.spthy block 9.2): joint security holds, shared
+     secret hidden от passive adversary даже при compromise одного
+     из двух семейств (X25519 либо ML-KEM-768).
+   - ChaCha20-Poly1305 AEAD authentication modelled через standard
+     constructor + destructor pair: aead_seal(key, msg, aad) constructor;
+     aead_open(key, ct, aad) destructor returns msg только при exact
+     match всех трёх параметров (ProVerif `reduc forall` rewriting
+     pattern matches только при exact key + ct + aad).
+   - HKDF-SHA256 modelled as a random oracle через function symbol
+     hkdf(ikm, salt, info) returning fresh symkey для each unique input
+     triple. `info` is explicitly constructed as
+     v1_hkdf_info(eph_pub, recipient_x25519_pubkey) for V1 or
+     v2_hkdf_info(xwing_ct, recipient_xwing_pubkey) for V2. `[private]`
+     annotation предотвращает adversary computing hkdf через произвольные
+     terms — derive только через rule с access к ikm.
+   - Recipient X-Wing pubkey известен sender'у через KT log lookup —
+     модель abstracts KT lookup как initial `out(c, recipient_pk)` от
+     setup process (recipient pubkey публичный с момента key generation).
+   - V1 envelope structure (DOMAIN_SEP_V1) modelled параллельно как
+     отдельный classical X25519 process — позволяет ProVerif explore
+     cross-protocol replay paths against production V1, not a second
+     X-Wing variant with a different label.
+   - Inner Ed25519 sig внутри payload (per SPEC-13 §7.1 inner-payload
+     structure: sender_pub || ed25519_sig || message) abstracted —
+     intra-envelope authentication отдельная concern; sender privacy
+     property не зависит от inner sig structure.
+
+   ----------------------------------------------------------------------------
+   Adversary model:
+
+   - Active Dolev–Yao через standard ProVerif `attacker` semantics.
+   - Adversary видит все out(c, ...) сообщения и контролирует все
+     in(c, ...) сообщения.
+   - Adversary не получает X-Wing private key recipient'а (если бы
+     получил — confidentiality нарушается trivially; out of scope этой
+     модели; xwing_combiner.spthy block 9.2 моделирует individual
+     reveal X25519 + ML-KEM-768 components).
+   - Adversary НЕ имеет прямого access к sender_id_v2 / sender_id_v1
+     (доказывается через query attacker(sender_id_v2) returning false).
+   - Quantum capability моделируется implicitly через X-Wing combiner
+     axiom: joint security holds означает что даже quantum adversary
+     не может recover ss из ct без recipient sk.
+   - This model does not contain key-compromise/reveal epochs. It proves
+     sender privacy and transcript/AAD/KDF binding, not forward secrecy
+     after explicit session-key compromise.
+   ============================================================================
+*)
+
+set ignoreTypes = false.
+
+(* ----------------------------------------------------------------------------
+   Channel + types.
+   ---------------------------------------------------------------------------- *)
+free c: channel.
+
+type pubkey.
+type privkey.
+type symkey.
+type aead_ciphertext.
+
+(* ----------------------------------------------------------------------------
+   Domain separators (per SPEC-13-PQ-HYBRID v0.0.1 §7.3).
+
+   V1 = "umbrellax-sealed-sender-v1" (existing 0.0.11 wire format).
+   V2 = "umbrellax-sealed-sender-v2" (block 8.6 added).
+   Independent separators yield independent HKDF outputs — cross-
+   protocol replay impossible.
+   ---------------------------------------------------------------------------- *)
+const DOMAIN_SEP_V1: bitstring [data].
+const DOMAIN_SEP_V2: bitstring [data].
+const VERSION_V1: bitstring [data].
+const VERSION_V2: bitstring [data].
+
+(* ----------------------------------------------------------------------------
+   Free private secrets — confidentiality targets.
+
+   sender_id_v2 — sender identity wrapped в V2 envelope. Property:
+       attacker(sender_id_v2) returns false (sender privacy).
+
+   sender_id_v1 — sender identity wrapped в V1 envelope (parallel
+       process для cross-protocol replay query).
+   ---------------------------------------------------------------------------- *)
+free sender_id_v2: bitstring [private].
+free sender_id_v1: bitstring [private].
+
+(* ----------------------------------------------------------------------------
+   X25519 abstraction for the parallel V1 production envelope.
+   ---------------------------------------------------------------------------- *)
+fun x25519_pub(privkey): pubkey.
+fun x25519_ecdh(pubkey, privkey): symkey [private].
+
+equation forall a: privkey, b: privkey;
+    x25519_ecdh(x25519_pub(a), b) = x25519_ecdh(x25519_pub(b), a).
+
+(* ----------------------------------------------------------------------------
+   X-Wing combiner abstraction (axiom; combiner security tracked in the
+   xwing_combiner.spthy block 9.2 model).
+
+   xwing_pk(sk) — recipient public key for X-Wing.
+   xwing_ct(pk, r) — ciphertext output X-Wing encapsulation.
+   xwing_ss(pk, r) — shared secret output (private; joint security
+       hides от adversary без recipient sk).
+   xwing_decaps(sk, ct) — destructor: recipient'a sk unlocks ss из ct.
+   ---------------------------------------------------------------------------- *)
+fun xwing_pk(privkey): pubkey.
+fun xwing_ct(pubkey, bitstring): bitstring.
+fun xwing_ss(pubkey, bitstring): symkey [private].
+
+reduc forall sk: privkey, r: bitstring;
+    xwing_decaps(sk, xwing_ct(xwing_pk(sk), r)) = xwing_ss(xwing_pk(sk), r).
+
+(* ----------------------------------------------------------------------------
+   HKDF-SHA256 как random oracle.
+
+   hkdf(ikm, salt, info) — derive aead key из shared secret. V1 and V2
+   info constructors bind the transcript material and the recipient public key.
+   `[private]` означает adversary не может compute hkdf на произвольных
+   terms; derive только когда rule имеет access к ikm.
+   ---------------------------------------------------------------------------- *)
+fun v1_hkdf_info(pubkey, pubkey): bitstring.
+fun v2_hkdf_info(bitstring, pubkey): bitstring.
+fun hkdf(symkey, bitstring, bitstring): symkey [private].
+
+(* ----------------------------------------------------------------------------
+   ChaCha20-Poly1305 AEAD constructor + destructor.
+
+   aead_seal(key, msg, aad) — constructor: produces ciphertext.
+   aead_open(key, ct, aad) — destructor: returns msg только при exact
+       match всех трёх параметров (ProVerif rewriting). Key, ct, aad
+       все три должны совпадать — иначе destructor fails и process
+       блокируется.
+   ---------------------------------------------------------------------------- *)
+fun aead_seal(symkey, bitstring, bitstring): aead_ciphertext.
+reduc forall k: symkey, m: bitstring, aad: bitstring;
+    aead_open(k, aead_seal(k, m, aad), aad) = m.
+
+(* ----------------------------------------------------------------------------
+   Events для correspondence queries.
+   ---------------------------------------------------------------------------- *)
+event SendV2(bitstring, pubkey, bitstring).
+event ReceiveV2(bitstring, pubkey, bitstring).
+event SendV1(bitstring, pubkey, pubkey).
+event ReceiveV1(bitstring, pubkey, pubkey).
+
+(* ----------------------------------------------------------------------------
+   Queries — formal properties.
+   ---------------------------------------------------------------------------- *)
+
+(* lemma: sender_privacy_under_quantum_adversary *)
+(* Property: adversary observing public канал не может recover
+   sender_id_v2. AEAD ciphertext encrypted под key derived from
+   X-Wing combiner shared secret; combiner joint security holds против
+   passive adversary (axiom xwing_combiner.spthy block 9.2). *)
+query attacker(sender_id_v2).
+
+(* lemma: cross_protocol_replay_v1_v2_blocked *)
+(* Property: V1 envelope cannot be replayed как V2 (или наоборот).
+   Distinct domain separators DOMAIN_SEP_V1 vs DOMAIN_SEP_V2 yield
+   independent HKDF outputs; AEAD AAD includes version stamp.
+   Modelled через transcript-bound correspondence ReceiveV2 ==> SendV2
+   (each receive corresponds к a V2 send with the same X-Wing ciphertext).
+   This is non-injective because the model has no replay cache;
+   same-protocol replay is handled by higher message-layer state, not claimed
+   here. *)
+query sid: bitstring, recip: pubkey, ct: bitstring;
+    event(ReceiveV2(sid, recip, ct)) ==> event(SendV2(sid, recip, ct)).
+
+(* lemma: aead_aad_binding *)
+(* Property: AEAD AAD field (version || xwing_ct || recipient_pk)
+   binds ciphertext к specific envelope version + recipient. Любая
+   substitution AAD fields → aead_open fails → ReceiveV2 не fires.
+   Correspondence ReceiveV2 ==> SendV2 (with same transcript args)
+   verifies exact AAD match. *)
+query sid: bitstring, recip: pubkey, ct: bitstring;
+    event(ReceiveV2(sid, recip, ct)) ==> event(SendV2(sid, recip, ct)).
+
+(* lemma: recipient_bound_hkdf_info *)
+(* Model invariant: every V2 HKDF call uses v2_hkdf_info(ct, recip_pk), and
+   every parallel V1 HKDF call uses v1_hkdf_info(eph_pub, recip_pk). This is
+   enforced by model_consistency.rs because ProVerif correspondences cannot
+   introspect HKDF argument-shape directly. This is not a forward-secrecy claim. *)
+
+(* ----------------------------------------------------------------------------
+   Process: sealed_sender_v2_send.
+
+   Honest sender wraps `sender_id_v2` под recipient's X-Wing pubkey.
+   X-Wing encaps generates fresh (ct, ss). HKDF derives aead_key из ss
+   с DOMAIN_SEP_V2 + ct + recipient_pk как info. AEAD seals
+   sender_id_v2 под aead_key с aad = (VERSION_V2, ct, recipient_pk).
+   ---------------------------------------------------------------------------- *)
+let sealed_sender_v2_send(recip_pk: pubkey) =
+    new r: bitstring;
+    let ct = xwing_ct(recip_pk, r) in
+    let ss = xwing_ss(recip_pk, r) in
+    let aead_key = hkdf(ss, DOMAIN_SEP_V2, v2_hkdf_info(ct, recip_pk)) in
+    let aad = (VERSION_V2, ct, recip_pk) in
+    let inner_ct = aead_seal(aead_key, sender_id_v2, aad) in
+    event SendV2(sender_id_v2, recip_pk, ct);
+    out(c, (VERSION_V2, ct, inner_ct)).
+
+(* ----------------------------------------------------------------------------
+   Process: sealed_sender_v2_recv.
+
+   Honest recipient receives wire bytes (VERSION_V2 || ct || inner_ct).
+   X-Wing decaps recovers ss с recipient sk. HKDF derives aead_key.
+   AEAD opens inner_ct с aad = (VERSION_V2, ct, recipient_pk).
+   ---------------------------------------------------------------------------- *)
+let sealed_sender_v2_recv(sk: privkey) =
+    in(c, (=VERSION_V2, ct: bitstring, inner_ct: aead_ciphertext));
+    let ss = xwing_decaps(sk, ct) in
+    let recip_pk = xwing_pk(sk) in
+    let aead_key = hkdf(ss, DOMAIN_SEP_V2, v2_hkdf_info(ct, recip_pk)) in
+    let aad = (VERSION_V2, ct, recip_pk) in
+    let plain = aead_open(aead_key, inner_ct, aad) in
+    event ReceiveV2(plain, recip_pk, ct).
+
+(* ----------------------------------------------------------------------------
+   Process: sealed_sender_v1_send (parallel V1 process для replay query).
+   ---------------------------------------------------------------------------- *)
+let sealed_sender_v1_send(recip_pk: pubkey) =
+    new eph_sk: privkey;
+    let eph_pub = x25519_pub(eph_sk) in
+    let ss = x25519_ecdh(recip_pk, eph_sk) in
+    let aead_key = hkdf(ss, DOMAIN_SEP_V1, v1_hkdf_info(eph_pub, recip_pk)) in
+    let aad = (VERSION_V1, eph_pub, recip_pk) in
+    let inner_ct = aead_seal(aead_key, sender_id_v1, aad) in
+    event SendV1(sender_id_v1, recip_pk, eph_pub);
+    out(c, (VERSION_V1, eph_pub, inner_ct)).
+
+(* ----------------------------------------------------------------------------
+   Process: sealed_sender_v1_recv.
+   ---------------------------------------------------------------------------- *)
+let sealed_sender_v1_recv(sk: privkey) =
+    in(c, (=VERSION_V1, eph_pub: pubkey, inner_ct: aead_ciphertext));
+    let ss = x25519_ecdh(eph_pub, sk) in
+    let recip_pk = x25519_pub(sk) in
+    let aead_key = hkdf(ss, DOMAIN_SEP_V1, v1_hkdf_info(eph_pub, recip_pk)) in
+    let aad = (VERSION_V1, eph_pub, recip_pk) in
+    let plain = aead_open(aead_key, inner_ct, aad) in
+    event ReceiveV1(plain, recip_pk, eph_pub).
+
+(* ----------------------------------------------------------------------------
+   Top-level process: setup recipient keypair + parallel V1 + V2 senders +
+   recipients. Replication (`!`) позволяет multiple sessions.
+   ---------------------------------------------------------------------------- *)
+process
+    new xwing_sk: privkey;
+    new x25519_sk: privkey;
+    out(c, xwing_pk(xwing_sk));
+    out(c, x25519_pub(x25519_sk));
+    (
+        !sealed_sender_v2_send(xwing_pk(xwing_sk))
+      | !sealed_sender_v2_recv(xwing_sk)
+      | !sealed_sender_v1_send(x25519_pub(x25519_sk))
+      | !sealed_sender_v1_recv(x25519_sk)
+    )

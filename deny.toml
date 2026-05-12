@@ -1,0 +1,148 @@
+# cargo-deny конфиг для Umbrella Protocol — strict supply-chain политика.
+# Запрещает заразные лицензии (AGPL/BSL/SSPL), дублирующиеся версии зависимостей
+# (multiple-versions = "deny"), уязвимости (vulnerabilities auto-deny с 0.19+),
+# unsound advisory'и (unsound = "all"), unmaintained crates (unmaintained = "all").
+# Полная политика — `docs/audits/cargo-deny-policy.md` (v1.0.0).
+#
+# cargo-deny config for Umbrella Protocol — strict supply-chain policy.
+# Forbids viral licenses (AGPL/BSL/SSPL), duplicated dependency versions
+# (multiple-versions = "deny"), vulnerabilities (auto-deny since 0.19+),
+# unsound advisories (unsound = "all"), unmaintained crates (unmaintained = "all").
+# Full policy — `docs/audits/cargo-deny-policy.md` (v1.0.0).
+
+[graph]
+all-features = true
+
+[advisories]
+# Уязвимости (RUSTSEC) — c cargo-deny 0.19+ vulnerability advisories
+# автоматически emit error (severity не настраивается). Любой crate с
+# активным advisory ломает CI без дополнительной конфигурации.
+# Vulnerabilities (RUSTSEC) — since cargo-deny 0.19+ vulnerability
+# advisories emit errors automatically (severity not configurable). Any
+# crate with an active advisory breaks CI without extra configuration.
+
+# Unsound advisories — анализ всех зависимостей (workspace + transitive).
+# В 0.19+ scope-based: all/workspace/transitive/none. "all" максимальное
+# покрытие — поведение, нарушающее Rust soundness, не допустимо в
+# security-critical message protocol на любом уровне дерева.
+# Unsound advisories — analyse all dependencies (workspace + transitive).
+# In 0.19+ this is scope-based: all/workspace/transitive/none. "all" gives
+# maximum coverage — behaviour breaking Rust soundness is unacceptable in
+# a security-critical message protocol at any tree depth.
+unsound = "all"
+
+# Unmaintained crates — все зависимости; security-critical message protocol
+# не может полагаться на abandoned dependencies. В 0.19+ scope-based.
+# Unmaintained crates — all dependencies; a security-critical message
+# protocol cannot rely on abandoned dependencies. In 0.19+ scope-based.
+unmaintained = "all"
+
+# Yanked crates — отказ; код не должен зависеть от удалённых из crates.io версий.
+# Yanked crates — refuse; code must not depend on removed-from-crates.io versions.
+yanked = "deny"
+
+# Игнорировать advisories из этого списка с обязательным reason. Каждая
+# запись подлежит ежеквартальной re-evaluation в process maturity review;
+# просроченные записи срабатывают через `unused-ignored-advisory = "deny"`.
+# Ignore advisories from this list with a mandatory reason. Every entry
+# requires quarterly re-evaluation in the process maturity review; stale
+# entries trip the `unused-ignored-advisory = "deny"` check.
+ignore = []
+
+# Сообщить, если запись в `ignore` больше не применима (advisory снят,
+# fixed version в lockfile). Защита от dead config.
+# Warn if an `ignore` entry no longer applies (advisory withdrawn,
+# fixed version in lockfile). Guards against dead config.
+unused-ignored-advisory = "deny"
+
+[licenses]
+confidence-threshold = 0.93
+
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "MPL-2.0",
+    "Zlib",
+    # CDLA-Permissive-2.0 — Linux Foundation Community Data License Agreement
+    # Permissive 2.0. Используется webpki-roots (Mozilla CA bundle metadata).
+    # Permissive license, разрешает unrestricted use + modification.
+    # CDLA-Permissive-2.0 — Linux Foundation Community Data License Agreement
+    # Permissive 2.0. Used by webpki-roots (Mozilla CA bundle metadata).
+    # A permissive license that allows unrestricted use and modification.
+    "CDLA-Permissive-2.0",
+    # UPAL-1.0 — собственная лицензия Umbrella Protocol (LicenseRef per SPDX 2.x);
+    # покрывает umbrella-* workspace crates.
+    # UPAL-1.0 — Umbrella Protocol's own license (LicenseRef per SPDX 2.x);
+    # covers umbrella-* workspace crates.
+    "LicenseRef-UPAL-1.0",
+]
+exceptions = []
+
+[[licenses.clarify]]
+name = "ring"
+expression = "ISC AND MIT AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
+[bans]
+# multiple-versions = "deny" — supply-chain hardening: дублированные
+# версии увеличивают attack surface (typosquatting + auditability). Если transitive
+# дубликат неизбежен — добавляется явное исключение в `[[bans.skip]]` либо
+# `[[bans.skip-tree]]` с reason.
+# multiple-versions = "deny" — supply-chain hardening (production release notes): duplicate
+# versions increase attack surface (typosquatting + auditability). If a transitive
+# duplicate is unavoidable — explicit exception in `[[bans.skip]]` or
+# `[[bans.skip-tree]]` with reason.
+multiple-versions = "deny"
+wildcards = "deny"
+
+deny = [
+    # AGPL заразит UPAL, поэтому запрещён напрямую.
+    # AGPL would taint UPAL, hence forbidden directly.
+    { name = "libsignal-protocol", reason = "AGPL-3.0 taints UPAL — see production design" },
+]
+
+# Известные unavoidable дублирующиеся версии — фиксированы здесь после
+# согласования. Каждая запись требует reason и periodic re-evaluation
+# (раз в квартал в process maturity review).
+# Known unavoidable duplicate versions — pinned here after triage. Each
+# entry requires a reason and periodic re-evaluation (quarterly in the
+# production dependency review.
+skip = [
+    { crate = "sha2@0.10.9", reason = "transitive RustCrypto/OpenMLS/HPKE stack still uses digest 0.10; workspace code uses sha2 0.11 directly" },
+    { crate = "hmac@0.12.1", reason = "transitive through hkdf 0.12 in RustCrypto/OpenMLS/HPKE stack; workspace code uses hmac 0.13 directly" },
+    { crate = "hkdf@0.12.4", reason = "transitive RustCrypto/OpenMLS/HPKE stack still uses hkdf 0.12; workspace code uses hkdf 0.13 directly" },
+]
+
+# skip-tree — пропустить ВСЁ поддерево зависимостей под указанным crate.
+# Используется когда upstream stack тянет старые transitive deps (webrtc-*
+# crates тянут asn1-rs 0.5 + bitflags 1 + syn 1 etc.; uniffi 0.28 тянет
+# unmaintained `paste`; wiremock — dev-dep, исключён из production binaries).
+# Эти деревья сконцентрированы вокруг внешних crates вне нашего контроля;
+# исключения сохраняются только пока они нужны текущему production lockfile.
+#
+# skip-tree — skip the ENTIRE dependency subtree under the named crate.
+# Used when an upstream stack pulls old transitive deps (webrtc-* crates
+# pull asn1-rs 0.5 + bitflags 1 + syn 1 etc.; uniffi 0.28 pulls the
+# unmaintained `paste` crate; wiremock is a dev-dep excluded from
+# production binaries). These trees concentrate around external crates outside
+# our control; exceptions stay only while the current production lockfile needs
+# them.
+skip-tree = [
+    { crate = "webrtc-ice", reason = "WebRTC stack тянет stun + turn (legacy transitive base64/rand)" },
+    { crate = "webrtc-util", reason = "WebRTC base — bitflags 1 + nix 0.26 transitive" },
+    { crate = "uniffi", reason = "uniffi proc-macro chain keeps a small legacy subtree; workspace is on uniffi 0.31" },
+    { crate = "wiremock", reason = "dev-only HTTP mock; не входит в production binaries — duplicates приемлемы" },
+    { crate = "proptest", reason = "dev-only property-based testing — не входит в production binaries" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
