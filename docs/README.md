@@ -13,6 +13,7 @@ verify, and test the protocol without exposing private working material.
 - `audits/` - retained verification notes and tool-policy documents.
 - `security/` - release manifest, SBOM, and security operation notes.
 - `WORKING_RULES.md` - рабочие постулаты проекта.
+- `superpowers/specs/` - утверждённые рабочие планы крупных изменений.
 - root-level `UmbrellaX_protocol_public_en.pdf` and
   `UmbrellaX_protocol_public_ru.pdf` - current public protocol papers.
 
@@ -45,6 +46,7 @@ incident response, and recurring verification.
 - `audits/` - сохранённые заметки по проверкам и политики инструментов.
 - `security/` - манифест выпуска, SBOM и заметки по безопасности.
 - `WORKING_RULES.md` - рабочие постулаты проекта.
+- `superpowers/specs/` - утверждённые рабочие планы крупных изменений.
 - корневые `UmbrellaX_protocol_public_en.pdf` и
   `UmbrellaX_protocol_public_ru.pdf` - актуальные публичные документы
   протокола.
