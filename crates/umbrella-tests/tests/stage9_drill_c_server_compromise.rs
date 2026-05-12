@@ -455,17 +455,13 @@ fn c5_kt_log_integrity_via_three_of_five_witness_consensus() {
     ));
 }
 
-/// Split-view attack: compromised delivery service shows divergent log
-/// roots для разных users. Multi-witness 3-of-5 consensus защищает —
-/// witnesses подписывают only one root per epoch; signed entries для
-/// разных roots не получают threshold консенсус одновременно.
+/// Подмена корня с подписями от другого корня отклоняется: подписи не проходят
+/// проверку над полученным корнем.
 ///
-/// Split-view attack: a compromised delivery service shows divergent log
-/// roots to different users. Multi-witness 3-of-5 consensus protects —
-/// witnesses sign only one root per epoch; signed entries for different
-/// roots cannot reach threshold consensus simultaneously.
+/// Root substitution with signatures from a different root is rejected:
+/// signatures do not verify against the received root.
 #[test]
-fn c6_split_view_defeated_by_witness_consensus() {
+fn c6_mismatched_root_with_wrong_signatures_is_rejected() {
     let witnesses: Vec<TestWitness> = vec![
         fresh_witness("DE"),
         fresh_witness("US"),
@@ -498,6 +494,59 @@ fn c6_split_view_defeated_by_witness_consensus() {
         err,
         KtError::InsufficientValidSignatures { valid: 0, .. }
     ));
+}
+
+/// Если три настроенных свидетеля злонамеренно подпишут два разных корня для
+/// одной эпохи, локальная проверка примет оба вида по отдельности. Это не
+/// исправляется локальной подписью; нужно обнаружение через сверку наблюдений.
+///
+/// If three configured witnesses maliciously sign two different roots for the
+/// same epoch, local verification accepts each view independently. Signatures
+/// alone cannot detect this; monitoring must compare observations.
+#[test]
+fn c6_malicious_threshold_split_view_is_locally_accepted_and_requires_gossip_detection() {
+    let witnesses: Vec<TestWitness> = vec![
+        fresh_witness("DE"),
+        fresh_witness("US"),
+        fresh_witness("CH"),
+        fresh_witness("SG"),
+        fresh_witness("BR"),
+    ];
+    let witness_refs: Vec<&TestWitness> = witnesses.iter().collect();
+    let set = build_witness_set(&witness_refs);
+
+    let epoch = 100;
+    let root_a = [0xAA; 32];
+    let root_b = [0xBB; 32];
+    let malicious_threshold = &witness_refs[0..3];
+
+    let sigs_a = sign_epoch_with_witnesses(malicious_threshold, epoch, &root_a);
+    let sigs_b = sign_epoch_with_witnesses(malicious_threshold, epoch, &root_b);
+
+    let view_a = SignedEpochRoot {
+        epoch,
+        root: root_a,
+        log_size: 1,
+        timestamp_unix_millis: 1_700_000_000_000,
+        signatures: sigs_a,
+    };
+    let view_b = SignedEpochRoot {
+        epoch,
+        root: root_b,
+        log_size: 1,
+        timestamp_unix_millis: 1_700_000_000_000,
+        signatures: sigs_b,
+    };
+
+    verify_signed_epoch(&view_a, &set, WITNESS_THRESHOLD)
+        .expect("threshold-signed root_a verifies locally");
+    verify_signed_epoch(&view_b, &set, WITNESS_THRESHOLD)
+        .expect("threshold-signed root_b also verifies locally");
+
+    assert_ne!(
+        view_a.root, view_b.root,
+        "same epoch with divergent threshold-signed roots requires monitoring detection"
+    );
 }
 
 /// Timing budget: каждый шаг operator timeline ≥ предыдущего; общий elapsed

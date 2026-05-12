@@ -248,7 +248,7 @@ fn c6_malicious_threshold_split_view_is_locally_accepted_and_requires_gossip_det
 - [ ] Run the focused test:
 
 ```bash
-cargo test -p umbrella-tests c6_ --locked
+cargo test -p umbrella-tests c6_ --features pq --locked
 ```
 
 Expected final result:
@@ -493,7 +493,7 @@ exit code 0
 ```bash
 cargo test -p umbrella-vectors --test test_F_74_checksum_integrity --locked
 cargo test -p umbrella-backup adr008 --locked
-cargo test -p umbrella-tests c6_ --locked
+cargo test -p umbrella-tests c6_ --features pq --locked
 cargo test -p umbrella-ffi public_bootstrap --locked
 cargo test -p umbrella-ffi public_bootstrap --features pq --locked
 ```
