@@ -4013,6 +4013,7 @@ name = "umbrella-ffi"
 version = "1.0.0"
 dependencies = [
  "thiserror 2.0.18",
+ "tokio",
  "umbrella-backup",
  "umbrella-calls",
  "umbrella-client",

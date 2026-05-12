@@ -272,7 +272,7 @@ Use the fixed BIP-39 24-word test phrase already documented by `umbrella-identit
 
 ```rust
 const VALID_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon abandon abandon \
-    abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon \
+    abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon \
     abandon abandon abandon abandon abandon art";
 ```
 
@@ -318,28 +318,32 @@ Add at least these tests:
 ```rust
 #[tokio::test]
 async fn public_bootstrap_does_not_call_test_constructor() {
-    let err = UmbrellaClientHandle::bootstrap(valid_config(), VALID_MNEMONIC.into())
-        .await
-        .unwrap_err();
-    assert_production_bootstrap_unavailable(err);
+    let result = UmbrellaClientHandle::bootstrap(valid_config(), VALID_MNEMONIC.into()).await;
+    match result {
+        Ok(_) => panic!("public bootstrap must fail fast instead of returning a test handle"),
+        Err(err) => assert_production_bootstrap_unavailable(err),
+    }
 }
 
 #[cfg(not(feature = "pq"))]
 #[tokio::test]
 async fn public_bootstrap_classical_does_not_call_test_constructor() {
-    let err = UmbrellaClientHandle::bootstrap_classical(valid_config(), VALID_MNEMONIC.into())
-        .await
-        .unwrap_err();
-    assert_production_bootstrap_unavailable(err);
+    let result =
+        UmbrellaClientHandle::bootstrap_classical(valid_config(), VALID_MNEMONIC.into()).await;
+    match result {
+        Ok(_) => panic!("public bootstrap_classical must fail fast instead of returning a test handle"),
+        Err(err) => assert_production_bootstrap_unavailable(err),
+    }
 }
 
 #[cfg(feature = "pq")]
 #[tokio::test]
 async fn public_bootstrap_pq_does_not_call_test_constructor() {
-    let err = UmbrellaClientHandle::bootstrap_pq(valid_config(), VALID_MNEMONIC.into())
-        .await
-        .unwrap_err();
-    assert_production_bootstrap_unavailable(err);
+    let result = UmbrellaClientHandle::bootstrap_pq(valid_config(), VALID_MNEMONIC.into()).await;
+    match result {
+        Ok(_) => panic!("public bootstrap_pq must fail fast instead of returning a test handle"),
+        Err(err) => assert_production_bootstrap_unavailable(err),
+    }
 }
 ```
 
@@ -356,7 +360,7 @@ tokio = { workspace = true }
 cargo test -p umbrella-ffi public_bootstrap --locked
 ```
 
-Expected red signal before the fix: the constructors return `Ok` handles from `*_for_test`, so `unwrap_err()` panics.
+Expected red signal before the fix: the constructors return `Ok` handles from `*_for_test`, so the `Ok(_)` branch panics.
 
 - [ ] Add a private helper to `crates/umbrella-ffi/src/export/client.rs` near the imports:
 
@@ -392,7 +396,7 @@ This keeps existing input validation behavior and removes the silent test bootst
 /// are wired end to end.
 ```
 
-- [ ] Remove the unused `UmbrellaClient` import from `crates/umbrella-ffi/src/export/client.rs`.
+- [ ] Keep the `UmbrellaClient` import in `crates/umbrella-ffi/src/export/client.rs` because `UmbrellaClientHandle` still stores `Arc<UmbrellaClient>` for already constructed handles.
 
 - [ ] Run focused FFI tests:
 

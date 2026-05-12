@@ -64,3 +64,6 @@ thiserror = { workspace = true }
 # Scaffold генерация через uniffi::build в build.rs (v1.0.0 release).
 # Scaffold generation via uniffi::build in build.rs (v1.0.0 release).
 uniffi = { workspace = true, features = ["build"] }
+
+[dev-dependencies]
+tokio = { workspace = true }

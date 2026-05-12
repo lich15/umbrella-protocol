@@ -30,6 +30,13 @@ use crate::error::UmbrellaError;
 use crate::export::{CloudChatHandle, SecretChatHandle};
 use crate::types::ChatIdFfi;
 
+fn production_bootstrap_unavailable() -> UmbrellaError {
+    UmbrellaError::Internal(
+        "production bootstrap is not available: public FFI must not use test constructors until every client transport and required production verifier is wired"
+            .into(),
+    )
+}
+
 /// FFI представление [`ClientConfig`]. Sealed Servers wrap params (5 ×
 /// 32-байтовые pubkeys + main pubkey + version) развёрнуты в плоский
 /// набор полей; threshold = 3, total = 5 фиксированы.
@@ -166,8 +173,8 @@ impl UmbrellaClientHandle {
     ///   неверный checksum).
     /// - [`UmbrellaError::Internal`] если `ClientConfigFfi` невалиден
     ///   (длины pubkeys, количество server_pubkeys).
-    /// - Любой [`UmbrellaError`] вариант из
-    ///   [`UmbrellaClient::bootstrap_for_test`].
+    /// - [`UmbrellaError::Internal`] с понятным отказом, пока боевые
+    ///   транспорты и проверяющие пути не подключены полностью.
     ///
     /// Bootstraps the client from a 24-word BIP-39 mnemonic. Block 7.7
     /// supports only the English wordlist; multi-language support arrives
@@ -179,20 +186,18 @@ impl UmbrellaClientHandle {
     ///   words / wrong checksum).
     /// - [`UmbrellaError::Internal`] when `ClientConfigFfi` is invalid
     ///   (pubkey lengths, server_pubkeys count).
-    /// - Any [`UmbrellaError`] variant from
-    ///   [`UmbrellaClient::bootstrap_for_test`].
+    /// - [`UmbrellaError::Internal`] with a clear fail-fast message until
+    ///   production transports and verifier paths are wired end to end.
     #[uniffi::constructor]
     pub async fn bootstrap(
         config: ClientConfigFfi,
         mnemonic_phrase: String,
     ) -> Result<Arc<Self>, UmbrellaError> {
-        let seed = IdentitySeed::from_mnemonic(&mnemonic_phrase, MnemonicLanguage::English)
+        let _seed = IdentitySeed::from_mnemonic(&mnemonic_phrase, MnemonicLanguage::English)
             .map_err(|e| UmbrellaError::Identity(e.to_string()))?;
 
-        let rust_config: ClientConfig = config.try_into()?;
-        let inner = UmbrellaClient::bootstrap_for_test(rust_config, seed).await?;
-
-        Ok(Arc::new(Self { inner }))
+        let _rust_config: ClientConfig = config.try_into()?;
+        Err(production_bootstrap_unavailable())
     }
 
     /// Открыть существующий Cloud-чат по `ChatId`.
@@ -294,7 +299,8 @@ impl UmbrellaClientHandle {
     ///
     /// # Ошибки / Errors
     ///
-    /// Те же что [`Self::bootstrap`].
+    /// Те же что [`Self::bootstrap`]: входные данные проверяются, затем боевой
+    /// запуск отказывает до полной связки транспортов и проверяющих путей.
     ///
     /// Bootstrap the client in **PQ mode** from a 24-word BIP-39 mnemonic.
     /// Available only when `umbrella-ffi` is built with feature `pq`.
@@ -323,19 +329,18 @@ impl UmbrellaClientHandle {
     ///
     /// # Errors
     ///
-    /// Same as [`Self::bootstrap`].
+    /// Same as [`Self::bootstrap`]: inputs are validated, then production
+    /// bootstrap fails fast until transports and verifier paths are complete.
     #[uniffi::constructor]
     pub async fn bootstrap_pq(
         config: ClientConfigFfi,
         mnemonic_phrase: String,
     ) -> Result<Arc<Self>, UmbrellaError> {
-        let seed = IdentitySeed::from_mnemonic(&mnemonic_phrase, MnemonicLanguage::English)
+        let _seed = IdentitySeed::from_mnemonic(&mnemonic_phrase, MnemonicLanguage::English)
             .map_err(|e| UmbrellaError::Identity(e.to_string()))?;
 
-        let rust_config: ClientConfig = config.try_into()?;
-        let inner = UmbrellaClient::bootstrap_pq_for_test(rust_config, seed).await?;
-
-        Ok(Arc::new(Self { inner }))
+        let _rust_config: ClientConfig = config.try_into()?;
+        Err(production_bootstrap_unavailable())
     }
 }
 
@@ -448,9 +453,8 @@ impl UmbrellaClientHandle {
     ///
     /// # Ошибки / Errors
     ///
-    /// Те же что [`Self::bootstrap`] — `UmbrellaError::Identity` /
-    /// `UmbrellaError::Internal` / любой `UmbrellaError` вариант из
-    /// [`UmbrellaClient::bootstrap_classical_for_test`].
+    /// Те же что [`Self::bootstrap`]: входные данные проверяются, затем боевой
+    /// запуск отказывает до полной связки транспортов и проверяющих путей.
     ///
     /// Bootstrap the client in **classical mode** from a 24-word BIP-39
     /// mnemonic. Available only when `umbrella-ffi` is built **without**
@@ -488,20 +492,17 @@ impl UmbrellaClientHandle {
     ///
     /// # Errors
     ///
-    /// Same as [`Self::bootstrap`] — `UmbrellaError::Identity` /
-    /// `UmbrellaError::Internal` / any `UmbrellaError` variant from
-    /// [`UmbrellaClient::bootstrap_classical_for_test`].
+    /// Same as [`Self::bootstrap`]: inputs are validated, then production
+    /// bootstrap fails fast until transports and verifier paths are complete.
     #[uniffi::constructor]
     pub async fn bootstrap_classical(
         config: ClientConfigFfi,
         mnemonic_phrase: String,
     ) -> Result<Arc<Self>, UmbrellaError> {
-        let seed = IdentitySeed::from_mnemonic(&mnemonic_phrase, MnemonicLanguage::English)
+        let _seed = IdentitySeed::from_mnemonic(&mnemonic_phrase, MnemonicLanguage::English)
             .map_err(|e| UmbrellaError::Identity(e.to_string()))?;
 
-        let rust_config: ClientConfig = config.try_into()?;
-        let inner = UmbrellaClient::bootstrap_classical_for_test(rust_config, seed).await?;
-
-        Ok(Arc::new(Self { inner }))
+        let _rust_config: ClientConfig = config.try_into()?;
+        Err(production_bootstrap_unavailable())
     }
 }
