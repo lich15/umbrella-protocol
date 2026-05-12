@@ -222,8 +222,9 @@ impl MockUnwrapTransport {
         envelope_timestamp: u64,
     ) -> Result<(), BackupError> {
         let Some(entry) = self.device_entries.get(&request.device_pubkey) else {
-            // Не известный device-entry под ADR-008 путём — fallback на legacy.
-            return Ok(());
+            // Неизвестное устройство при включённом ADR-008 состоянии не получает доли.
+            // Unknown devices fail closed once ADR-008 authorization state is active.
+            return Err(BackupError::CryptoVerificationFailed);
         };
 
         // 1. Entry flag.
@@ -989,7 +990,7 @@ mod tests {
     }
 
     #[test]
-    fn adr008_unknown_device_falls_back_to_legacy_reject() {
+    fn legacy_unknown_device_rejected_by_allowlist_when_adr008_state_absent() {
         // device_entries пустой, authorized_device_pubkeys содержит ДРУГОЙ pubkey —
         // legacy path должен вернуть CryptoVerificationFailed.
         let (servers, _k) = build_honest_cluster();
@@ -1000,6 +1001,30 @@ mod tests {
         let r_point = RISTRETTO_BASEPOINT_POINT * Scalar::from(7u64);
         let req = make_request(&sk, vk, r_point.compress().to_bytes());
         let err = transport.dispatch(&req).unwrap_err();
+        assert!(matches!(err, BackupError::CryptoVerificationFailed));
+    }
+
+    #[test]
+    fn adr008_unknown_device_rejected_when_device_entries_enabled() {
+        let (servers, _k) = build_honest_cluster();
+        let mut transport = MockUnwrapTransport::new(servers);
+
+        let (_known_sk, known_vk) = make_device_keypair();
+        transport.register_device_entry(
+            known_vk,
+            DeviceEntryState {
+                flag: DeviceEntryStateFlag::Active,
+                authorized_since: 1,
+                history_cutoff: 0,
+                identity_pubkey_at_publish: [0x11u8; 32],
+            },
+        );
+
+        let (unknown_sk, unknown_vk) = make_device_keypair();
+        let r_point = RISTRETTO_BASEPOINT_POINT * Scalar::from(7u64);
+        let req = make_request(&unknown_sk, unknown_vk, r_point.compress().to_bytes());
+        let err = transport.dispatch(&req).unwrap_err();
+
         assert!(matches!(err, BackupError::CryptoVerificationFailed));
     }
 
