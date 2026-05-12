@@ -4,10 +4,11 @@
 
 ## English
 
-Umbrella Protocol is a production-ready, source-available cryptographic protocol
-stack for the private messenger UmbrellaX. The code is written in Rust, follows
-an IETF MLS profile, and adds layers for post-quantum protection, sender hiding,
-key transparency, backup and recovery, calls, and mobile bindings.
+Umbrella Protocol is a source-available cryptographic protocol stack under
+protocol-compliance hardening for the private messenger UmbrellaX. The
+repository contains implemented Rust cryptographic crates and test harnesses,
+but the public FFI/client production bootstrap is gated until every required
+transport and verifier is wired end to end.
 
 This repository is public for transparency, reproducible builds, non-commercial
 security testing, cryptographic testing, and responsible vulnerability reports.
@@ -16,7 +17,7 @@ embedding in a business product, service, SDK, messenger, or infrastructure
 platform require written permission. Read the access rules before using the
 code: [`PUBLIC_ACCESS.md`](PUBLIC_ACCESS.md) and [`LICENSE`](LICENSE).
 
-Version: **1.0.0 production-ready**.
+Version: **1.0.0 protocol-compliance hardening**.
 
 ### Quick Start
 
@@ -369,21 +370,21 @@ Commercial licensing: `licensing@umbrellax.io`
 
 ## Русский
 
-Umbrella Protocol — готовый к рабочему применению криптографический набор для
-приватного мессенджера UmbrellaX. Код написан на Rust, использует профиль IETF
-MLS и добавляет защитные слои: постквантовую защиту, скрытие отправителя,
-прозрачность ключей, резервное восстановление, звонки и связки для мобильных
-приложений.
+Umbrella Protocol — криптографический набор для приватного мессенджера
+UmbrellaX, который сейчас проходит приведение к документам. В репозитории есть
+реализованные крейты на Rust и проверочные стенды, но публичный боевой запуск
+клиента через внешний интерфейс для мобильных привязок закрыт до полной связки
+транспортов и боевых проверок.
 
 Репозиторий открыт для прозрачности, воспроизводимых сборок, некоммерческих
 проверок безопасности, криптографических испытаний и ответственных сообщений об
-уязвимостях. Umbrella Protocol распространяется как source-available, не open-source.
+уязвимостях. Исходный код доступен для чтения, но это не свободная лицензия.
 Коммерческое использование и встраивание в бизнес-продукт, сервис, набор для
 разработки, мессенджер или инфраструктурную платформу требуют письменного
 разрешения. Перед использованием прочитайте правила доступа:
 [`PUBLIC_ACCESS.md`](PUBLIC_ACCESS.md) и [`LICENSE`](LICENSE).
 
-Версия: **1.0.0, готова к рабочему применению**.
+Версия: **1.0.0, приведение к документам**.
 
 ### Быстрый старт
 

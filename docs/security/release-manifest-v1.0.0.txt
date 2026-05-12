@@ -4,13 +4,14 @@ Umbrella Protocol - Public Access Manifest v1.0.0
 English
 -------
 
-Package version: 1.0.0 production-ready
+Package version: 1.0.0 protocol-compliance hardening
 Package date: 2026-05-10
-Manifest updated: 2026-05-12
+Manifest updated: 2026-05-13
 License: Umbrella Public Access License
 Rust toolchain: stable 1.95.0
-Status: source-available production package for non-commercial security and
-cryptographic testing.
+Status: source-available package for non-commercial security and cryptographic
+testing. Public FFI/client production bootstrap is gated until every required
+transport and verifier is wired end to end.
 
 Primary public materials:
   README.md
@@ -37,9 +38,9 @@ Recommended local verification:
   bash scripts/audit-pq-backend-policy.sh
 
 Production note:
-  Production-ready does not mean risk-free. Operators should keep dependencies
-  current, monitor deployments, protect release keys, and run recurring
-  verification.
+  Unfinished public paths must fail fast instead of using test-only
+  constructors. Operators should keep dependencies current, monitor
+  deployments, protect release keys, and run recurring verification.
 
 Public Access note:
   This package is public for inspection, reproducible builds, non-commercial
@@ -49,13 +50,15 @@ Public Access note:
 Русский
 -------
 
-Версия пакета: 1.0.0 production-ready
+Версия пакета: 1.0.0, приведение к документам
 Дата пакета: 2026-05-10
-Манифест обновлён: 2026-05-12
+Манифест обновлён: 2026-05-13
 Лицензия: Umbrella Public Access License
 Rust toolchain: stable 1.95.0
-Статус: source-available production package для некоммерческой проверки
-безопасности и криптографического тестирования.
+Статус: пакет с доступным для чтения исходным кодом для некоммерческой проверки
+безопасности и криптографического тестирования. Публичный боевой запуск клиента
+через внешний интерфейс для мобильных привязок закрыт до полной связки
+транспортов и боевых проверок.
 
 Основные публичные материалы:
   README.md
@@ -81,14 +84,15 @@ Rust toolchain: stable 1.95.0
   bash scripts/audit-github-actions.sh
   bash scripts/audit-pq-backend-policy.sh
 
-Production note:
-  Production-ready не означает нулевой риск. Операторы должны обновлять
-  зависимости, мониторить deployment, защищать release keys и регулярно
-  запускать проверки.
+Заметка о боевом применении:
+  Незавершённые публичные пути должны отказывать явно, а не пользоваться
+  тестовыми конструкторами. Операторы должны обновлять зависимости, следить за
+  развёртываниями, защищать ключи выпуска и регулярно запускать проверки.
 
 Public Access note:
   Пакет опубликован для проверки, воспроизводимых сборок, некоммерческого
-  security testing, cryptographic testing и responsible disclosure. Он не даёт
-  прав на commercial use или redistribution сверх LICENSE.
+  поиска уязвимостей, криптографических испытаний и ответственного раскрытия.
+  Он не даёт прав на коммерческое использование или распространение сверх
+  LICENSE.
 
 End of manifest.

@@ -455,6 +455,8 @@ Umbrella Protocol — исходно доступный криптографич
 
 - [ ] Update `docs/security/release-manifest-v1.0.0.txt` status lines so the manifest no longer says “production-ready” without the FFI bootstrap caveat.
 
+- [ ] Update `scripts/audit-public-access-notices.sh` so the public-documentation audit requires the new truthful status instead of requiring old `production-ready` wording.
+
 - [ ] Keep `docs/WORKING_RULES.md` unchanged. It already contains the 15 project postulates and the exact rule that unfinished public paths must not look production-ready.
 
 - [ ] Run documentation and policy checks:
@@ -474,7 +476,7 @@ cargo doc exits 0
 - [ ] Commit this iteration:
 
 ```bash
-git add README.md docs/README.md docs/security/release-manifest-v1.0.0.txt
+git add README.md docs/README.md docs/security/release-manifest-v1.0.0.txt scripts/audit-public-access-notices.sh docs/superpowers/plans/2026-05-13-protocol-compliance-hardening-phase1.md
 git commit -m "docs: align production claims with hardening status"
 ```
 

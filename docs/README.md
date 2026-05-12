@@ -24,14 +24,15 @@ public documentation set.
 
 ## Current Status
 
-Umbrella Protocol 1.0.0 is the production-ready source package. The repository
-is published for transparency, non-commercial security testing, cryptographic
-testing, reproducible builds, and responsible vulnerability disclosure.
+Umbrella Protocol 1.0.0 is a source-available package under
+protocol-compliance hardening. The repository is published for transparency,
+non-commercial security testing, cryptographic testing, reproducible builds,
+and responsible vulnerability disclosure.
 
-This does not mean "risk-free" or "impossible to break". It means the current
-release package is complete for its published production scope and should be
-operated with normal production discipline: dependency updates, monitoring,
-incident response, and recurring verification.
+The public FFI/client production bootstrap is gated until every required
+transport and verifier is wired end to end. Cryptographic crates and test
+harnesses remain available for verification, but unfinished public paths must
+fail fast instead of using test-only constructors.
 
 ---
 
@@ -58,12 +59,13 @@ incident response, and recurring verification.
 
 ## Текущий статус
 
-Umbrella Protocol 1.0.0 - production-ready исходный пакет. Репозиторий
-опубликован для прозрачности, некоммерческой проверки безопасности,
-криптотестирования, воспроизводимых сборок и ответственного раскрытия
-уязвимостей.
+Umbrella Protocol 1.0.0 — пакет с доступным для чтения исходным кодом, который
+сейчас проходит приведение к документам. Репозиторий опубликован для
+прозрачности, некоммерческой проверки безопасности, криптографических
+испытаний, воспроизводимых сборок и ответственного раскрытия уязвимостей.
 
-Это не означает «нулевой риск» или «невозможно взломать». Это означает, что
-текущий пакет выпуска завершён в заявленном production-scope и должен
-эксплуатироваться с обычной production-дисциплиной: обновления зависимостей,
-мониторинг, реакция на инциденты и регулярная проверка.
+Публичный боевой запуск клиента через внешний интерфейс для мобильных привязок
+закрыт до полной связки транспортов и боевых проверок. Криптографические крейты
+и проверочные стенды остаются доступными для проверки, но незавершённые
+публичные пути должны отказывать явно, а не пользоваться тестовыми
+конструкторами.

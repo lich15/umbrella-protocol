@@ -28,7 +28,7 @@ require_pattern "PUBLIC_ACCESS.md" "source-available.*cryptographic"
 require_pattern "PUBLIC_ACCESS.md" "not open-source"
 require_pattern "PUBLIC_ACCESS.md" "Not Allowed Without Written Permission"
 
-require_pattern "README.md" "source-available, не open-source"
+require_pattern "README.md" "Исходный код доступен для чтения"
 require_pattern "README.md" "source-available, not open-source"
 require_pattern "README.md" "PUBLIC_ACCESS.md"
 require_pattern "README.md" "бизнес-продукт"
@@ -39,7 +39,7 @@ require_pattern "SECURITY.md" "does not grant commercial use"
 require_pattern "CONTRIBUTING.md" "PUBLIC_ACCESS.md"
 require_pattern "CONTRIBUTING.md" "Commercial use"
 
-require_pattern "docs/README.md" "production-ready"
+require_pattern "docs/README.md" "protocol-compliance hardening|приведение к документам"
 require_pattern "docs/README.md" "private protocol specifications"
 require_pattern "docs/security/release-manifest-v1.0.0.txt" "Public Access"
 
