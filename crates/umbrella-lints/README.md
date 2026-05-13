@@ -24,7 +24,7 @@ library code.
 ## Local Use
 
 ```bash
-cargo dylint --all --manifest-path crates/umbrella-lints/Cargo.toml -- --workspace --all-targets --all-features
+DYLINT_RUSTFLAGS="-D warnings" cargo dylint --all --path crates/umbrella-lints --workspace -- --ignore-rust-version --all-targets --all-features --locked
 ```
 
 The CI policy is described in [`docs/audits/dylint-rules.md`](../../docs/audits/dylint-rules.md).
@@ -34,7 +34,7 @@ The CI policy is described in [`docs/audits/dylint-rules.md`](../../docs/audits/
 ## Русский
 
 `umbrella-lints` содержит локальные Dylint-правила, которые Umbrella Protocol
-использует в проверках безопасности и production-readiness.
+использует в проверках безопасности и готовности к выпуску.
 
 Крейт является инструментом разработки, а не частью runtime-протокола. Его
 задача - ловить шаблоны, которые легко пропустить при ревью и которые опасны в
@@ -53,7 +53,7 @@ The CI policy is described in [`docs/audits/dylint-rules.md`](../../docs/audits/
 ## Локальный запуск
 
 ```bash
-cargo dylint --all --manifest-path crates/umbrella-lints/Cargo.toml -- --workspace --all-targets --all-features
+DYLINT_RUSTFLAGS="-D warnings" cargo dylint --all --path crates/umbrella-lints --workspace -- --ignore-rust-version --all-targets --all-features --locked
 ```
 
 Политика CI описана в [`docs/audits/dylint-rules.md`](../../docs/audits/dylint-rules.md).

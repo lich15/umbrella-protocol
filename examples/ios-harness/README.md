@@ -56,7 +56,7 @@ an iOS simulator test when iOS, shared FFI, or client files change.
 
 Эта папка содержит минимальный Swift Package iOS harness для проверки
 `umbrella-ffi-swift` XCFramework и сгенерированных Swift bindings. Это не
-production мессенджер.
+боевой мессенджер.
 
 ## Сборка
 
@@ -88,8 +88,9 @@ open examples/ios-harness/Package.swift
 ## Ручные проверки
 
 Для Secure Enclave или App Attest лучше использовать реальное устройство.
-Harness нужен, чтобы проверить, что XCFramework загружается, сгенерированные
-Swift bindings вызываются, и небольшой smoke-surface работает на iOS.
+Проверочный проект нужен, чтобы убедиться, что XCFramework загружается,
+сгенерированные Swift-привязки вызываются, и небольшой проверочный набор
+работает на iOS.
 
 Публичная матрица сертификации устройств в этом репозитории не заявляется.
 Результаты приватных device lab проверок не нужно добавлять сюда, если они не
