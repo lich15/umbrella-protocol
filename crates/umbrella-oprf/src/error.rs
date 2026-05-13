@@ -91,4 +91,12 @@ pub enum OprfError {
     /// Attestation token failed local shape validation.
     #[error("invalid attestation token shape")]
     InvalidAttestationShape,
+
+    /// Боевой проверяющий attestation для платформы ещё не подключён.
+    /// Production attestation verifier for this platform is not wired yet.
+    #[error("production attestation verifier unavailable for platform tag {platform_tag:#x}")]
+    ProductionAttestationVerifierUnavailable {
+        /// Тег платформы. Platform tag.
+        platform_tag: u8,
+    },
 }

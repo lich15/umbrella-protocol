@@ -327,6 +327,33 @@ pub fn verify_signed_request(req: &SignedOprfRequest) -> Result<(), OprfError> {
         .map_err(|_| OprfError::CryptoVerificationFailed)
 }
 
+/// Боевая проверка подписанного OPRF-запроса.
+/// Production verification for a signed OPRF request.
+///
+/// Сначала проверяет device-signature, затем закрыто отказывает тестовой
+/// платформе и всем настоящим платформам, пока platform-specific verifier
+/// не связан до конца.
+///
+/// Checks the device signature first, then fail-closes for the test platform
+/// and for real platforms until the platform-specific verifier is wired.
+///
+/// # Errors
+/// - [`OprfError::CryptoVerificationFailed`] если подпись неверна или запрос
+///   использует [`Platform::Testing`].
+/// - [`OprfError::ProductionAttestationVerifierUnavailable`] если подпись
+///   валидна, но настоящий platform verifier ещё не подключён.
+pub fn verify_signed_request_for_production(req: &SignedOprfRequest) -> Result<(), OprfError> {
+    verify_signed_request(req)?;
+    match req.attestation.platform {
+        Platform::Testing => Err(OprfError::CryptoVerificationFailed),
+        Platform::IOs | Platform::Android | Platform::Web => {
+            Err(OprfError::ProductionAttestationVerifierUnavailable {
+                platform_tag: req.attestation.platform.tag(),
+            })
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ed25519_dalek::{Signer, SigningKey};
@@ -469,6 +496,52 @@ mod tests {
         .unwrap();
 
         verify_signed_request(&signed).expect("valid request must verify");
+    }
+
+    #[test]
+    fn production_policy_rejects_testing_attestation_even_after_valid_signature() {
+        let (sk, vk) = make_device_keypair();
+        let provider = TestingAttestationProvider::default();
+        let input = OprfInput::new(b"+15550101010").unwrap();
+        let (blinded, _state) = blind(input, &mut OsRng).unwrap();
+        let signed = seal_request(
+            blinded,
+            &provider,
+            fresh_nonce(),
+            |payload| Ok(sign_with(&sk, payload)),
+            vk.to_bytes(),
+        )
+        .unwrap();
+
+        verify_signed_request(&signed).expect("signature-only verifier accepts test token");
+        let err = verify_signed_request_for_production(&signed).unwrap_err();
+        assert!(matches!(err, OprfError::CryptoVerificationFailed));
+    }
+
+    #[test]
+    fn production_policy_rejects_real_platform_until_verifier_is_wired() {
+        let (sk, vk) = make_device_keypair();
+        let input = OprfInput::new(b"+15550101010").unwrap();
+        let (blinded, _state) = blind(input, &mut OsRng).unwrap();
+        let nonce = fresh_nonce();
+        let attestation =
+            PlatformAttestation::new(Platform::Android, b"play-integrity-token").unwrap();
+        let canonical = canonical_signing_input(&blinded, &attestation, &nonce);
+        let signed = SignedOprfRequest {
+            blinded,
+            attestation,
+            nonce,
+            device_signature: sign_with(&sk, &canonical),
+            device_pubkey: vk.to_bytes(),
+        };
+
+        verify_signed_request(&signed).expect("signature-only verifier accepts Android token");
+        let err = verify_signed_request_for_production(&signed).unwrap_err();
+        assert!(matches!(
+            err,
+            OprfError::ProductionAttestationVerifierUnavailable { platform_tag }
+                if platform_tag == Platform::Android.tag()
+        ));
     }
 
     #[test]

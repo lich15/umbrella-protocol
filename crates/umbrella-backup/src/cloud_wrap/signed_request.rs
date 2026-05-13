@@ -510,6 +510,35 @@ pub fn verify_signed_unwrap_request(req: &SignedUnwrapRequest) -> Result<(), Bac
         .map_err(|_| BackupError::CryptoVerificationFailed)
 }
 
+/// Боевая проверка signed unwrap request.
+/// Production verification for signed unwrap requests.
+///
+/// Сначала проверяет device-signature, затем закрыто отказывает тестовой
+/// платформе и всем настоящим платформам, пока platform-specific verifier
+/// не связан до конца.
+///
+/// Checks the device signature first, then fail-closes for the test platform
+/// and for real platforms until the platform-specific verifier is wired.
+///
+/// # Errors
+/// - [`BackupError::CryptoVerificationFailed`] если подпись неверна или
+///   запрос использует [`Platform::Testing`].
+/// - [`BackupError::ProductionAttestationVerifierUnavailable`] если подпись
+///   валидна, но настоящий platform verifier ещё не подключён.
+pub fn verify_signed_unwrap_request_for_production(
+    req: &SignedUnwrapRequest,
+) -> Result<(), BackupError> {
+    verify_signed_unwrap_request(req)?;
+    match req.attestation.platform {
+        Platform::Testing => Err(BackupError::CryptoVerificationFailed),
+        Platform::IOs | Platform::Android | Platform::Web => {
+            Err(BackupError::ProductionAttestationVerifierUnavailable {
+                platform_tag: req.attestation.platform.tag(),
+            })
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ed25519_dalek::{Signer, SigningKey};
@@ -660,6 +689,57 @@ mod tests {
         .unwrap();
 
         verify_signed_unwrap_request(&req).expect("valid signature must verify");
+    }
+
+    #[test]
+    fn production_policy_rejects_testing_attestation_even_after_valid_signature() {
+        let (sk, vk) = make_device_keypair();
+        let p = TestingAttestationProvider::default();
+        let req = seal_unwrap_request(
+            sample_r(),
+            sample_chat(),
+            [0x22u8; ED25519_PUB_LEN],
+            1_700_000_000_000u64,
+            fresh_nonce(),
+            &p,
+            |payload| Ok(sign_with(&sk, payload)),
+            vk.to_bytes(),
+        )
+        .unwrap();
+
+        verify_signed_unwrap_request(&req).expect("signature-only verifier accepts test token");
+        let err = verify_signed_unwrap_request_for_production(&req).unwrap_err();
+        assert!(matches!(err, BackupError::CryptoVerificationFailed));
+    }
+
+    #[test]
+    fn production_policy_rejects_real_platform_until_verifier_is_wired() {
+        let (sk, vk) = make_device_keypair();
+        let r = sample_r();
+        let chat = sample_chat();
+        let rec = [0x22u8; ED25519_PUB_LEN];
+        let ts = 1_700_000_000_000u64;
+        let nonce = fresh_nonce();
+        let attestation = PlatformAttestation::new(Platform::IOs, b"ios-app-attest-token").unwrap();
+        let canonical = canonical_signing_input(&r, &chat, &rec, ts, &nonce, &attestation);
+        let req = SignedUnwrapRequest {
+            ephemeral_r: r,
+            chat_id: chat,
+            recipient_device_pubkey: rec,
+            timestamp_unix_millis: ts,
+            server_nonce: nonce,
+            attestation,
+            device_signature: sign_with(&sk, &canonical),
+            device_pubkey: vk.to_bytes(),
+        };
+
+        verify_signed_unwrap_request(&req).expect("signature-only verifier accepts iOS token");
+        let err = verify_signed_unwrap_request_for_production(&req).unwrap_err();
+        assert!(matches!(
+            err,
+            BackupError::ProductionAttestationVerifierUnavailable { platform_tag }
+                if platform_tag == Platform::IOs.tag()
+        ));
     }
 
     #[test]

@@ -59,10 +59,11 @@ pub use params::{
 pub use share::{ServerUnwrapShare, SERVER_UNWRAP_SHARE_LEN};
 pub use signed_request::{
     canonical_signing_input, seal_unwrap_request, verify_signed_unwrap_request,
-    AttestationProvider, Platform, PlatformAttestation, SignedUnwrapRequest,
-    TestingAttestationProvider, DEVICE_PUBKEY_LEN, DEVICE_SIG_LEN, MAX_ATTESTATION_TOKEN_BYTES,
-    NONCE_LEN as UNWRAP_NONCE_LEN, SIGNATURE_DOMAIN_SEPARATOR, SIGNED_UNWRAP_REQUEST_FIXED_LEN,
-    SIGNED_UNWRAP_REQUEST_MAX_LEN, UNWRAP_WIRE_VERSION,
+    verify_signed_unwrap_request_for_production, AttestationProvider, Platform,
+    PlatformAttestation, SignedUnwrapRequest, TestingAttestationProvider, DEVICE_PUBKEY_LEN,
+    DEVICE_SIG_LEN, MAX_ATTESTATION_TOKEN_BYTES, NONCE_LEN as UNWRAP_NONCE_LEN,
+    SIGNATURE_DOMAIN_SEPARATOR, SIGNED_UNWRAP_REQUEST_FIXED_LEN, SIGNED_UNWRAP_REQUEST_MAX_LEN,
+    UNWRAP_WIRE_VERSION,
 };
 pub use threshold::{shamir_split_for_testing, threshold_combine};
 pub use transport::{

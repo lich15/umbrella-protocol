@@ -48,6 +48,14 @@ pub enum BackupError {
     #[error("invalid attestation shape")]
     InvalidAttestationShape,
 
+    /// Боевой проверяющий attestation для платформы ещё не подключён.
+    /// Production attestation verifier for this platform is not wired yet.
+    #[error("production attestation verifier unavailable for platform tag {platform_tag:#x}")]
+    ProductionAttestationVerifierUnavailable {
+        /// Тег платформы. Platform tag.
+        platform_tag: u8,
+    },
+
     // ---------------------------------------------------------------
     // Cloud-wrap (SPEC-12 §A)
     // ---------------------------------------------------------------
