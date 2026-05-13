@@ -15,9 +15,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use rustls::client::danger::{
-    HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
-};
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, Error as RustlsError, SignatureScheme};
 use sha2::{Digest, Sha256};
@@ -322,13 +320,9 @@ mod tests {
     use std::sync::Arc;
 
     use rcgen::{generate_simple_self_signed, CertifiedKey};
-    use rustls::client::danger::{
-        HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
-    };
+    use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
     use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-    use rustls::{
-        CertificateError, DigitallySignedStruct, Error as RustlsError, SignatureScheme,
-    };
+    use rustls::{CertificateError, DigitallySignedStruct, Error as RustlsError, SignatureScheme};
 
     #[derive(Debug, Clone, Copy)]
     enum InnerMode {
@@ -469,13 +463,7 @@ mod tests {
         let name = ServerName::try_from(host).expect("dns name");
 
         verifier
-            .verify_server_cert(
-                &CertificateDer::from(der),
-                &[],
-                &name,
-                &[],
-                UnixTime::now(),
-            )
+            .verify_server_cert(&CertificateDer::from(der), &[], &name, &[], UnixTime::now())
             .expect("matching pin is accepted");
 
         assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -496,13 +484,7 @@ mod tests {
         let name = ServerName::try_from(host).expect("dns name");
 
         verifier
-            .verify_server_cert(
-                &CertificateDer::from(der),
-                &[],
-                &name,
-                &[],
-                UnixTime::now(),
-            )
+            .verify_server_cert(&CertificateDer::from(der), &[], &name, &[], UnixTime::now())
             .expect("backup pin is accepted");
     }
 
@@ -548,13 +530,7 @@ mod tests {
         let name = ServerName::try_from(host).expect("dns name");
 
         let err = verifier
-            .verify_server_cert(
-                &CertificateDer::from(der),
-                &[],
-                &name,
-                &[],
-                UnixTime::now(),
-            )
+            .verify_server_cert(&CertificateDer::from(der), &[], &name, &[], UnixTime::now())
             .unwrap_err();
 
         assert!(matches!(
@@ -578,13 +554,7 @@ mod tests {
         let name = ServerName::try_from(unknown_host).expect("dns name");
 
         let err = verifier
-            .verify_server_cert(
-                &CertificateDer::from(der),
-                &[],
-                &name,
-                &[],
-                UnixTime::now(),
-            )
+            .verify_server_cert(&CertificateDer::from(der), &[], &name, &[], UnixTime::now())
             .unwrap_err();
 
         assert!(format!("{err}").contains("no SPKI pins configured"));

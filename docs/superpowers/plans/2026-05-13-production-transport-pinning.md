@@ -1148,7 +1148,7 @@ git commit -m "docs: mark internal tls pinning wired"
 **Files:**
 - No new source files beyond previous tasks.
 
-- [ ] **Step 1: Run formatting**
+- [x] **Step 1: Run formatting**
 
 Run:
 
@@ -1162,7 +1162,7 @@ Expected:
 exit code 0
 ```
 
-- [ ] **Step 2: Run focused security tests**
+- [x] **Step 2: Run focused security tests**
 
 Run:
 
@@ -1179,7 +1179,7 @@ Expected:
 test result: ok
 ```
 
-- [ ] **Step 3: Run lint, docs, supply-chain and public audit gates**
+- [x] **Step 3: Run lint, docs, supply-chain and public audit gates**
 
 Run:
 
@@ -1199,7 +1199,7 @@ cargo deny exits 0
 public access notices OK
 ```
 
-- [ ] **Step 4: Run full release test gate**
+- [x] **Step 4: Run full release test gate**
 
 Run:
 
@@ -1213,7 +1213,7 @@ Expected:
 test result: ok
 ```
 
-- [ ] **Step 5: Confirm clean workspace**
+- [x] **Step 5: Confirm clean workspace**
 
 Run:
 

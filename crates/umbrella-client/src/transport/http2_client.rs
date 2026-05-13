@@ -337,10 +337,8 @@ pub fn build_production_http2_client(
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let platform_verifier = rustls_platform_verifier::Verifier::new(Arc::clone(&provider))
         .map_err(|e| ClientError::Network(format!("platform TLS verifier: {e}")))?;
-    let pinning_verifier =
-        SpkiPinningVerifier::new(Arc::new(platform_verifier), pins).map_err(|e| {
-            ClientError::Network(format!("production SPKI pinning verifier: {e}"))
-        })?;
+    let pinning_verifier = SpkiPinningVerifier::new(Arc::new(platform_verifier), pins)
+        .map_err(|e| ClientError::Network(format!("production SPKI pinning verifier: {e}")))?;
     let tls_config = rustls::ClientConfig::builder_with_provider(provider)
         .with_protocol_versions(&[&rustls::version::TLS13])
         .map_err(|e| ClientError::Network(format!("rustls TLS 1.3 config: {e}")))?
