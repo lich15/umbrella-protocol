@@ -15,7 +15,11 @@ platform certificate verification together with SPKI pinning. Public FFI
 bootstrap remains gated until real platform attestation verifiers, mobile
 bridges, and server integration are wired end to end. Cloud unwrap and OPRF
 already have contextual server-side attestation gates that fail closed without
-those real platform verifiers. See
+those real platform verifiers. A local platform-verifier crate now checks shared
+token-size, app/site, nonce, key, signature, and counter rules where enough
+material is available. WebAuthn has local assertion verification. Apple App
+Attest and Android Play Integrity still fail closed until external trust
+material, platform-token parsers, and mobile/server integration are wired. See
 [`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
 
 This repository is public for transparency, reproducible builds, non-commercial
@@ -70,6 +74,7 @@ Important crates:
 - `crates/umbrella-identity`: identity keys and recovery logic.
 - `crates/umbrella-mls`: group messaging profile.
 - `crates/umbrella-kt`: key transparency.
+- `crates/umbrella-platform-verifier`: local fail-closed platform checks.
 - `crates/umbrella-sealed-sender`: sender hiding.
 - `crates/umbrella-backup`: backup and recovery flows.
 - `crates/umbrella-calls`: call protection pieces.
@@ -391,8 +396,13 @@ UmbrellaX, который сейчас проходит приведение к 
 
 Фаза 2 приведения к документам активна. Внутренний боевой сборщик HTTP/2 теперь
 связывает системную проверку сертификата с закреплёнными SPKI-ключами.
-Публичный FFI-запуск остаётся закрыт, пока не связаны боевая
-attestation-проверка, мобильные мосты и серверная интеграция. Подробности:
+Публичный FFI-запуск остаётся закрыт, пока не связаны боевая платформенная
+проверка, мобильные мосты и серверная интеграция. Новый локальный крейт
+платформенной проверки уже проверяет размер токена, приложение или сайт,
+серверный вызов, ключ, подпись и счётчик там, где для этого хватает данных.
+WebAuthn проверяется локально. Apple App Attest и Android Play Integrity всё
+ещё закрыты отказом, пока не подключены внешние корни доверия, разбор
+платформенного токена и мобильная/серверная связка. Подробности:
 [`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
 
 Репозиторий открыт для прозрачности, воспроизводимых сборок, некоммерческих

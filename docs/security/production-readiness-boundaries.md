@@ -24,8 +24,11 @@ Closed gates:
   device state, platform, and an explicit platform verifier in fail-closed
   order.
 - Platform attestation verifiers: `Platform::Testing` is rejected by production
-  verifiers. iOS, Android, and Web tokens fail closed until real platform
-  verifiers are wired.
+  verifiers. A local verifier crate now enforces shared token-size, app/site,
+  nonce, key, signature, and counter rules where enough material is available.
+  WebAuthn has local assertion verification. Apple App Attest and Android Play
+  Integrity remain fail-closed until their external trust material, platform
+  token parsers, and mobile/server integration are wired.
 - Mobile bridge: Swift, Kotlin, and Web platform attestation bridges are not yet
   a production-ready trust boundary.
 - Server integration: mock server behavior does not count as production
@@ -54,8 +57,12 @@ Closed gates:
   серверный вызов, свежесть, состояние устройства, платформу и явный
   платформенный проверяющий. Любой отказ закрывает путь.
 - Платформенные проверяющие: `Platform::Testing` отвергается боевыми
-  проверяющими. iOS, Android и Web тоже отказывают, пока настоящие
-  платформенные проверяющие не подключены.
+  проверяющими. Новый локальный крейт проверяет общие правила размера токена,
+  приложения или сайта, серверного вызова, ключа, подписи и счётчика там, где
+  для этого хватает данных. WebAuthn имеет локальную проверку утверждения.
+  Apple App Attest и Android Play Integrity остаются закрыты отказом, пока не
+  подключены внешние корни доверия, разбор платформенного токена и
+  мобильная/серверная связка.
 - Мобильный мост: Swift, Kotlin и Web-мосты для attestation пока не являются
   боевой границей доверия.
 - Серверная интеграция: поведение mock-сервера не считается готовностью

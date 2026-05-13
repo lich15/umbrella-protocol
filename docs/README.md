@@ -41,7 +41,11 @@ verification together with SPKI pinning. Public FFI bootstrap remains gated
 until real platform attestation verifiers, mobile bridges, and server
 integration are wired end to end. Cloud unwrap and OPRF already have
 contextual server-side attestation gates that fail closed without those real
-platform verifiers.
+platform verifiers. A local platform-verifier crate now checks shared
+token-size, app/site, nonce, key, signature, and counter rules where enough
+material is available. WebAuthn has local assertion verification. Apple App
+Attest and Android Play Integrity still fail closed until external trust
+material, platform-token parsers, and mobile/server integration are wired.
 
 The current status of formal verification and local lint gates is recorded in
 [`audits/formal-lint-status-2026-05-13.md`](audits/formal-lint-status-2026-05-13.md).
@@ -91,7 +95,12 @@ Umbrella Protocol 1.0.0 — пакет с доступным для чтения
 пока не связаны настоящие платформенные проверяющие, мобильные мосты и
 серверная интеграция. Развёртка облачного ключа и OPRF уже имеют серверные
 проверки с контекстом, которые закрыто отказывают без этих настоящих
-платформенных проверяющих.
+платформенных проверяющих. Новый локальный крейт платформенной проверки уже
+проверяет размер токена, приложение или сайт, серверный вызов, ключ, подпись и
+счётчик там, где для этого хватает данных. WebAuthn проверяется локально.
+Apple App Attest и Android Play Integrity всё ещё закрыты отказом, пока не
+подключены внешние корни доверия, разбор платформенного токена и
+мобильная/серверная связка.
 
 Текущий статус формальных проверок и местных строгих правил записан в
 [`audits/formal-lint-status-2026-05-13.md`](audits/formal-lint-status-2026-05-13.md).

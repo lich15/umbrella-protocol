@@ -52,7 +52,7 @@
 - Create: `crates/umbrella-platform-verifier/src/error.rs`
 - Create: `crates/umbrella-platform-verifier/src/types.rs`
 
-- [ ] **Step 1: Confirm clean starting point**
+- [x] **Step 1: Confirm clean starting point**
 
 Run:
 
@@ -68,7 +68,7 @@ Expected:
 Finished `dev` profile
 ```
 
-- [ ] **Step 2: Add workspace member and dependencies**
+- [x] **Step 2: Add workspace member and dependencies**
 
 In root `Cargo.toml`, add `crates/umbrella-platform-verifier` to `members` after `crates/umbrella-kt`:
 
@@ -88,7 +88,7 @@ Add base64 decoding dependency near util dependencies:
 base64ct = { version = "1.8", features = ["alloc"] }
 ```
 
-- [ ] **Step 3: Create new crate manifest**
+- [x] **Step 3: Create new crate manifest**
 
 Create `crates/umbrella-platform-verifier/Cargo.toml`:
 
@@ -122,7 +122,7 @@ thiserror = { workspace = true }
 rand_core = { workspace = true, features = ["getrandom"] }
 ```
 
-- [ ] **Step 4: Create library root**
+- [x] **Step 4: Create library root**
 
 Create `crates/umbrella-platform-verifier/src/lib.rs`:
 
@@ -157,7 +157,7 @@ pub use types::{
 pub use web::WebAuthnVerifier;
 ```
 
-- [ ] **Step 5: Create error enum**
+- [x] **Step 5: Create error enum**
 
 Create `crates/umbrella-platform-verifier/src/error.rs`:
 
@@ -221,7 +221,7 @@ pub enum PlatformVerifierError {
 }
 ```
 
-- [ ] **Step 6: Create common types**
+- [x] **Step 6: Create common types**
 
 Create `crates/umbrella-platform-verifier/src/types.rs`:
 
@@ -303,7 +303,7 @@ pub trait PlatformVerifier: core::fmt::Debug {
 }
 ```
 
-- [ ] **Step 7: Update lockfile once, run skeleton check, and commit**
+- [x] **Step 7: Update lockfile once, run skeleton check, and commit**
 
 Run:
 
@@ -332,7 +332,7 @@ git commit -m "platform: add verifier crate skeleton"
 - Modify: `crates/umbrella-platform-verifier/src/types.rs`
 - Modify: `crates/umbrella-platform-verifier/src/lib.rs`
 
-- [ ] **Step 1: Add failing tests for common token guards**
+- [x] **Step 1: Add failing tests for common token guards**
 
 Append this test module to `crates/umbrella-platform-verifier/src/types.rs`:
 
@@ -366,7 +366,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run red test**
+- [x] **Step 2: Run red test**
 
 Run:
 
@@ -380,7 +380,7 @@ Expected red signal:
 cannot find function `validate_token_size`
 ```
 
-- [ ] **Step 3: Add helper**
+- [x] **Step 3: Add helper**
 
 Add to `crates/umbrella-platform-verifier/src/types.rs` after constants:
 
@@ -403,7 +403,7 @@ pub fn validate_token_size(token: &[u8], max: usize) -> Result<()> {
 }
 ```
 
-- [ ] **Step 4: Export helper and verify**
+- [x] **Step 4: Export helper and verify**
 
 In `src/lib.rs`, add `validate_token_size` to the `pub use types::{...}` list.
 
@@ -432,7 +432,7 @@ git commit -m "platform: add shared token guards"
 - Modify: `crates/umbrella-platform-verifier/src/web.rs`
 - Modify: `crates/umbrella-platform-verifier/src/lib.rs`
 
-- [ ] **Step 1: Write failing WebAuthn attack tests**
+- [x] **Step 1: Write failing WebAuthn attack tests**
 
 Create `crates/umbrella-platform-verifier/src/web.rs` with tests first:
 
@@ -594,7 +594,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run red tests**
+- [x] **Step 2: Run red tests**
 
 Run:
 
@@ -608,7 +608,7 @@ Expected red signal:
 cannot find type `WebAuthnVerifier`
 ```
 
-- [ ] **Step 3: Implement verifier**
+- [x] **Step 3: Implement verifier**
 
 Add above the tests in `web.rs`:
 
@@ -722,7 +722,7 @@ impl PlatformVerifier for WebAuthnVerifier {
 }
 ```
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -750,7 +750,7 @@ git commit -m "platform: verify webauthn assertions"
 - Modify: `crates/umbrella-platform-verifier/src/apple.rs`
 - Modify: `crates/umbrella-platform-verifier/src/android.rs`
 
-- [ ] **Step 1: Add failing Apple tests**
+- [x] **Step 1: Add failing Apple tests**
 
 Create `crates/umbrella-platform-verifier/src/apple.rs`:
 
@@ -819,7 +819,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Add failing Android tests**
+- [x] **Step 2: Add failing Android tests**
 
 Create `crates/umbrella-platform-verifier/src/android.rs`:
 
@@ -880,7 +880,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: Run red tests**
+- [x] **Step 3: Run red tests**
 
 Run:
 
@@ -896,7 +896,7 @@ cannot find type `AppleAppAttestVerifier`
 cannot find type `AndroidPlayIntegrityVerifier`
 ```
 
-- [ ] **Step 4: Implement Apple verifier**
+- [x] **Step 4: Implement Apple verifier**
 
 Add above tests in `apple.rs`:
 
@@ -974,7 +974,7 @@ impl PlatformVerifier for AppleAppAttestVerifier {
 }
 ```
 
-- [ ] **Step 5: Implement Android verifier**
+- [x] **Step 5: Implement Android verifier**
 
 Add above tests in `android.rs`:
 
@@ -1037,7 +1037,7 @@ impl PlatformVerifier for AndroidPlayIntegrityVerifier {
 }
 ```
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -1070,7 +1070,7 @@ git commit -m "platform: fail closed for apple and android"
 - Modify: `crates/umbrella-backup/src/cloud_wrap/signed_request.rs`
 - Modify: `crates/umbrella-oprf/src/attestation.rs`
 
-- [ ] **Step 1: Add crate dependencies**
+- [x] **Step 1: Add crate dependencies**
 
 In `crates/umbrella-backup/Cargo.toml` dependencies, add:
 
@@ -1092,7 +1092,7 @@ cargo check -p umbrella-backup --all-features
 cargo check -p umbrella-oprf --all-features
 ```
 
-- [ ] **Step 2: Add bridge error variants**
+- [x] **Step 2: Add bridge error variants**
 
 In `crates/umbrella-backup/src/error.rs`, after `ProductionAttestationVerifierUnavailable`, add:
 
@@ -1112,7 +1112,7 @@ In `crates/umbrella-oprf/src/error.rs`, after `ProductionAttestationVerifierUnav
     ProductionPlatformVerificationFailed(String),
 ```
 
-- [ ] **Step 3: Add adapter tests in backup**
+- [x] **Step 3: Add adapter tests in backup**
 
 In `crates/umbrella-backup/src/cloud_wrap/signed_request.rs`, inside tests, add a test that proves web verification can be reached through the production context:
 
@@ -1141,7 +1141,7 @@ In `crates/umbrella-backup/src/cloud_wrap/signed_request.rs`, inside tests, add 
 
 This test intentionally uses an iOS-shaped request with a web verifier so the first adapter implementation proves shared verifier errors are mapped to a backup error instead of silently accepting the request.
 
-- [ ] **Step 4: Add adapter tests in OPRF**
+- [x] **Step 4: Add adapter tests in OPRF**
 
 In `crates/umbrella-oprf/src/attestation.rs`, inside tests, add:
 
@@ -1164,7 +1164,7 @@ fn production_context_android_platform_uses_shared_platform_verifier() {
 }
 ```
 
-- [ ] **Step 5: Run red adapter tests**
+- [x] **Step 5: Run red adapter tests**
 
 Run:
 
@@ -1180,7 +1180,7 @@ cannot find type `SharedPlatformVerifierForBackup`
 cannot find type `SharedPlatformVerifierForOprf`
 ```
 
-- [ ] **Step 6: Implement backup adapter**
+- [x] **Step 6: Implement backup adapter**
 
 In `crates/umbrella-backup/src/cloud_wrap/signed_request.rs`, import:
 
@@ -1292,7 +1292,7 @@ impl ProductionPlatformVerifier for SharedPlatformVerifierForBackup {
 }
 ```
 
-- [ ] **Step 7: Implement OPRF adapter**
+- [x] **Step 7: Implement OPRF adapter**
 
 In `crates/umbrella-oprf/src/attestation.rs`, import:
 
@@ -1402,7 +1402,7 @@ impl ProductionPlatformVerifier for SharedPlatformVerifierForOprf {
 }
 ```
 
-- [ ] **Step 8: Verify adapters and commit**
+- [x] **Step 8: Verify adapters and commit**
 
 Run:
 
@@ -1433,7 +1433,7 @@ git commit -m "platform: wire shared verifiers into server gates"
 - Modify: `docs/README.md`
 - Modify: `docs/security/production-readiness-boundaries.md`
 
-- [ ] **Step 1: Update production boundary docs**
+- [x] **Step 1: Update production boundary docs**
 
 In `docs/security/production-readiness-boundaries.md`, update the platform verifier bullet in both languages to say:
 
@@ -1458,11 +1458,11 @@ Russian:
   мобильная/серверная связка.
 ```
 
-- [ ] **Step 2: Update README docs**
+- [x] **Step 2: Update README docs**
 
 Update `README.md` and `docs/README.md` current-status paragraphs with the same truthful wording: WebAuthn local verifier exists; Apple and Android still fail closed without external trust material.
 
-- [ ] **Step 3: Run docs audit**
+- [x] **Step 3: Run docs audit**
 
 Run:
 
@@ -1476,7 +1476,7 @@ Expected:
 public access notices audit passed
 ```
 
-- [ ] **Step 4: Run final verification**
+- [x] **Step 4: Run final verification**
 
 Run:
 
@@ -1499,7 +1499,7 @@ Expected:
 all commands exit 0
 ```
 
-- [ ] **Step 5: Commit docs and final status**
+- [x] **Step 5: Commit docs and final status**
 
 Run:
 
@@ -1517,7 +1517,7 @@ Expected:
 
 ## Self-Review Checklist
 
-- [ ] Spec coverage: common local layer, WebAuthn verification, Apple fail-closed, Android fail-closed, backup/OPRF adapters, docs, and final gates are covered.
-- [ ] Placeholder scan: no empty markers, no vague future-work wording, no copied-step references without exact target.
-- [ ] Type consistency: `PlatformVerificationContext`, `PlatformVerifier`, `RegisteredPlatformKey`, and adapter names match tasks.
-- [ ] Scope honesty: public FFI bootstrap remains closed; Apple and Android do not claim production acceptance without external trust material.
+- [x] Spec coverage: common local layer, WebAuthn verification, Apple fail-closed, Android fail-closed, backup/OPRF adapters, docs, and final gates are covered.
+- [x] Placeholder scan: no empty markers, no vague future-work wording, no copied-step references without exact target.
+- [x] Type consistency: `PlatformVerificationContext`, `PlatformVerifier`, `RegisteredPlatformKey`, and adapter names match tasks.
+- [x] Scope honesty: public FFI bootstrap remains closed; Apple and Android do not claim production acceptance without external trust material.
