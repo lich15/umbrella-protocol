@@ -27,5 +27,9 @@ pub use http2_client::{
     ProductionHttp2Config,
 };
 pub use kt_transport::{Http2KtTransport, ACCOUNT_ID_LEN};
-pub use pinning::{PinningConfig, SpkiPin, SPKI_PIN_LEN};
+pub(crate) use pinning::normalize_dns_host;
+pub use pinning::{
+    extract_spki_pin_from_cert_der, PinningConfig, PinningVerifierError, SpkiPin,
+    SpkiPinningVerifier, SPKI_PIN_LEN,
+};
 pub use retry::{is_reqwest_retryable, retry_with_backoff, DEFAULT_MAX_ATTEMPTS};

@@ -35,13 +35,16 @@
 //! A single `Arc<reqwest::Client>` is shared between all transports inside a
 //! given `ClientCore` — reqwest multiplexes HTTP/2 streams inside the pool.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::{tls, Client, ClientBuilder, Url};
 
 use crate::error::ClientError;
-use crate::transport::{PinningConfig, SEALED_SERVER_COUNT};
+use crate::transport::{
+    normalize_dns_host, PinningConfig, SpkiPinningVerifier, SEALED_SERVER_COUNT,
+};
 
 /// User-Agent по умолчанию. Уникален между версиями — даёт ops-side
 /// возможность видеть долю трафика от конкретной ревизии ядра клиента.
@@ -171,6 +174,20 @@ impl ProductionHttp2Config {
         validate_production_endpoint("call_relay_url", &self.call_relay)?;
         Ok(())
     }
+
+    /// Собрать карту `host -> pins` для TLS verifier.
+    /// Build the `host -> pins` map for the TLS verifier.
+    pub fn pins_by_host(&self) -> Result<BTreeMap<String, PinningConfig>, ClientError> {
+        self.validate()?;
+        let mut pins = BTreeMap::new();
+        for endpoint in &self.sealed_servers {
+            insert_endpoint_pins(&mut pins, endpoint)?;
+        }
+        insert_endpoint_pins(&mut pins, &self.postman)?;
+        insert_endpoint_pins(&mut pins, &self.kt)?;
+        insert_endpoint_pins(&mut pins, &self.call_relay)?;
+        Ok(pins)
+    }
 }
 
 fn validate_production_endpoint(
@@ -196,6 +213,28 @@ fn validate_production_endpoint(
     Ok(())
 }
 
+fn insert_endpoint_pins(
+    pins: &mut BTreeMap<String, PinningConfig>,
+    endpoint: &PinnedServiceEndpoint,
+) -> Result<(), ClientError> {
+    let parsed = Url::parse(&endpoint.url)
+        .map_err(|e| ClientError::Network(format!("production endpoint parse: {e}")))?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| ClientError::Network("production endpoint missing host".into()))?;
+    let host = normalize_dns_host(host);
+    if let Some(existing) = pins.get(&host) {
+        if existing != &endpoint.pins {
+            return Err(ClientError::Network(format!(
+                "conflicting SPKI pins for production host {host}"
+            )));
+        }
+        return Ok(());
+    }
+    pins.insert(host, endpoint.pins.clone());
+    Ok(())
+}
+
 fn is_forbidden_production_host(host: &str) -> bool {
     let h = host.to_ascii_lowercase();
     h.is_empty()
@@ -204,6 +243,28 @@ fn is_forbidden_production_host(host: &str) -> bool {
         || h == "127.0.0.1"
         || h == "0.0.0.0"
         || h == "::1"
+        || h == "[::1]"
+        || h.starts_with("10.")
+        || h.starts_with("192.168.")
+        || h.starts_with("172.16.")
+        || h.starts_with("172.17.")
+        || h.starts_with("172.18.")
+        || h.starts_with("172.19.")
+        || h.starts_with("172.20.")
+        || h.starts_with("172.21.")
+        || h.starts_with("172.22.")
+        || h.starts_with("172.23.")
+        || h.starts_with("172.24.")
+        || h.starts_with("172.25.")
+        || h.starts_with("172.26.")
+        || h.starts_with("172.27.")
+        || h.starts_with("172.28.")
+        || h.starts_with("172.29.")
+        || h.starts_with("172.30.")
+        || h.starts_with("172.31.")
+        || h.starts_with("192.0.2.")
+        || h.starts_with("198.51.100.")
+        || h.starts_with("203.0.113.")
         || h.ends_with(".invalid")
         || h.ends_with(".example.invalid")
 }
@@ -231,9 +292,19 @@ fn is_forbidden_production_host(host: &str) -> bool {
 /// platform crypto configuration). Never happens on production devices
 /// under normal conditions.
 pub fn build_http2_client(config: Http2Config) -> Result<Arc<Client>, ClientError> {
-    let client = ClientBuilder::new()
-        .use_rustls_tls()
-        .tls_version_min(tls::Version::TLS_1_3)
+    build_http2_client_with_builder(
+        config,
+        ClientBuilder::new()
+            .use_rustls_tls()
+            .tls_version_min(tls::Version::TLS_1_3),
+    )
+}
+
+fn build_http2_client_with_builder(
+    config: Http2Config,
+    builder: ClientBuilder,
+) -> Result<Arc<Client>, ClientError> {
+    let client = builder
         .http2_prior_knowledge()
         .http2_keep_alive_interval(config.http2_keepalive_interval)
         .http2_keep_alive_timeout(HTTP2_KEEPALIVE_TIMEOUT)
@@ -242,34 +313,45 @@ pub fn build_http2_client(config: Http2Config) -> Result<Arc<Client>, ClientErro
         .timeout(config.total_timeout)
         .user_agent(config.user_agent)
         .tcp_nodelay(true)
+        .https_only(true)
         .build()
         .map_err(|e| ClientError::Network(format!("reqwest client build: {e}")))?;
     Ok(Arc::new(client))
 }
 
-/// Проверить боевую настройку и создать HTTP/2 клиент только когда
-/// `rustls`-проверяющий с закреплением сертификатов связан до конца.
+/// Проверить боевую настройку и создать HTTP/2 клиент с системной проверкой
+/// сертификата плюс закреплёнными SPKI-ключами.
 ///
-/// Сейчас функция намеренно отказывает после валидации: публичный FFI
-/// bootstrap остаётся закрытым, пока `ServerCertVerifier` с SPKI pinning не
-/// будет покрыт настоящим тестом.
-///
-/// Validate production config and build an HTTP/2 client only after the
-/// `rustls` certificate verifier with SPKI pinning is wired end to end.
+/// Validate production config and build an HTTP/2 client with platform
+/// certificate verification plus SPKI pinning.
 ///
 /// # Errors
 /// - [`ClientError::Network`] если настройка похожа на тестовую.
-/// - [`ClientError::Network`] с fail-fast причиной, пока production verifier
-///   не связан.
+/// - [`ClientError::Network`] если системный TLS verifier не инициализируется.
+/// - [`ClientError::Network`] если `reqwest` не принимает готовый TLS backend.
 pub fn build_production_http2_client(
-    _config: Http2Config,
+    config: Http2Config,
     production: &ProductionHttp2Config,
 ) -> Result<Arc<Client>, ClientError> {
-    production.validate()?;
-    Err(ClientError::Network(
-        "production TLS pinning verifier is not wired in this crate; public bootstrap remains gated"
-            .into(),
-    ))
+    let pins = production.pins_by_host()?;
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let platform_verifier = rustls_platform_verifier::Verifier::new(Arc::clone(&provider))
+        .map_err(|e| ClientError::Network(format!("platform TLS verifier: {e}")))?;
+    let pinning_verifier =
+        SpkiPinningVerifier::new(Arc::new(platform_verifier), pins).map_err(|e| {
+            ClientError::Network(format!("production SPKI pinning verifier: {e}"))
+        })?;
+    let tls_config = rustls::ClientConfig::builder_with_provider(provider)
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .map_err(|e| ClientError::Network(format!("rustls TLS 1.3 config: {e}")))?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(pinning_verifier))
+        .with_no_client_auth();
+
+    build_http2_client_with_builder(
+        config,
+        ClientBuilder::new().tls_backend_preconfigured(tls_config),
+    )
 }
 
 #[cfg(test)]
@@ -358,6 +440,20 @@ mod tests {
     }
 
     #[test]
+    fn production_transport_rejects_ip_literal_hosts() {
+        let cfg = production_config_with_urls(vec![
+            "https://192.0.2.10",
+            "https://sealed-1.umbrella.example",
+            "https://sealed-2.umbrella.example",
+            "https://sealed-3.umbrella.example",
+            "https://sealed-4.umbrella.example",
+        ]);
+
+        let err = cfg.validate().unwrap_err();
+        assert!(format!("{err}").contains("test host"));
+    }
+
+    #[test]
     fn production_transport_rejects_wrong_sealed_server_count() {
         let cfg = production_config_with_urls(vec![
             "https://sealed-0.umbrella.example",
@@ -384,7 +480,22 @@ mod tests {
     }
 
     #[test]
-    fn production_client_build_stays_gated_until_tls_pinning_verifier_is_wired() {
+    fn production_pin_map_rejects_conflicting_pins_for_same_host() {
+        let mut cfg = production_config_with_urls(vec![
+            "https://shared.umbrella.example",
+            "https://sealed-1.umbrella.example",
+            "https://sealed-2.umbrella.example",
+            "https://sealed-3.umbrella.example",
+            "https://sealed-4.umbrella.example",
+        ]);
+        cfg.postman = endpoint("https://shared.umbrella.example", 99);
+
+        let err = cfg.pins_by_host().unwrap_err();
+        assert!(format!("{err}").contains("conflicting SPKI pins"));
+    }
+
+    #[test]
+    fn production_client_builds_with_real_pinning_verifier() {
         let cfg = production_config_with_urls(vec![
             "https://sealed-0.umbrella.example",
             "https://sealed-1.umbrella.example",
@@ -393,8 +504,9 @@ mod tests {
             "https://sealed-4.umbrella.example",
         ]);
 
-        let err = build_production_http2_client(Http2Config::default(), &cfg).unwrap_err();
-        let message = format!("{err}");
-        assert!(message.contains("production TLS pinning verifier is not wired"));
+        let client = build_production_http2_client(Http2Config::default(), &cfg)
+            .expect("production client builds when pinned config is valid");
+        let clone = Arc::clone(&client);
+        assert!(Arc::ptr_eq(&client, &clone));
     }
 }

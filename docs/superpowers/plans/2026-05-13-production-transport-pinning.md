@@ -689,7 +689,7 @@ git commit -m "client: verify production tls spki pins"
 - Modify: `crates/umbrella-client/src/transport/http2_client.rs`
 - Modify: `crates/umbrella-client/src/transport/mod.rs`
 
-- [ ] **Step 1: Add failing builder and config tests**
+- [x] **Step 1: Add failing builder and config tests**
 
 In `crates/umbrella-client/src/transport/http2_client.rs`, inside the existing tests module, replace `production_client_build_stays_gated_until_tls_pinning_verifier_is_wired` with:
 
@@ -744,7 +744,7 @@ Add this test near the forbidden-host tests:
     }
 ```
 
-- [ ] **Step 2: Run red tests**
+- [x] **Step 2: Run red tests**
 
 Run:
 
@@ -759,7 +759,7 @@ method not found: `pins_by_host`
 production_client_builds_with_real_pinning_verifier panicked because builder still returns fail-fast TLS pinning error
 ```
 
-- [ ] **Step 3: Import the real verifier**
+- [x] **Step 3: Import the real verifier**
 
 In `crates/umbrella-client/src/transport/http2_client.rs`, change the imports to:
 
@@ -776,7 +776,7 @@ use crate::transport::{
 };
 ```
 
-- [ ] **Step 4: Add `pins_by_host` and stricter host checks**
+- [x] **Step 4: Add `pins_by_host` and stricter host checks**
 
 Inside `impl ProductionHttp2Config`, after `validate`, add:
 
@@ -850,7 +850,7 @@ In `is_forbidden_production_host`, add private and documentation ranges:
         || h.eq_ignore_ascii_case("::1")
 ```
 
-- [ ] **Step 5: Share the reqwest builder path**
+- [x] **Step 5: Share the reqwest builder path**
 
 Replace `build_http2_client` body with:
 
@@ -884,7 +884,7 @@ fn build_http2_client_with_builder(
 }
 ```
 
-- [ ] **Step 6: Replace the production fail-fast builder**
+- [x] **Step 6: Replace the production fail-fast builder**
 
 Replace `build_production_http2_client` with:
 
@@ -925,7 +925,7 @@ pub fn build_production_http2_client(
 }
 ```
 
-- [ ] **Step 7: Re-export verifier helpers for crate-internal transport**
+- [x] **Step 7: Re-export verifier helpers for crate-internal transport**
 
 In `crates/umbrella-client/src/transport/mod.rs`, update the pinning export:
 
@@ -936,7 +936,7 @@ pub use pinning::{
 };
 ```
 
-- [ ] **Step 8: Run focused transport tests**
+- [x] **Step 8: Run focused transport tests**
 
 Run:
 
@@ -951,7 +951,7 @@ Expected:
 test result: ok
 ```
 
-- [ ] **Step 9: Commit transport wiring**
+- [x] **Step 9: Commit transport wiring**
 
 Run:
 
