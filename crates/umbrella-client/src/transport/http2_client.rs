@@ -236,37 +236,62 @@ fn insert_endpoint_pins(
 }
 
 fn is_forbidden_production_host(host: &str) -> bool {
-    let h = host.to_ascii_lowercase();
-    h.is_empty()
+    let trimmed = host.trim_end_matches('.');
+    let h = trimmed
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_ascii_lowercase();
+    if h.is_empty()
         || h == "localhost"
         || h.ends_with(".localhost")
-        || h == "127.0.0.1"
-        || h == "0.0.0.0"
-        || h == "::1"
-        || h == "[::1]"
-        || h.starts_with("10.")
-        || h.starts_with("192.168.")
-        || h.starts_with("172.16.")
-        || h.starts_with("172.17.")
-        || h.starts_with("172.18.")
-        || h.starts_with("172.19.")
-        || h.starts_with("172.20.")
-        || h.starts_with("172.21.")
-        || h.starts_with("172.22.")
-        || h.starts_with("172.23.")
-        || h.starts_with("172.24.")
-        || h.starts_with("172.25.")
-        || h.starts_with("172.26.")
-        || h.starts_with("172.27.")
-        || h.starts_with("172.28.")
-        || h.starts_with("172.29.")
-        || h.starts_with("172.30.")
-        || h.starts_with("172.31.")
-        || h.starts_with("192.0.2.")
-        || h.starts_with("198.51.100.")
-        || h.starts_with("203.0.113.")
         || h.ends_with(".invalid")
         || h.ends_with(".example.invalid")
+    {
+        return true;
+    }
+
+    match h.parse::<std::net::IpAddr>() {
+        Ok(ip) => is_forbidden_production_ip(ip),
+        Err(_) => false,
+    }
+}
+
+fn is_forbidden_production_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            let octets = v4.octets();
+            v4.is_unspecified()
+                || v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || octets == [255, 255, 255, 255]
+                || (octets[0] == 100 && (64..=127).contains(&octets[1]))
+                || (octets[0] == 192 && octets[1] == 0 && octets[2] == 2)
+                || (octets[0] == 198 && octets[1] == 51 && octets[2] == 100)
+                || (octets[0] == 203 && octets[1] == 0 && octets[2] == 113)
+        }
+        std::net::IpAddr::V6(v6) => {
+            let segments = v6.segments();
+            v6.is_unspecified()
+                || v6.is_loopback()
+                || (segments[0] & 0xfe00) == 0xfc00
+                || (segments[0] & 0xffc0) == 0xfe80
+                || (segments[0] == 0x2001 && segments[1] == 0x0db8)
+                || mapped_ipv4_from_v6(segments).is_some_and(is_forbidden_production_ip)
+        }
+    }
+}
+
+fn mapped_ipv4_from_v6(segments: [u16; 8]) -> Option<std::net::IpAddr> {
+    if segments[..5] != [0, 0, 0, 0, 0] || segments[5] != 0xffff {
+        return None;
+    }
+    Some(std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+        (segments[6] >> 8) as u8,
+        segments[6] as u8,
+        (segments[7] >> 8) as u8,
+        segments[7] as u8,
+    )))
 }
 
 /// Построить настроенный `reqwest::Client` согласно `Http2Config`.
@@ -449,6 +474,44 @@ mod tests {
 
         let err = cfg.validate().unwrap_err();
         assert!(format!("{err}").contains("test host"));
+    }
+
+    #[test]
+    fn production_transport_rejects_link_local_and_cgnat_hosts() {
+        for url in ["https://169.254.169.254", "https://100.64.0.10"] {
+            let cfg = production_config_with_urls(vec![
+                url,
+                "https://sealed-1.umbrella.example",
+                "https://sealed-2.umbrella.example",
+                "https://sealed-3.umbrella.example",
+                "https://sealed-4.umbrella.example",
+            ]);
+
+            let err = cfg.validate().unwrap_err();
+            assert!(
+                format!("{err}").contains("test host"),
+                "{url} must be rejected, got {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn production_transport_rejects_ipv6_local_hosts() {
+        for url in ["https://[::1]", "https://[fd00::1]", "https://[fe80::1]"] {
+            let cfg = production_config_with_urls(vec![
+                url,
+                "https://sealed-1.umbrella.example",
+                "https://sealed-2.umbrella.example",
+                "https://sealed-3.umbrella.example",
+                "https://sealed-4.umbrella.example",
+            ]);
+
+            let err = cfg.validate().unwrap_err();
+            assert!(
+                format!("{err}").contains("test host"),
+                "{url} must be rejected, got {err}"
+            );
+        }
     }
 
     #[test]

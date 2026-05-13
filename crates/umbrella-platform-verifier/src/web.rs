@@ -235,6 +235,33 @@ mod tests {
     }
 
     #[test]
+    fn webauthn_rejects_context_device_key_not_registered_key() {
+        let sk = keypair();
+        let registered_pubkey = sk.verifying_key().to_bytes();
+        let attacker = keypair();
+        let attacker_pubkey = attacker.verifying_key().to_bytes();
+        let nonce = [7u8; 32];
+        let token = signed_token(&sk, "app.umbrella.example", &nonce, 2);
+        let registered = RegisteredPlatformKey {
+            public_key: registered_pubkey,
+            last_counter: 1,
+        };
+
+        let err = rejected_error(
+            context(
+                &token,
+                &nonce,
+                &attacker_pubkey,
+                &registered,
+                "app.umbrella.example",
+            ),
+            "context device key mismatch",
+        );
+
+        assert!(matches!(err, PlatformVerifierError::DeviceKeyMismatch));
+    }
+
+    #[test]
     fn webauthn_rejects_wrong_challenge() {
         let sk = keypair();
         let vk = sk.verifying_key().to_bytes();
