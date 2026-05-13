@@ -56,6 +56,67 @@ pub enum BackupError {
         platform_tag: u8,
     },
 
+    /// Тестовый платформенный проверяющий нельзя использовать в боевом контексте.
+    /// Test-only platform verifier cannot be used in a production context.
+    #[error("test-only attestation verifier rejected in production context")]
+    ProductionTestVerifierRejected,
+
+    /// Серверный вызов в запросе не совпал с выданным сервером вызовом.
+    /// Request server nonce does not match the server-issued nonce.
+    #[error("production server nonce mismatch")]
+    ProductionServerNonceMismatch,
+
+    /// Серверный вызов старше разрешённого окна свежести.
+    /// Server-issued nonce is older than the allowed freshness window.
+    #[error("production server nonce expired: age {age_millis} ms > max {max_age_millis} ms")]
+    ProductionServerNonceExpired {
+        /// Возраст вызова в миллисекундах. Nonce age in milliseconds.
+        age_millis: u64,
+        /// Максимальный возраст в миллисекундах. Maximum age in milliseconds.
+        max_age_millis: u64,
+    },
+
+    /// Серверный вызов имеет время выдачи из будущего дальше допустимого перекоса.
+    /// Server nonce issue time is too far in the future.
+    #[error(
+        "production server nonce issued in future: skew {skew_millis} ms > max {max_future_skew_millis} ms"
+    )]
+    ProductionServerNonceIssuedInFuture {
+        /// Перекос в миллисекундах. Future skew in milliseconds.
+        skew_millis: u64,
+        /// Максимально допустимый перекос. Maximum allowed future skew.
+        max_future_skew_millis: u64,
+    },
+
+    /// Время запроса из будущего дальше допустимого перекоса.
+    /// Request timestamp is too far in the future.
+    #[error(
+        "production request timestamp in future: skew {skew_millis} ms > max {max_future_skew_millis} ms"
+    )]
+    ProductionRequestTimestampInFuture {
+        /// Перекос в миллисекундах. Future skew in milliseconds.
+        skew_millis: u64,
+        /// Максимально допустимый перекос. Maximum allowed future skew.
+        max_future_skew_millis: u64,
+    },
+
+    /// Устройство отсутствует в боевом снимке журнала ключей.
+    /// Device is absent from the production key-transparency state snapshot.
+    #[error("production device unknown")]
+    ProductionDeviceUnknown,
+
+    /// Устройство ещё не было разрешено в момент запроса.
+    /// Device was not authorized yet at the request timestamp.
+    #[error(
+        "production device not active yet: authorized_since {authorized_since_unix_millis} > request {request_timestamp_unix_millis}"
+    )]
+    ProductionDeviceNotActiveYet {
+        /// Когда устройство становится разрешённым. When the device becomes authorized.
+        authorized_since_unix_millis: u64,
+        /// Время запроса. Request timestamp.
+        request_timestamp_unix_millis: u64,
+    },
+
     // ---------------------------------------------------------------
     // Cloud-wrap (SPEC-12 §A)
     // ---------------------------------------------------------------

@@ -510,6 +510,300 @@ pub fn verify_signed_unwrap_request(req: &SignedUnwrapRequest) -> Result<(), Bac
         .map_err(|_| BackupError::CryptoVerificationFailed)
 }
 
+/// Разрешённое окно свежести для боевой серверной проверки.
+/// Freshness window for production server-side verification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductionFreshnessPolicy {
+    /// Максимальный возраст server nonce. Maximum server nonce age.
+    pub max_nonce_age_millis: u64,
+    /// Допустимый перекос времени в будущее. Allowed future clock skew.
+    pub max_future_skew_millis: u64,
+    /// Максимальный возраст timestamp самого запроса. Maximum request timestamp age.
+    pub max_request_age_millis: u64,
+}
+
+impl Default for ProductionFreshnessPolicy {
+    fn default() -> Self {
+        Self {
+            max_nonce_age_millis: 5 * 60 * 1000,
+            max_future_skew_millis: 30 * 1000,
+            max_request_age_millis: 5 * 60 * 1000,
+        }
+    }
+}
+
+/// Состояние устройства из серверного снимка журнала ключей.
+/// Device state from the server-side key-transparency snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProductionDeviceState {
+    /// Устройства нет в снимке. Device is absent from the snapshot.
+    Unknown,
+    /// Устройство ждёт подтверждения. Device awaits approval.
+    Pending,
+    /// Устройство отозвано. Device is revoked.
+    Revoked,
+    /// Устройство активно. Device is active.
+    Active {
+        /// Время разрешения устройства. Device authorization time.
+        authorized_since_unix_millis: u64,
+        /// Граница истории. History cutoff.
+        history_cutoff_unix_millis: u64,
+    },
+    /// Первое активное устройство или восстановление после катастрофы.
+    /// First active device or catastrophic-recovery bootstrap.
+    BootstrapActive {
+        /// Время разрешения устройства. Device authorization time.
+        authorized_since_unix_millis: u64,
+        /// Граница истории. History cutoff.
+        history_cutoff_unix_millis: u64,
+    },
+}
+
+/// Тип платформенного проверяющего.
+/// Platform verifier kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlatformVerifierKind {
+    /// Настоящий проверяющий пока не подключён. Real verifier is not wired yet.
+    Unavailable,
+    /// Apple App Attest. Apple App Attest.
+    AppleAppAttest,
+    /// Android Play Integrity. Android Play Integrity.
+    AndroidPlayIntegrity,
+    /// WebAuthn. WebAuthn.
+    WebAuthn,
+    /// Только для тестов, запрещён в боевом контексте.
+    /// Test-only, rejected in production context.
+    TestOnly,
+}
+
+/// Вход платформенного проверяющего.
+/// Input passed to a platform attestation verifier.
+#[derive(Debug, Clone, Copy)]
+pub struct PlatformVerificationInput<'a> {
+    /// Платформа запроса. Request platform.
+    pub platform: Platform,
+    /// Байты токена. Token bytes.
+    pub token: &'a [u8],
+    /// Серверный вызов. Server nonce.
+    pub server_nonce: &'a [u8; NONCE_LEN],
+    /// Публичный ключ устройства. Device public key.
+    pub device_pubkey: &'a [u8; DEVICE_PUBKEY_LEN],
+    /// Текущее серверное время. Current server time.
+    pub now_unix_millis: u64,
+}
+
+/// Платформенный проверяющий для боевого серверного пути.
+/// Platform verifier for the production server-side path.
+pub trait ProductionPlatformVerifier: std::fmt::Debug {
+    /// Тип проверяющего. Verifier kind.
+    fn kind(&self) -> PlatformVerifierKind;
+
+    /// Проверить платформенный токен.
+    /// Verify the platform token.
+    ///
+    /// # Errors
+    /// Возвращает точную причину отказа.
+    fn verify_platform_attestation(
+        &self,
+        input: PlatformVerificationInput<'_>,
+    ) -> Result<(), BackupError>;
+}
+
+/// Проверяющий, который честно закрывает путь до подключения настоящей платформы.
+/// Verifier that fail-closes until real platform validation is wired.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UnavailableProductionPlatformVerifier;
+
+impl ProductionPlatformVerifier for UnavailableProductionPlatformVerifier {
+    fn kind(&self) -> PlatformVerifierKind {
+        PlatformVerifierKind::Unavailable
+    }
+
+    fn verify_platform_attestation(
+        &self,
+        input: PlatformVerificationInput<'_>,
+    ) -> Result<(), BackupError> {
+        Err(BackupError::ProductionAttestationVerifierUnavailable {
+            platform_tag: input.platform.tag(),
+        })
+    }
+}
+
+/// Контекст боевой проверки unwrap-запроса.
+/// Production verification context for an unwrap request.
+#[derive(Debug)]
+pub struct ProductionUnwrapVerificationContext<'a> {
+    expected_server_nonce: [u8; NONCE_LEN],
+    server_nonce_issued_at_unix_millis: u64,
+    now_unix_millis: u64,
+    freshness: ProductionFreshnessPolicy,
+    device_state: ProductionDeviceState,
+    envelope_timestamp_unix_millis: u64,
+    platform_verifier: &'a dyn ProductionPlatformVerifier,
+}
+
+impl<'a> ProductionUnwrapVerificationContext<'a> {
+    /// Создать боевой контекст.
+    /// Create a production context.
+    ///
+    /// # Errors
+    /// - [`BackupError::ProductionTestVerifierRejected`] если передан тестовый проверяющий.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        expected_server_nonce: [u8; NONCE_LEN],
+        server_nonce_issued_at_unix_millis: u64,
+        now_unix_millis: u64,
+        freshness: ProductionFreshnessPolicy,
+        device_state: ProductionDeviceState,
+        envelope_timestamp_unix_millis: u64,
+        platform_verifier: &'a dyn ProductionPlatformVerifier,
+    ) -> Result<Self, BackupError> {
+        if platform_verifier.kind() == PlatformVerifierKind::TestOnly {
+            return Err(BackupError::ProductionTestVerifierRejected);
+        }
+        Ok(Self {
+            expected_server_nonce,
+            server_nonce_issued_at_unix_millis,
+            now_unix_millis,
+            freshness,
+            device_state,
+            envelope_timestamp_unix_millis,
+            platform_verifier,
+        })
+    }
+}
+
+fn check_production_nonce(
+    request_nonce: &[u8; NONCE_LEN],
+    expected_nonce: &[u8; NONCE_LEN],
+) -> Result<(), BackupError> {
+    if request_nonce != expected_nonce {
+        return Err(BackupError::ProductionServerNonceMismatch);
+    }
+    Ok(())
+}
+
+fn check_production_freshness(
+    request_timestamp_unix_millis: u64,
+    nonce_issued_at_unix_millis: u64,
+    now_unix_millis: u64,
+    freshness: ProductionFreshnessPolicy,
+) -> Result<(), BackupError> {
+    if nonce_issued_at_unix_millis > now_unix_millis {
+        let skew_millis = nonce_issued_at_unix_millis - now_unix_millis;
+        if skew_millis > freshness.max_future_skew_millis {
+            return Err(BackupError::ProductionServerNonceIssuedInFuture {
+                skew_millis,
+                max_future_skew_millis: freshness.max_future_skew_millis,
+            });
+        }
+    } else {
+        let age_millis = now_unix_millis - nonce_issued_at_unix_millis;
+        if age_millis > freshness.max_nonce_age_millis {
+            return Err(BackupError::ProductionServerNonceExpired {
+                age_millis,
+                max_age_millis: freshness.max_nonce_age_millis,
+            });
+        }
+    }
+
+    if request_timestamp_unix_millis > now_unix_millis {
+        let skew_millis = request_timestamp_unix_millis - now_unix_millis;
+        if skew_millis > freshness.max_future_skew_millis {
+            return Err(BackupError::ProductionRequestTimestampInFuture {
+                skew_millis,
+                max_future_skew_millis: freshness.max_future_skew_millis,
+            });
+        }
+    } else {
+        let age_millis = now_unix_millis - request_timestamp_unix_millis;
+        if age_millis > freshness.max_request_age_millis {
+            return Err(BackupError::ProductionServerNonceExpired {
+                age_millis,
+                max_age_millis: freshness.max_request_age_millis,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn check_production_device_state(
+    state: ProductionDeviceState,
+    request_timestamp_unix_millis: u64,
+    envelope_timestamp_unix_millis: u64,
+) -> Result<(), BackupError> {
+    let (authorized_since_unix_millis, history_cutoff_unix_millis) = match state {
+        ProductionDeviceState::Unknown => return Err(BackupError::ProductionDeviceUnknown),
+        ProductionDeviceState::Pending => return Err(BackupError::DevicePendingAuthorization),
+        ProductionDeviceState::Revoked => return Err(BackupError::DeviceRevoked),
+        ProductionDeviceState::Active {
+            authorized_since_unix_millis,
+            history_cutoff_unix_millis,
+        }
+        | ProductionDeviceState::BootstrapActive {
+            authorized_since_unix_millis,
+            history_cutoff_unix_millis,
+        } => (authorized_since_unix_millis, history_cutoff_unix_millis),
+    };
+
+    if authorized_since_unix_millis > request_timestamp_unix_millis {
+        return Err(BackupError::ProductionDeviceNotActiveYet {
+            authorized_since_unix_millis,
+            request_timestamp_unix_millis,
+        });
+    }
+
+    if history_cutoff_unix_millis > 0 && envelope_timestamp_unix_millis < history_cutoff_unix_millis
+    {
+        return Err(BackupError::HistoryCutoffApplies {
+            envelope_timestamp: envelope_timestamp_unix_millis,
+            cutoff: history_cutoff_unix_millis,
+        });
+    }
+
+    Ok(())
+}
+
+/// Боевая проверка signed unwrap request с серверным контекстом.
+/// Production verification for signed unwrap requests with server context.
+///
+/// Порядок строгий: подпись, nonce, свежесть, устройство, платформа.
+/// Strict order: signature, nonce, freshness, device, platform.
+///
+/// # Errors
+/// Возвращает первую причину отказа в указанном порядке.
+pub fn verify_signed_unwrap_request_for_production_with_context(
+    req: &SignedUnwrapRequest,
+    ctx: &ProductionUnwrapVerificationContext<'_>,
+) -> Result<(), BackupError> {
+    verify_signed_unwrap_request(req)?;
+    check_production_nonce(&req.server_nonce, &ctx.expected_server_nonce)?;
+    check_production_freshness(
+        req.timestamp_unix_millis,
+        ctx.server_nonce_issued_at_unix_millis,
+        ctx.now_unix_millis,
+        ctx.freshness,
+    )?;
+    check_production_device_state(
+        ctx.device_state,
+        req.timestamp_unix_millis,
+        ctx.envelope_timestamp_unix_millis,
+    )?;
+    match req.attestation.platform {
+        Platform::Testing => Err(BackupError::CryptoVerificationFailed),
+        Platform::IOs | Platform::Android | Platform::Web => ctx
+            .platform_verifier
+            .verify_platform_attestation(PlatformVerificationInput {
+                platform: req.attestation.platform,
+                token: req.attestation.token.as_slice(),
+                server_nonce: &req.server_nonce,
+                device_pubkey: &req.device_pubkey,
+                now_unix_millis: ctx.now_unix_millis,
+            }),
+    }
+}
+
 /// Боевая проверка signed unwrap request.
 /// Production verification for signed unwrap requests.
 ///
@@ -570,6 +864,99 @@ mod tests {
 
     fn sign_with(sk: &SigningKey, message: &[u8]) -> [u8; DEVICE_SIG_LEN] {
         sk.sign(message).to_bytes()
+    }
+
+    #[derive(Debug, Default)]
+    struct CountingUnavailableVerifier {
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl CountingUnavailableVerifier {
+        fn calls(&self) -> usize {
+            self.calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl ProductionPlatformVerifier for CountingUnavailableVerifier {
+        fn kind(&self) -> PlatformVerifierKind {
+            PlatformVerifierKind::Unavailable
+        }
+
+        fn verify_platform_attestation(
+            &self,
+            input: PlatformVerificationInput<'_>,
+        ) -> Result<(), BackupError> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(BackupError::ProductionAttestationVerifierUnavailable {
+                platform_tag: input.platform.tag(),
+            })
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct TestOnlySuccessVerifier;
+
+    impl ProductionPlatformVerifier for TestOnlySuccessVerifier {
+        fn kind(&self) -> PlatformVerifierKind {
+            PlatformVerifierKind::TestOnly
+        }
+
+        fn verify_platform_attestation(
+            &self,
+            _input: PlatformVerificationInput<'_>,
+        ) -> Result<(), BackupError> {
+            Ok(())
+        }
+    }
+
+    fn production_ios_unwrap_request(
+        sk: &SigningKey,
+        vk: &DalekVerifyingKey,
+        nonce: [u8; NONCE_LEN],
+        timestamp_unix_millis: u64,
+    ) -> SignedUnwrapRequest {
+        let r = sample_r();
+        let chat = sample_chat();
+        let rec = [0x22u8; ED25519_PUB_LEN];
+        let attestation = PlatformAttestation::new(Platform::IOs, b"ios-app-attest-token").unwrap();
+        let canonical =
+            canonical_signing_input(&r, &chat, &rec, timestamp_unix_millis, &nonce, &attestation);
+        SignedUnwrapRequest {
+            ephemeral_r: r,
+            chat_id: chat,
+            recipient_device_pubkey: rec,
+            timestamp_unix_millis,
+            server_nonce: nonce,
+            attestation,
+            device_signature: sign_with(sk, &canonical),
+            device_pubkey: vk.to_bytes(),
+        }
+    }
+
+    fn active_device_state() -> ProductionDeviceState {
+        ProductionDeviceState::Active {
+            authorized_since_unix_millis: 1_700_000_000_000,
+            history_cutoff_unix_millis: 0,
+        }
+    }
+
+    fn production_context<'a>(
+        verifier: &'a dyn ProductionPlatformVerifier,
+        expected_server_nonce: [u8; NONCE_LEN],
+        nonce_issued_at_unix_millis: u64,
+        now_unix_millis: u64,
+        device_state: ProductionDeviceState,
+    ) -> ProductionUnwrapVerificationContext<'a> {
+        ProductionUnwrapVerificationContext::new(
+            expected_server_nonce,
+            nonce_issued_at_unix_millis,
+            now_unix_millis,
+            ProductionFreshnessPolicy::default(),
+            device_state,
+            u64::MAX,
+            verifier,
+        )
+        .expect("context must be valid for non-test-only verifier")
     }
 
     #[test]
@@ -934,6 +1321,167 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, BackupError::DeviceSigning(_)));
+    }
+
+    #[test]
+    fn production_context_rejects_test_only_platform_verifier() {
+        let nonce = fresh_nonce();
+        let err = ProductionUnwrapVerificationContext::new(
+            nonce,
+            1_700_000_000_000,
+            1_700_000_000_001,
+            ProductionFreshnessPolicy::default(),
+            active_device_state(),
+            u64::MAX,
+            &TestOnlySuccessVerifier,
+        )
+        .unwrap_err();
+        assert!(matches!(err, BackupError::ProductionTestVerifierRejected));
+    }
+
+    #[test]
+    fn production_context_rejects_bad_signature_before_platform_verifier() {
+        let (sk, vk) = make_device_keypair();
+        let nonce = fresh_nonce();
+        let mut req = production_ios_unwrap_request(&sk, &vk, nonce, 1_700_000_000_050);
+        req.device_signature[0] ^= 1;
+        let verifier = CountingUnavailableVerifier::default();
+        let ctx = production_context(
+            &verifier,
+            nonce,
+            1_700_000_000_000,
+            1_700_000_000_100,
+            active_device_state(),
+        );
+        let err = verify_signed_unwrap_request_for_production_with_context(&req, &ctx).unwrap_err();
+        assert!(matches!(err, BackupError::CryptoVerificationFailed));
+        assert_eq!(
+            verifier.calls(),
+            0,
+            "bad signatures must not reach platform verification"
+        );
+    }
+
+    #[test]
+    fn production_context_rejects_server_nonce_mismatch() {
+        let (sk, vk) = make_device_keypair();
+        let request_nonce = fresh_nonce();
+        let expected_nonce = fresh_nonce();
+        let req = production_ios_unwrap_request(&sk, &vk, request_nonce, 1_700_000_000_050);
+        let verifier = CountingUnavailableVerifier::default();
+        let ctx = production_context(
+            &verifier,
+            expected_nonce,
+            1_700_000_000_000,
+            1_700_000_000_100,
+            active_device_state(),
+        );
+        let err = verify_signed_unwrap_request_for_production_with_context(&req, &ctx).unwrap_err();
+        assert!(matches!(err, BackupError::ProductionServerNonceMismatch));
+        assert_eq!(verifier.calls(), 0);
+    }
+
+    #[test]
+    fn production_context_rejects_expired_server_nonce() {
+        let (sk, vk) = make_device_keypair();
+        let nonce = fresh_nonce();
+        let req = production_ios_unwrap_request(&sk, &vk, nonce, 1_700_000_000_050);
+        let verifier = CountingUnavailableVerifier::default();
+        let ctx = production_context(
+            &verifier,
+            nonce,
+            1_700_000_000_000,
+            1_700_000_400_001,
+            active_device_state(),
+        );
+        let err = verify_signed_unwrap_request_for_production_with_context(&req, &ctx).unwrap_err();
+        assert!(matches!(
+            err,
+            BackupError::ProductionServerNonceExpired { .. }
+        ));
+        assert_eq!(verifier.calls(), 0);
+    }
+
+    #[test]
+    fn production_context_rejects_future_request_timestamp() {
+        let (sk, vk) = make_device_keypair();
+        let nonce = fresh_nonce();
+        let req = production_ios_unwrap_request(&sk, &vk, nonce, 1_700_000_400_001);
+        let verifier = CountingUnavailableVerifier::default();
+        let ctx = production_context(
+            &verifier,
+            nonce,
+            1_700_000_000_000,
+            1_700_000_000_000,
+            active_device_state(),
+        );
+        let err = verify_signed_unwrap_request_for_production_with_context(&req, &ctx).unwrap_err();
+        assert!(matches!(
+            err,
+            BackupError::ProductionRequestTimestampInFuture { .. }
+        ));
+        assert_eq!(verifier.calls(), 0);
+    }
+
+    #[test]
+    fn production_context_rejects_unknown_pending_and_revoked_devices() {
+        let (sk, vk) = make_device_keypair();
+        let nonce = fresh_nonce();
+        let req = production_ios_unwrap_request(&sk, &vk, nonce, 1_700_000_000_050);
+        let verifier = CountingUnavailableVerifier::default();
+
+        let ctx = production_context(
+            &verifier,
+            nonce,
+            1_700_000_000_000,
+            1_700_000_000_100,
+            ProductionDeviceState::Unknown,
+        );
+        let err = verify_signed_unwrap_request_for_production_with_context(&req, &ctx).unwrap_err();
+        assert!(matches!(err, BackupError::ProductionDeviceUnknown));
+
+        let ctx = production_context(
+            &verifier,
+            nonce,
+            1_700_000_000_000,
+            1_700_000_000_100,
+            ProductionDeviceState::Pending,
+        );
+        let err = verify_signed_unwrap_request_for_production_with_context(&req, &ctx).unwrap_err();
+        assert!(matches!(err, BackupError::DevicePendingAuthorization));
+
+        let ctx = production_context(
+            &verifier,
+            nonce,
+            1_700_000_000_000,
+            1_700_000_000_100,
+            ProductionDeviceState::Revoked,
+        );
+        let err = verify_signed_unwrap_request_for_production_with_context(&req, &ctx).unwrap_err();
+        assert!(matches!(err, BackupError::DeviceRevoked));
+        assert_eq!(verifier.calls(), 0);
+    }
+
+    #[test]
+    fn production_context_active_device_reaches_platform_verifier_fail_closed() {
+        let (sk, vk) = make_device_keypair();
+        let nonce = fresh_nonce();
+        let req = production_ios_unwrap_request(&sk, &vk, nonce, 1_700_000_000_050);
+        let verifier = CountingUnavailableVerifier::default();
+        let ctx = production_context(
+            &verifier,
+            nonce,
+            1_700_000_000_000,
+            1_700_000_000_100,
+            active_device_state(),
+        );
+        let err = verify_signed_unwrap_request_for_production_with_context(&req, &ctx).unwrap_err();
+        assert!(matches!(
+            err,
+            BackupError::ProductionAttestationVerifierUnavailable { platform_tag }
+                if platform_tag == Platform::IOs.tag()
+        ));
+        assert_eq!(verifier.calls(), 1);
     }
 
     // =========================================================================
