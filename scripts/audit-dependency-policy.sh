@@ -14,3 +14,12 @@ if grep -q "bincode v" "$tree_file"; then
 fi
 
 echo "bincode absent from normal dependency tree"
+
+deny_file="$evidence_dir/cargo-deny-check.txt"
+if ! command -v cargo-deny >/dev/null 2>&1; then
+  echo "cargo-deny is required for the local release gate" | tee "$deny_file" >&2
+  exit 1
+fi
+
+cargo deny check >"$deny_file" 2>&1
+echo "cargo-deny check OK"

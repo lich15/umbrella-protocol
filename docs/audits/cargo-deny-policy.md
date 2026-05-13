@@ -39,6 +39,11 @@ new OpenMLS provider is released.
 cargo deny check
 ```
 
+Local release gates now run `bash scripts/audit-dependency-policy.sh`.
+The script checks that `bincode` is absent from the normal dependency tree and
+runs `cargo deny check`. Missing `cargo-deny` is a gate failure, not a
+successful check.
+
 The canonical configuration is [`deny.toml`](../../deny.toml).
 
 ---
@@ -82,5 +87,10 @@ OpenMLS.
 ```bash
 cargo deny check
 ```
+
+Локальные ворота выпуска теперь запускают `bash scripts/audit-dependency-policy.sh`.
+Скрипт проверяет, что `bincode` не попал в обычное дерево зависимостей, и
+запускает `cargo deny check`. Если `cargo-deny` не установлен, это считается
+отказом ворот, а не успешной проверкой.
 
 Каноническая конфигурация: [`deny.toml`](../../deny.toml).
