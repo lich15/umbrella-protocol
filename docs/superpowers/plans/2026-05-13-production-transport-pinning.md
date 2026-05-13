@@ -157,7 +157,7 @@ git commit -m "client: add tls pinning dependencies"
 **Files:**
 - Modify: `crates/umbrella-client/src/transport/pinning.rs`
 
-- [ ] **Step 1: Add failing attack tests**
+- [x] **Step 1: Add failing attack tests**
 
 In `crates/umbrella-client/src/transport/pinning.rs`, replace the current `#[cfg(test)] mod tests` with this expanded module. These tests must fail before the implementation because the verifier types and functions do not exist yet.
 
@@ -422,7 +422,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run red tests**
+- [x] **Step 2: Run red tests**
 
 Run:
 
@@ -437,7 +437,7 @@ cannot find type `SpkiPinningVerifier`
 cannot find function `extract_spki_pin_from_cert_der`
 ```
 
-- [ ] **Step 3: Replace placeholder module text and add verifier code**
+- [x] **Step 3: Replace placeholder module text and add verifier code**
 
 In `crates/umbrella-client/src/transport/pinning.rs`, replace the module header and add these imports after `use sha2::{Digest, Sha256};`:
 
@@ -660,7 +660,7 @@ pub(crate) fn normalize_dns_host(host: &str) -> String {
 }
 ```
 
-- [ ] **Step 4: Run focused pinning tests**
+- [x] **Step 4: Run focused pinning tests**
 
 Run:
 
@@ -674,7 +674,7 @@ Expected:
 test result: ok
 ```
 
-- [ ] **Step 5: Commit verifier iteration**
+- [x] **Step 5: Commit verifier iteration**
 
 Run:
 
