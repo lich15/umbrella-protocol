@@ -515,6 +515,30 @@ mod tests {
     }
 
     #[test]
+    fn production_transport_rejects_ipv4_mapped_ipv6_forbidden_hosts() {
+        for url in [
+            "https://[::ffff:127.0.0.1]",
+            "https://[::ffff:10.0.0.1]",
+            "https://[::ffff:100.64.0.10]",
+            "https://[::ffff:192.0.2.10]",
+        ] {
+            let cfg = production_config_with_urls(vec![
+                url,
+                "https://sealed-1.umbrella.example",
+                "https://sealed-2.umbrella.example",
+                "https://sealed-3.umbrella.example",
+                "https://sealed-4.umbrella.example",
+            ]);
+
+            let err = cfg.validate().unwrap_err();
+            assert!(
+                format!("{err}").contains("test host"),
+                "{url} must be rejected, got {err}"
+            );
+        }
+    }
+
+    #[test]
     fn production_transport_rejects_wrong_sealed_server_count() {
         let cfg = production_config_with_urls(vec![
             "https://sealed-0.umbrella.example",
