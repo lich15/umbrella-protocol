@@ -1,9 +1,10 @@
 # Protocol Compliance Hardening Phase 1 Implementation Plan
 
-> **Историческая заметка:** этот файл сохранён как история планирования Фазы 1.
-> Он не является текущим списком незакрытых задач. Текущую правду смотреть в
-> `docs/README.md`, `docs/security/production-readiness-boundaries.md` и
-> свежих спецификациях.
+> Historical note, 2026-05-13: this file is a planning record, not the current
+> active checklist. Later commits implemented or superseded these Phase 1
+> items. Current readiness status lives in
+> `docs/security/current-status.md` and
+> `docs/security/production-readiness-boundaries.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

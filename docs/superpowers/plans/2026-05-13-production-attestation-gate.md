@@ -1,5 +1,11 @@
 # Production Attestation Gate Implementation Plan
 
+> Historical note, 2026-05-13: this file preserves the implementation plan used
+> for the server-side attestation gate work. Unchecked boxes below are planning
+> text, not the current active task list. Current readiness status lives in
+> `docs/security/current-status.md` and
+> `docs/security/production-readiness-boundaries.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a strict server-side production attestation gate for cloud unwrap and OPRF requests without opening public FFI bootstrap.
