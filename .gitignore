@@ -24,6 +24,7 @@ fuzz/coverage/
 .envrc
 .direnv/
 node_modules/
+.worktrees/
 
 # Swift Package Manager + Xcode (examples/ios-harness, examples/*-harness).
 # Swift Package Manager + Xcode.
