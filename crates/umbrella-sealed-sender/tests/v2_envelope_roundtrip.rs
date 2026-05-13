@@ -204,35 +204,6 @@ fn recipient_learns_sender_identity() {
     assert_eq!(opened.sender_identity, alice.identity_public());
 }
 
-#[test]
-fn forged_inner_signature_rejected() {
-    // Атакующий собирает свой envelope и имитирует Alice's identity_pub в inner,
-    // но не имеет Alice's secret signing key → подпись невалидна → unseal падает
-    // на InvalidSignature (после успешного AEAD decrypt).
-    //
-    // Этот test косвенно покрывается existing tampered_inner_ct_rejected:
-    // если attacker меняет inner padded — AEAD reject. Чтобы forge sig напрямую
-    // attacker должен иметь aead key (impossible без shared_secret).
-    //
-    // The attacker assembles their envelope and impersonates Alice's identity_pub
-    // in inner, but lacks Alice's signing key → invalid signature → unseal fails
-    // with InvalidSignature (after successful AEAD decrypt).
-    let alice = fresh_keystore();
-    let bob = fresh_keystore();
-    let (bob_xwing_pk, bob_xwing_sk) = fresh_xwing_keypair();
-    let rng = OsRng;
-    // Eve attempt: запечатывает с своей identity, но в inner header кладёт Alice's pub.
-    // Это делает eve fresh keystore которая SIGN'ит inner с своей identity, но claim'ит
-    // Alice's pub в inner. По semantics нашего design — sign(eve_sk) над payload, ed25519
-    // verify против Alice's pub fails.
-    //
-    // В нашем API нет direct способа подменить sender_pub в inner header (seal_v2
-    // использует keystore.identity_public() консистентно). Так что emулируем
-    // через прямую подмену sender_pub байтов в decoded message — это сложно потому
-    // что AEAD encrypts inner. Skip — covered by tampered_inner_ct_rejected.
-    let _ = (alice, bob, bob_xwing_pk, bob_xwing_sk, rng);
-}
-
 // === Property-based ===
 
 proptest::proptest! {

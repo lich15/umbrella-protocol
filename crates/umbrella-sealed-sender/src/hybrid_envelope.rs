@@ -501,6 +501,43 @@ mod tests {
     }
 
     #[test]
+    fn forged_inner_signature_rejected_after_successful_v2_decrypt() {
+        let alice = fresh_keystore();
+        let eve = fresh_keystore();
+        let bob = fresh_keystore();
+        let (bob_xwing_pk, bob_xwing_sk) = fresh_xwing_keypair();
+        let mut rng = OsRng;
+        let message = b"forged-inner-signature";
+
+        let (xwing_ct, shared_secret) =
+            xwing_encaps(&mut rng, &bob_xwing_pk).expect("xwing encaps");
+        let (aead_key, aead_nonce) =
+            derive_v2_keys(&shared_secret, &xwing_ct, &bob_xwing_pk).expect("v2 keys");
+
+        let payload = signature_payload_v2(&xwing_ct, message);
+        let eve_signature = eve.sign_with_identity(&payload);
+
+        let mut inner = Vec::with_capacity(INNER_HEADER_LEN + message.len());
+        inner.extend_from_slice(&alice.identity_public().to_bytes());
+        inner.extend_from_slice(&eve_signature.to_bytes());
+        inner.extend_from_slice(message);
+
+        let padded = pad_to_bucket(&inner).expect("pad forged inner");
+        let ad = aead_ad_v2(&xwing_ct, &bob_xwing_pk);
+        let inner_ct = aead_key
+            .encrypt(&aead_nonce, &ad, &padded)
+            .expect("encrypt forged inner");
+
+        let mut wire = Vec::with_capacity(VERSION_LEN + XWING_CIPHERTEXT_LEN + inner_ct.len());
+        wire.push(SealedSenderVersion::V2HybridXWing.as_u8());
+        wire.extend_from_slice(&xwing_ct);
+        wire.extend_from_slice(&inner_ct);
+
+        let err = unseal_v2(bob.as_ref(), &bob_xwing_pk, &bob_xwing_sk, &wire).unwrap_err();
+        assert!(matches!(err, SealedSenderError::InvalidSignature));
+    }
+
+    #[test]
     fn seal_v2_rejects_payload_over_max() {
         let alice = fresh_keystore();
         let (bob_xwing_pk, _) = fresh_xwing_keypair();

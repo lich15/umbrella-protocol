@@ -37,7 +37,10 @@ require_pattern "crates/umbrella-backup/src/cloud_wrap/unwrap.rs" "unwrap_fails_
 require_pattern "crates/umbrella-backup/src/cloud_wrap/pq_wrap.rs" "v2_unwrap_rejects_tampered_canonical_aad"
 require_pattern "crates/umbrella-oprf/src/threshold.rs" "threshold_combine_rejects_duplicate_index"
 require_pattern "crates/umbrella-oprf/src/threshold.rs" "threshold_tampered_share_breaks_combine"
+require_pattern "crates/umbrella-sealed-sender/src/hybrid_envelope.rs" "forged_inner_signature_rejected_after_successful_v2_decrypt"
 require_pattern "crates/umbrella-sealed-sender/tests/phd_real_attacks_sealed_sender.rs" "real_attack_cross_version_replay_v1_to_v2_blocked"
+require_pattern "crates/umbrella-sealed-sender/tests/phd_real_attacks_sealed_sender.rs" "real_fuzz_v2_unseal_100k_random_bytes_no_panic_no_silent_accept"
+require_pattern "crates/umbrella-sealed-sender/tests/phd_real_attacks_sealed_sender.rs" "real_attack_replay_envelope_to_different_recipient_aad_blocks"
 require_pattern "docs/security/protocol-core-attack-gates.md" "повтор серверного вызова"
 require_pattern "docs/security/protocol-core-attack-gates.md" "split-view"
 

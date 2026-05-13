@@ -33,6 +33,7 @@
 | Backup | неверный AAD в V1/V2 развёртке | закрыто тестом | `unwrap_fails_on_tampered_aad`, `v2_unwrap_rejects_tampered_canonical_aad` |
 | Backup | V1/V2 смешение форматов и тихий fallback | закрыто тестом | `v1_wire_rejected_by_v2_parser`, `v2_wire_rejected_by_v1_parser`, `v1_byte_prefix_v2_length_buffer_rejected_by_both`, `v2_byte_prefix_v1_length_buffer_rejected_by_both` |
 | Sealed Sender | подмена ciphertext, ключа получателя, версии или подписи | закрыто тестом | `phd_real_attacks_sealed_sender.rs`, `v1_v2_mixed_corpus.rs`, `v2_envelope_roundtrip.rs` |
+| Sealed Sender | подделанная внутренняя подпись V2 после успешного расшифрования | закрыто тестом | `forged_inner_signature_rejected_after_successful_v2_decrypt` |
 | Sealed Sender | повтор к другому получателю | закрыто тестом | `real_attack_replay_envelope_to_different_recipient_aad_blocks` |
 | Sealed Sender | V1 как V2 и V2 как V1 | закрыто тестом | `real_attack_cross_version_replay_v1_to_v2_blocked` |
 
