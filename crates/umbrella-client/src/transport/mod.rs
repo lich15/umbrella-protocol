@@ -22,7 +22,10 @@ pub use async_unwrap::AsyncUnwrapTransport;
 pub use blind_postman::{Http2PostmanTransport, MESSAGE_ID_LEN};
 pub use call_relay::{CallSecurityLevelWire, Http2CallRelayTransport, TurnAllocation, PEER_ID_LEN};
 pub use cloud_backup::{Http2UnwrapTransport, EARLY_RETURN_THRESHOLD, SEALED_SERVER_COUNT};
-pub use http2_client::{build_http2_client, Http2Config};
+pub use http2_client::{
+    build_http2_client, build_production_http2_client, Http2Config, PinnedServiceEndpoint,
+    ProductionHttp2Config,
+};
 pub use kt_transport::{Http2KtTransport, ACCOUNT_ID_LEN};
 pub use pinning::{PinningConfig, SpkiPin, SPKI_PIN_LEN};
 pub use retry::{is_reqwest_retryable, retry_with_backoff, DEFAULT_MAX_ATTEMPTS};

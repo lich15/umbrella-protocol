@@ -84,7 +84,7 @@ impl SpkiPin {
 /// Pinning configuration for a single Sealed Server or other endpoint.
 /// `primary` is the expected SPKI hash of the current certificate; `backup`
 /// is optional and used for graceful cert rotation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PinningConfig {
     /// Primary (ожидаемый) SPKI pin. Primary expected SPKI pin.
     pub primary: SpkiPin,

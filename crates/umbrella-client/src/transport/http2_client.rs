@@ -3,7 +3,7 @@
 //! `Http2CallRelayTransport`). Фиксирует протокольные инварианты уровня
 //! стека Umbrella:
 //!
-//! - **TLS 1.3 only** (design §5.1) — `min_tls_version(TLS_1_3)` отвергает
+//! - **TLS 1.3 only** (design §5.1) — `tls_version_min(TLS_1_3)` отвергает
 //!   TLS 1.2/1.1 даунгрейды.
 //! - **HTTP/2 prior knowledge** (design §5.1) — никаких протокол-даунгрейдов
 //!   и никаких ALPN round-trip'ов, сразу двоичный фрейминг HTTP/2.
@@ -22,7 +22,7 @@
 //! (`Http2UnwrapTransport`, `Http2PostmanTransport`, `Http2KtTransport`,
 //! `Http2CallRelayTransport`). Fixes protocol invariants:
 //!
-//! - **TLS 1.3 only** (design §5.1) — `min_tls_version(TLS_1_3)` rejects
+//! - **TLS 1.3 only** (design §5.1) — `tls_version_min(TLS_1_3)` rejects
 //!   TLS 1.2/1.1 downgrades.
 //! - **HTTP/2 prior knowledge** — no protocol negotiation, direct binary
 //!   HTTP/2 framing.
@@ -38,9 +38,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use reqwest::{tls, Client, ClientBuilder};
+use reqwest::{tls, Client, ClientBuilder, Url};
 
 use crate::error::ClientError;
+use crate::transport::{PinningConfig, SEALED_SERVER_COUNT};
 
 /// User-Agent по умолчанию. Уникален между версиями — даёт ops-side
 /// возможность видеть долю трафика от конкретной ревизии ядра клиента.
@@ -118,6 +119,95 @@ impl Default for Http2Config {
     }
 }
 
+/// Боевой endpoint с обязательным закреплением ключа сертификата.
+/// Production endpoint with mandatory certificate-key pinning.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PinnedServiceEndpoint {
+    /// URL сервиса. Service URL.
+    pub url: String,
+    /// Основной и запасной закреплённые ключи. Primary and backup pins.
+    pub pins: PinningConfig,
+}
+
+impl PinnedServiceEndpoint {
+    /// Создать endpoint с уже заданными pin-ами.
+    /// Construct an endpoint with explicit pins.
+    #[must_use]
+    pub fn new(url: String, pins: PinningConfig) -> Self {
+        Self { url, pins }
+    }
+}
+
+/// Боевая настройка HTTP/2 транспорта.
+/// Production HTTP/2 transport configuration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProductionHttp2Config {
+    /// Ровно пять запечатанных серверов. Exactly five Sealed Servers.
+    pub sealed_servers: Vec<PinnedServiceEndpoint>,
+    /// Почтовый сервис. Blind postman service.
+    pub postman: PinnedServiceEndpoint,
+    /// Журнал ключей. Key-transparency service.
+    pub kt: PinnedServiceEndpoint,
+    /// Релей звонков. Call relay service.
+    pub call_relay: PinnedServiceEndpoint,
+}
+
+impl ProductionHttp2Config {
+    /// Проверить, что боевая настройка не похожа на стенд.
+    /// Validate that production config is not a test setup.
+    pub fn validate(&self) -> Result<(), ClientError> {
+        if self.sealed_servers.len() != SEALED_SERVER_COUNT {
+            return Err(ClientError::Network(format!(
+                "production transport requires exactly {SEALED_SERVER_COUNT} pinned sealed servers, got {}",
+                self.sealed_servers.len()
+            )));
+        }
+
+        for (idx, endpoint) in self.sealed_servers.iter().enumerate() {
+            validate_production_endpoint(&format!("sealed_server_urls[{idx}]"), endpoint)?;
+        }
+        validate_production_endpoint("postman_url", &self.postman)?;
+        validate_production_endpoint("kt_url", &self.kt)?;
+        validate_production_endpoint("call_relay_url", &self.call_relay)?;
+        Ok(())
+    }
+}
+
+fn validate_production_endpoint(
+    role: &str,
+    endpoint: &PinnedServiceEndpoint,
+) -> Result<(), ClientError> {
+    let parsed = Url::parse(&endpoint.url)
+        .map_err(|e| ClientError::Network(format!("{role} parse: {e}")))?;
+    if parsed.scheme() != "https" {
+        return Err(ClientError::Network(format!(
+            "{role} must use https in production"
+        )));
+    }
+
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| ClientError::Network(format!("{role} missing host")))?;
+    if is_forbidden_production_host(host) {
+        return Err(ClientError::Network(format!(
+            "{role} uses test host {host}; production transport requires real deployment hosts"
+        )));
+    }
+    Ok(())
+}
+
+fn is_forbidden_production_host(host: &str) -> bool {
+    let h = host.to_ascii_lowercase();
+    h.is_empty()
+        || h == "localhost"
+        || h.ends_with(".localhost")
+        || h == "127.0.0.1"
+        || h == "0.0.0.0"
+        || h == "::1"
+        || h.ends_with(".invalid")
+        || h.ends_with(".example.invalid")
+}
+
 /// Построить настроенный `reqwest::Client` согласно `Http2Config`.
 ///
 /// Возвращает `Arc<Client>` — внутри reqwest сам по себе держит
@@ -143,7 +233,7 @@ impl Default for Http2Config {
 pub fn build_http2_client(config: Http2Config) -> Result<Arc<Client>, ClientError> {
     let client = ClientBuilder::new()
         .use_rustls_tls()
-        .min_tls_version(tls::Version::TLS_1_3)
+        .tls_version_min(tls::Version::TLS_1_3)
         .http2_prior_knowledge()
         .http2_keep_alive_interval(config.http2_keepalive_interval)
         .http2_keep_alive_timeout(HTTP2_KEEPALIVE_TIMEOUT)
@@ -157,9 +247,35 @@ pub fn build_http2_client(config: Http2Config) -> Result<Arc<Client>, ClientErro
     Ok(Arc::new(client))
 }
 
+/// Проверить боевую настройку и создать HTTP/2 клиент только когда
+/// `rustls`-проверяющий с закреплением сертификатов связан до конца.
+///
+/// Сейчас функция намеренно отказывает после валидации: публичный FFI
+/// bootstrap остаётся закрытым, пока `ServerCertVerifier` с SPKI pinning не
+/// будет покрыт настоящим тестом.
+///
+/// Validate production config and build an HTTP/2 client only after the
+/// `rustls` certificate verifier with SPKI pinning is wired end to end.
+///
+/// # Errors
+/// - [`ClientError::Network`] если настройка похожа на тестовую.
+/// - [`ClientError::Network`] с fail-fast причиной, пока production verifier
+///   не связан.
+pub fn build_production_http2_client(
+    _config: Http2Config,
+    production: &ProductionHttp2Config,
+) -> Result<Arc<Client>, ClientError> {
+    production.validate()?;
+    Err(ClientError::Network(
+        "production TLS pinning verifier is not wired in this crate; public bootstrap remains gated"
+            .into(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transport::{SpkiPin, SPKI_PIN_LEN};
 
     #[test]
     fn default_config_matches_design_section_5_1() {
@@ -190,5 +306,95 @@ mod tests {
         // Нельзя прочитать UA обратно из клиента (reqwest не exposes), но
         // факт успешного .build() с кастомной строкой достаточный smoke.
         drop(client);
+    }
+
+    fn pin(byte: u8) -> PinningConfig {
+        PinningConfig::single(SpkiPin::from_bytes([byte; SPKI_PIN_LEN]))
+    }
+
+    fn endpoint(url: &str, byte: u8) -> PinnedServiceEndpoint {
+        PinnedServiceEndpoint::new(url.to_string(), pin(byte))
+    }
+
+    fn production_config_with_urls(sealed: Vec<&str>) -> ProductionHttp2Config {
+        ProductionHttp2Config {
+            sealed_servers: sealed
+                .into_iter()
+                .enumerate()
+                .map(|(idx, url)| endpoint(url, (idx + 1) as u8))
+                .collect(),
+            postman: endpoint("https://postman.umbrella.example", 11),
+            kt: endpoint("https://kt.umbrella.example", 12),
+            call_relay: endpoint("https://relay.umbrella.example", 13),
+        }
+    }
+
+    #[test]
+    fn production_transport_rejects_http_url() {
+        let cfg = production_config_with_urls(vec![
+            "http://sealed-0.umbrella.example",
+            "https://sealed-1.umbrella.example",
+            "https://sealed-2.umbrella.example",
+            "https://sealed-3.umbrella.example",
+            "https://sealed-4.umbrella.example",
+        ]);
+
+        let err = cfg.validate().unwrap_err();
+        assert!(format!("{err}").contains("must use https"));
+    }
+
+    #[test]
+    fn production_transport_rejects_test_hosts() {
+        let cfg = production_config_with_urls(vec![
+            "https://localhost",
+            "https://sealed-1.umbrella.example",
+            "https://sealed-2.umbrella.example",
+            "https://sealed-3.umbrella.example",
+            "https://sealed-4.umbrella.example",
+        ]);
+
+        let err = cfg.validate().unwrap_err();
+        assert!(format!("{err}").contains("test host"));
+    }
+
+    #[test]
+    fn production_transport_rejects_wrong_sealed_server_count() {
+        let cfg = production_config_with_urls(vec![
+            "https://sealed-0.umbrella.example",
+            "https://sealed-1.umbrella.example",
+            "https://sealed-2.umbrella.example",
+            "https://sealed-3.umbrella.example",
+        ]);
+
+        let err = cfg.validate().unwrap_err();
+        assert!(format!("{err}").contains("exactly 5 pinned sealed servers"));
+    }
+
+    #[test]
+    fn production_transport_validation_accepts_realistic_pinned_https_config() {
+        let cfg = production_config_with_urls(vec![
+            "https://sealed-0.umbrella.example",
+            "https://sealed-1.umbrella.example",
+            "https://sealed-2.umbrella.example",
+            "https://sealed-3.umbrella.example",
+            "https://sealed-4.umbrella.example",
+        ]);
+
+        cfg.validate().expect("pinned https config validates");
+    }
+
+    #[test]
+    fn production_client_build_stays_gated_until_tls_pinning_verifier_is_wired() {
+        let cfg = production_config_with_urls(vec![
+            "https://sealed-0.umbrella.example",
+            "https://sealed-1.umbrella.example",
+            "https://sealed-2.umbrella.example",
+            "https://sealed-3.umbrella.example",
+            "https://sealed-4.umbrella.example",
+        ]);
+
+        let err = build_production_http2_client(Http2Config::default(), &cfg).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("production TLS pinning verifier is not wired"));
     }
 }
