@@ -10,9 +10,10 @@ repository contains implemented Rust cryptographic crates and test harnesses,
 but the public FFI/client production bootstrap is gated until every required
 transport and verifier is wired end to end.
 
-Phase 2 hardening is active. Production readiness is now fail-closed at the
-public FFI boundary, the production HTTP/2 transport gate, TLS pinning, and the
-production attestation verifier. See
+Phase 2 hardening is active. The internal production HTTP/2 builder now wires
+platform certificate verification together with SPKI pinning. Public FFI
+bootstrap remains gated until production attestation, mobile bridges, and
+server integration are wired end to end. See
 [`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
 
 This repository is public for transparency, reproducible builds, non-commercial
@@ -386,9 +387,10 @@ UmbrellaX, который сейчас проходит приведение к 
 клиента через внешний интерфейс для мобильных привязок закрыт до полной связки
 транспортов и боевых проверок.
 
-Фаза 2 приведения к документам активна. Боевая готовность теперь закрыта до
-полной связки публичного внешнего запуска, боевого HTTP/2-транспорта,
-закрепления TLS-ключей и боевой проверки устройства. Подробности:
+Фаза 2 приведения к документам активна. Внутренний боевой сборщик HTTP/2 теперь
+связывает системную проверку сертификата с закреплёнными SPKI-ключами.
+Публичный FFI-запуск остаётся закрыт, пока не связаны боевая
+attestation-проверка, мобильные мосты и серверная интеграция. Подробности:
 [`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
 
 Репозиторий открыт для прозрачности, воспроизводимых сборок, некоммерческих

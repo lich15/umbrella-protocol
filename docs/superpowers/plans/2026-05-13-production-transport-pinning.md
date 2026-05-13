@@ -1052,7 +1052,7 @@ git commit -m "ffi: keep bootstrap gated after transport pinning"
 - Modify: `README.md`
 - Modify: `scripts/audit-public-access-notices.sh`
 
-- [ ] **Step 1: Update readiness boundary document**
+- [x] **Step 1: Update readiness boundary document**
 
 In `docs/security/production-readiness-boundaries.md`, replace the closed-gates bullets for HTTP/2 and TLS pinning with this English text:
 
@@ -1077,7 +1077,7 @@ Replace the Russian bullets with:
   SPKI-ключи.
 ```
 
-- [ ] **Step 2: Update public status docs**
+- [x] **Step 2: Update public status docs**
 
 In `docs/README.md` and `README.md`, change any sentence that says production HTTP/2 transport or TLS pinning still fail closed to:
 
@@ -1097,7 +1097,7 @@ Russian text:
 интеграция.
 ```
 
-- [ ] **Step 3: Update audit script requirements**
+- [x] **Step 3: Update audit script requirements**
 
 In `scripts/audit-public-access-notices.sh`, replace the readiness-boundary pinning check:
 
@@ -1118,7 +1118,7 @@ require_pattern "docs/README.md" "Public FFI bootstrap remains gated|Публи�
 require_pattern "README.md" "Public FFI bootstrap remains gated|Публичный FFI-запуск остаётся закрыт"
 ```
 
-- [ ] **Step 4: Verify docs and public notice audit**
+- [x] **Step 4: Verify docs and public notice audit**
 
 Run:
 
@@ -1134,7 +1134,7 @@ public access notices OK
 Finished `dev` profile
 ```
 
-- [ ] **Step 5: Commit docs**
+- [x] **Step 5: Commit docs**
 
 Run:
 

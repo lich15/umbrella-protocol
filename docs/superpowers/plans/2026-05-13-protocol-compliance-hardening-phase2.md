@@ -643,8 +643,9 @@ fn assert_production_bootstrap_unavailable(err: UmbrellaError) {
         UmbrellaError::Internal(message) => {
             assert!(message.contains("production bootstrap is not available"));
             assert!(message.contains("test constructors"));
-            assert!(message.contains("production HTTP/2 transport gate"));
             assert!(message.contains("production attestation verifier"));
+            assert!(message.contains("mobile bridge"));
+            assert!(message.contains("server integration paths"));
         }
         other => panic!("expected Internal production-bootstrap error, got {other:?}"),
     }
@@ -662,7 +663,7 @@ cargo test -p umbrella-ffi public_bootstrap --locked
 Expected current failure:
 
 ```text
-assertion failed: message.contains("production HTTP/2 transport gate")
+assertion failed: message.contains("production attestation verifier")
 ```
 
 - [ ] **Step 3: Update public FFI bootstrap error**
@@ -672,7 +673,7 @@ In `crates/umbrella-ffi/src/export/client.rs`, replace `production_bootstrap_una
 ```rust
 fn production_bootstrap_unavailable() -> UmbrellaError {
     UmbrellaError::Internal(
-        "production bootstrap is not available: public FFI must not use test constructors until the production HTTP/2 transport gate, TLS pinning, production attestation verifier, mobile bridge, and server integration paths are wired end to end"
+        "production bootstrap is not available: public FFI must not use test constructors until the production attestation verifier, mobile bridge, and server integration paths are wired end to end"
             .into(),
     )
 }

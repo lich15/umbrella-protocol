@@ -35,10 +35,11 @@ harnesses remain available for verification, but unfinished public paths must
 fail fast instead of using test-only constructors.
 
 Phase 2 hardening is active. The current boundary is documented in
-[`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md):
-public FFI bootstrap, the production HTTP/2 transport gate, TLS pinning, and
-the production attestation verifier fail closed until their real integrations
-are complete.
+[`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md).
+The internal production HTTP/2 builder now wires platform certificate
+verification together with SPKI pinning. Public FFI bootstrap remains gated
+until production attestation, mobile bridges, and server integration are wired
+end to end.
 
 The current status of formal verification and local lint gates is recorded in
 [`audits/formal-lint-status-2026-05-13.md`](audits/formal-lint-status-2026-05-13.md).
@@ -82,10 +83,11 @@ Umbrella Protocol 1.0.0 — пакет с доступным для чтения
 конструкторами.
 
 Фаза 2 приведения к документам активна. Текущая граница описана в
-[`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md):
-публичный внешний запуск, боевой HTTP/2-транспорт, закрепление TLS-ключей и
-боевая проверка устройства отказывают закрыто, пока настоящая связка не
-завершена.
+[`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md).
+Внутренний боевой сборщик HTTP/2 теперь связывает системную проверку
+сертификата с закреплёнными SPKI-ключами. Публичный FFI-запуск остаётся закрыт,
+пока не связаны боевая attestation-проверка, мобильные мосты и серверная
+интеграция.
 
 Текущий статус формальных проверок и местных строгих правил записан в
 [`audits/formal-lint-status-2026-05-13.md`](audits/formal-lint-status-2026-05-13.md).
