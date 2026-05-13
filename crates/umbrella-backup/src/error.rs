@@ -56,6 +56,11 @@ pub enum BackupError {
         platform_tag: u8,
     },
 
+    /// Платформенная проверка закрыто отказала.
+    /// Platform verification failed closed.
+    #[error("production platform verification failed: {0}")]
+    ProductionPlatformVerificationFailed(String),
+
     /// Тестовый платформенный проверяющий нельзя использовать в боевом контексте.
     /// Test-only platform verifier cannot be used in a production context.
     #[error("test-only attestation verifier rejected in production context")]

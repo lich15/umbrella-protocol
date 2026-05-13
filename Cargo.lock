@@ -4234,6 +4234,7 @@ dependencies = [
  "snow",
  "thiserror 2.0.18",
  "umbrella-identity",
+ "umbrella-platform-verifier",
  "umbrella-pq",
  "x25519-dalek",
  "zeroize",
@@ -4448,6 +4449,7 @@ dependencies = [
  "sha2 0.11.0",
  "subtle",
  "thiserror 2.0.18",
+ "umbrella-platform-verifier",
  "voprf",
  "zeroize",
 ]

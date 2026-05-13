@@ -21,6 +21,7 @@ zeroize = { workspace = true }
 subtle = { workspace = true }
 heapless = { workspace = true }
 thiserror = { workspace = true }
+umbrella-platform-verifier = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -26,6 +26,7 @@ pq = ["dep:umbrella-pq", "umbrella-pq/ml-kem", "dep:secrecy", "umbrella-identity
 
 [dependencies]
 umbrella-identity = { workspace = true }
+umbrella-platform-verifier = { workspace = true }
 
 # Ristretto255 scalar/point ops для threshold-wrap
 curve25519-dalek = { workspace = true }

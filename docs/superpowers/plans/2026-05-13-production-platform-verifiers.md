@@ -1084,6 +1084,14 @@ In `crates/umbrella-oprf/Cargo.toml` dependencies, add:
 umbrella-platform-verifier = { workspace = true }
 ```
 
+Так как существующие крейты получают новую внутреннюю зависимость,
+один раз обновить `Cargo.lock` перед возвратом к проверкам с `--locked`:
+
+```bash
+cargo check -p umbrella-backup --all-features
+cargo check -p umbrella-oprf --all-features
+```
+
 - [ ] **Step 2: Add bridge error variants**
 
 In `crates/umbrella-backup/src/error.rs`, after `ProductionAttestationVerifierUnavailable`, add:

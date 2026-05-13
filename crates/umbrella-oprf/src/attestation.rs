@@ -22,6 +22,13 @@
 
 use ed25519_dalek::{Signature as DalekSignature, Verifier, VerifyingKey as DalekVerifyingKey};
 use heapless::Vec as HVec;
+#[cfg(test)]
+use umbrella_platform_verifier::AndroidPlayIntegrityConfig;
+use umbrella_platform_verifier::{
+    AndroidPlayIntegrityVerifier, AppleAppAttestVerifier, DevicePublicKey, PlatformKind,
+    PlatformVerificationContext, PlatformVerifier, PlatformVerifierError, RegisteredPlatformKey,
+    WebAuthnVerifier,
+};
 
 use crate::error::OprfError;
 use crate::primitives::{BlindedRequest, POINT_LEN};
@@ -436,6 +443,165 @@ impl ProductionPlatformVerifier for UnavailableProductionPlatformVerifier {
         Err(OprfError::ProductionAttestationVerifierUnavailable {
             platform_tag: input.platform.tag(),
         })
+    }
+}
+
+/// Адаптер общего платформенного слоя для OPRF.
+/// Shared platform-verifier adapter for OPRF.
+#[derive(Debug, Clone)]
+pub enum SharedPlatformVerifierForOprf {
+    /// Apple App Attest. Apple App Attest.
+    Apple {
+        /// Проверяющий. Verifier.
+        verifier: AppleAppAttestVerifier,
+        /// Ожидаемый App ID. Expected App ID.
+        app_id: String,
+    },
+    /// Android Play Integrity. Android Play Integrity.
+    Android {
+        /// Проверяющий. Verifier.
+        verifier: AndroidPlayIntegrityVerifier,
+        /// Ожидаемое имя пакета. Expected package name.
+        package_name: String,
+    },
+    /// WebAuthn. WebAuthn.
+    Web {
+        /// Проверяющий. Verifier.
+        verifier: WebAuthnVerifier,
+        /// Ожидаемый сайт. Expected site.
+        site: String,
+        /// Сохранённый ключ. Stored key.
+        registered_key: RegisteredPlatformKey,
+    },
+}
+
+impl SharedPlatformVerifierForOprf {
+    /// Создать адаптер Apple.
+    /// Create an Apple adapter.
+    #[must_use]
+    pub fn apple(verifier: AppleAppAttestVerifier, app_id: impl Into<String>) -> Self {
+        Self::Apple {
+            verifier,
+            app_id: app_id.into(),
+        }
+    }
+
+    /// Создать адаптер Android.
+    /// Create an Android adapter.
+    #[must_use]
+    pub fn android(
+        verifier: AndroidPlayIntegrityVerifier,
+        package_name: impl Into<String>,
+    ) -> Self {
+        Self::Android {
+            verifier,
+            package_name: package_name.into(),
+        }
+    }
+
+    /// Создать адаптер WebAuthn.
+    /// Create a WebAuthn adapter.
+    #[must_use]
+    pub fn web(site: impl Into<String>, public_key: DevicePublicKey, last_counter: u32) -> Self {
+        Self::Web {
+            verifier: WebAuthnVerifier,
+            site: site.into(),
+            registered_key: RegisteredPlatformKey {
+                public_key,
+                last_counter,
+            },
+        }
+    }
+
+    /// Создать адаптер Android для тестов.
+    /// Create an Android adapter for tests.
+    #[cfg(test)]
+    fn android_for_test(package_name: &str, google_verification_configured: bool) -> Self {
+        Self::android(
+            AndroidPlayIntegrityVerifier::new(AndroidPlayIntegrityConfig {
+                package_name: package_name.to_string(),
+                google_verification_configured,
+            }),
+            package_name,
+        )
+    }
+}
+
+fn request_platform_kind(platform: Platform) -> Option<PlatformVerifierKind> {
+    match platform {
+        Platform::IOs => Some(PlatformVerifierKind::AppleAppAttest),
+        Platform::Android => Some(PlatformVerifierKind::AndroidPlayIntegrity),
+        Platform::Web => Some(PlatformVerifierKind::WebAuthn),
+        Platform::Testing => None,
+    }
+}
+
+fn oprf_platform_error(err: PlatformVerifierError) -> OprfError {
+    OprfError::ProductionPlatformVerificationFailed(err.to_string())
+}
+
+impl ProductionPlatformVerifier for SharedPlatformVerifierForOprf {
+    fn kind(&self) -> PlatformVerifierKind {
+        match self {
+            Self::Apple { .. } => PlatformVerifierKind::AppleAppAttest,
+            Self::Android { .. } => PlatformVerifierKind::AndroidPlayIntegrity,
+            Self::Web { .. } => PlatformVerifierKind::WebAuthn,
+        }
+    }
+
+    fn verify_platform_attestation(
+        &self,
+        input: PlatformVerificationInput<'_>,
+    ) -> Result<(), OprfError> {
+        if request_platform_kind(input.platform) != Some(self.kind()) {
+            return Err(oprf_platform_error(PlatformVerifierError::PlatformMismatch));
+        }
+
+        match self {
+            Self::Apple { verifier, app_id } => verifier
+                .verify(PlatformVerificationContext {
+                    platform: PlatformKind::AppleAppAttest,
+                    token: input.token,
+                    server_nonce: input.server_nonce,
+                    device_pubkey: input.device_pubkey,
+                    app_or_site: app_id.as_str(),
+                    now_unix_millis: input.now_unix_millis,
+                    registered_key: None,
+                })
+                .map(|_| ())
+                .map_err(oprf_platform_error),
+            Self::Android {
+                verifier,
+                package_name,
+            } => verifier
+                .verify(PlatformVerificationContext {
+                    platform: PlatformKind::AndroidPlayIntegrity,
+                    token: input.token,
+                    server_nonce: input.server_nonce,
+                    device_pubkey: input.device_pubkey,
+                    app_or_site: package_name.as_str(),
+                    now_unix_millis: input.now_unix_millis,
+                    registered_key: None,
+                })
+                .map(|_| ())
+                .map_err(oprf_platform_error),
+            Self::Web {
+                verifier,
+                site,
+                registered_key,
+            } => verifier
+                .verify(PlatformVerificationContext {
+                    platform: PlatformKind::WebAuthn,
+                    token: input.token,
+                    server_nonce: input.server_nonce,
+                    device_pubkey: input.device_pubkey,
+                    app_or_site: site.as_str(),
+                    now_unix_millis: input.now_unix_millis,
+                    registered_key: Some(registered_key),
+                })
+                .map(|_| ())
+                .map_err(oprf_platform_error),
+        }
     }
 }
 
@@ -1036,6 +1202,26 @@ mod tests {
                 if platform_tag == Platform::Android.tag()
         ));
         assert_eq!(verifier.calls(), 1);
+    }
+
+    #[test]
+    fn production_context_android_platform_uses_shared_platform_verifier() {
+        let (sk, vk) = make_device_keypair();
+        let nonce = fresh_nonce();
+        let signed = production_android_oprf_request(&sk, &vk, nonce);
+        let verifier = SharedPlatformVerifierForOprf::android_for_test("com.umbrella.app", false);
+        let ctx = production_context(
+            &verifier,
+            nonce,
+            1_700_000_000_000,
+            1_700_000_000_100,
+            active_device_state(),
+        );
+        let err = verify_signed_request_for_production_with_context(&signed, &ctx).unwrap_err();
+        assert!(matches!(
+            err,
+            OprfError::ProductionPlatformVerificationFailed(_)
+        ));
     }
 
     #[test]

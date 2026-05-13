@@ -207,7 +207,7 @@ mod tests {
         let (mut init, mut resp) = paired_sessions();
         let wire = resp.encode_frame(&[]).unwrap();
         let decoded = init.decode_frame(&wire).unwrap();
-        assert_eq!(decoded, &[]);
+        assert_eq!(decoded.as_slice(), &[] as &[u8]);
     }
 
     #[test]

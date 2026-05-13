@@ -63,10 +63,10 @@ pub use signed_request::{
     verify_signed_unwrap_request_for_production_with_context, AttestationProvider, Platform,
     PlatformAttestation, PlatformVerificationInput, PlatformVerifierKind, ProductionDeviceState,
     ProductionFreshnessPolicy, ProductionPlatformVerifier, ProductionUnwrapVerificationContext,
-    SignedUnwrapRequest, TestingAttestationProvider, UnavailableProductionPlatformVerifier,
-    DEVICE_PUBKEY_LEN, DEVICE_SIG_LEN, MAX_ATTESTATION_TOKEN_BYTES, NONCE_LEN as UNWRAP_NONCE_LEN,
-    SIGNATURE_DOMAIN_SEPARATOR, SIGNED_UNWRAP_REQUEST_FIXED_LEN, SIGNED_UNWRAP_REQUEST_MAX_LEN,
-    UNWRAP_WIRE_VERSION,
+    SharedPlatformVerifierForBackup, SignedUnwrapRequest, TestingAttestationProvider,
+    UnavailableProductionPlatformVerifier, DEVICE_PUBKEY_LEN, DEVICE_SIG_LEN,
+    MAX_ATTESTATION_TOKEN_BYTES, NONCE_LEN as UNWRAP_NONCE_LEN, SIGNATURE_DOMAIN_SEPARATOR,
+    SIGNED_UNWRAP_REQUEST_FIXED_LEN, SIGNED_UNWRAP_REQUEST_MAX_LEN, UNWRAP_WIRE_VERSION,
 };
 pub use threshold::{shamir_split_for_testing, threshold_combine};
 pub use transport::{
