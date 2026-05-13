@@ -2,6 +2,10 @@
 
 Дата: 2026-05-13
 
+Summary status: [`current-status.md`](current-status.md).
+
+Сводный статус: [`current-status.md`](current-status.md).
+
 ## English
 
 This file records the current public production boundary for Phase 2
