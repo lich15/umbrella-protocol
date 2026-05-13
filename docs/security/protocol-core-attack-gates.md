@@ -16,6 +16,7 @@
 | Устройства | неизвестное, ожидающее или отозванное устройство | закрыто тестом | `production_context_rejects_unknown_pending_and_revoked_devices` |
 | Устройства | откат WebAuthn-счётчика | закрыто тестом | `webauthn_rejects_counter_rollback` |
 | Устройства | WebAuthn-ключ в контексте не совпадает с зарегистрированным | закрыто тестом | `webauthn_rejects_context_device_key_not_registered_key` |
+| Клиентский запуск | `ClientCore::new_with_http2` выглядит боевым, но не несёт SPKI pins и оставляет часть транспортов заглушками | закрыто отказом | `new_with_http2_fails_closed_until_full_production_transport_is_wired` |
 | Транспорт | `http://`, локальные, частные, link-local, CGNAT, IPv6-local и документационные адреса в боевой настройке | закрыто тестом | `production_transport_rejects_http_url`, `production_transport_rejects_test_hosts`, `production_transport_rejects_ip_literal_hosts`, `production_transport_rejects_link_local_and_cgnat_hosts`, `production_transport_rejects_ipv6_local_hosts` |
 | Транспорт | IPv4-mapped IPv6 ведёт на локальный, частный, CGNAT или документационный адрес | закрыто тестом | `production_transport_rejects_ipv4_mapped_ipv6_forbidden_hosts` |
 | Транспорт | неверный SPKI pin | закрыто тестом | `wrong_key_for_same_server_is_rejected_after_inner_accepts` |
@@ -36,6 +37,7 @@
 | Sealed Sender | подделанная внутренняя подпись V2 после успешного расшифрования | закрыто тестом | `forged_inner_signature_rejected_after_successful_v2_decrypt` |
 | Sealed Sender | повтор к другому получателю | закрыто тестом | `real_attack_replay_envelope_to_different_recipient_aad_blocks` |
 | Sealed Sender | V1 как V2 и V2 как V1 | закрыто тестом | `real_attack_cross_version_replay_v1_to_v2_blocked` |
+| Зависимости | опасная зависимость или cargo-deny policy обходятся локально | закрыто воротами | `scripts/audit-dependency-policy.sh` |
 
 Оставшиеся границы выпуска:
 

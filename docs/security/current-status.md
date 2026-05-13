@@ -20,6 +20,9 @@ Implemented and currently documented:
   sealed sender, backup, padding, post-quantum helpers, and call primitives;
 - internal HTTP/2 production builder with system certificate verification and
   SPKI pinning;
+- incomplete `ClientCore::new_with_http2` bootstrap is fail-closed because it
+  does not carry SPKI pins for every service and still leaves some transports
+  on local stubs;
 - server-side attestation gates for backup unwrap and OPRF that fail closed
   without a real platform verifier;
 - local platform verifier crate with shared token checks and local WebAuthn
@@ -31,6 +34,8 @@ Implemented and currently documented:
   `docs/security/protocol-core-attack-gates.md`;
 - mandatory server-nonce replay rejection in the production OPRF and backup
   unwrap contexts;
+- local dependency release gate runs `cargo deny check` and rejects missing
+  `cargo-deny` as a gate failure;
 - formal and local lint gate status recorded in
   `docs/audits/formal-lint-status-2026-05-13.md`.
 
@@ -65,6 +70,9 @@ Umbrella Protocol 1.0.0 — набор Rust-крейтов протокола с
   постквантовых помощников и заготовок звонков;
 - внутренний боевой сборщик HTTP/2 с системной проверкой сертификата и
   закреплёнными SPKI-ключами;
+- неполный `ClientCore::new_with_http2` закрыто отказывает, потому что он не
+  несёт SPKI-ключи для всех сервисов и всё ещё оставляет часть транспортов на
+  местных заглушках;
 - серверные проверки устройства для развёртки резервного ключа и OPRF, которые
   закрыто отказывают без настоящего платформенного проверяющего;
 - локальный крейт платформенной проверки с общими проверками токена и локальной
@@ -76,6 +84,8 @@ Umbrella Protocol 1.0.0 — набор Rust-крейтов протокола с
   `docs/security/protocol-core-attack-gates.md`;
 - обязательная защита от повторного использования серверного вызова в боевых
   контекстах OPRF и развёртки резервного ключа;
+- локальные ворота зависимостей запускают `cargo deny check`; отсутствие
+  `cargo-deny` считается отказом ворот, а не успехом;
 - статус формальных проверок и местных правил в
   `docs/audits/formal-lint-status-2026-05-13.md`.
 

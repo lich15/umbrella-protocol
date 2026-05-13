@@ -45,10 +45,15 @@ crate checks shared token-size, app/site, nonce, key, signature, and counter
 rules where enough material is available. WebAuthn has local assertion
 verification. Apple App Attest and Android Play Integrity still fail closed
 until external trust material, platform-token parsers, and mobile/server
-integration are wired. See
+integration are wired. The incomplete `ClientCore::new_with_http2` path also
+fails closed until every service has SPKI pins and real postman, KT, and call
+relay transports. See
 [`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md).
 Core protocol attack gates are recorded in
 [`security/protocol-core-attack-gates.md`](security/protocol-core-attack-gates.md).
+Local audits also include `scripts/audit-test-only-production-boundary.sh`,
+which checks that test-only and incomplete paths do not look like production
+paths.
 
 The current status of formal verification and local lint gates is recorded in
 [`audits/formal-lint-status-2026-05-13.md`](audits/formal-lint-status-2026-05-13.md).
@@ -102,10 +107,15 @@ SPKI-ключами. Публичный FFI-запуск остаётся зак
 вызов, ключ, подпись и счётчик там, где для этого хватает данных. WebAuthn
 проверяется локально. Apple App Attest и Android Play Integrity всё ещё закрыто
 отказывают, пока не подключены внешние корни доверия, разбор платформенного
-токена и мобильная/серверная связка. Подробная граница:
+токена и мобильная/серверная связка. Неполный путь
+`ClientCore::new_with_http2` тоже закрыто отказывает, пока каждый сервис не
+получит SPKI-ключи и настоящие транспорты postman, KT и call relay. Подробная
+граница:
 [`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md).
 Боевые атакующие ворота ядра протокола записаны в
 [`security/protocol-core-attack-gates.md`](security/protocol-core-attack-gates.md).
+Локальные аудиты также включают `scripts/audit-test-only-production-boundary.sh`;
+он проверяет, что тестовые и неполные пути не выглядят боевыми.
 
 Текущий статус формальных проверок и местных строгих правил записан в
 [`audits/formal-lint-status-2026-05-13.md`](audits/formal-lint-status-2026-05-13.md).

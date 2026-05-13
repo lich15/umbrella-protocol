@@ -21,7 +21,9 @@ platform-verifier crate checks shared token-size, app/site, nonce, key,
 signature, and counter rules where enough material is available. WebAuthn has
 local assertion verification. Apple App Attest and Android Play Integrity still
 fail closed until external trust material, platform-token parsers, and
-mobile/server integration are wired. See
+mobile/server integration are wired. The incomplete
+`ClientCore::new_with_http2` path also fails closed until every service has
+SPKI pins and real postman, KT, and call relay transports. See
 [`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
 Core protocol attack gates are recorded in
 [`docs/security/protocol-core-attack-gates.md`](docs/security/protocol-core-attack-gates.md).
@@ -188,6 +190,12 @@ Public access notices:
 
 ```bash
 bash scripts/audit-public-access-notices.sh
+```
+
+Test-only and incomplete production boundaries:
+
+```bash
+bash scripts/audit-test-only-production-boundary.sh
 ```
 
 GitHub workflow policy:
@@ -409,8 +417,10 @@ UmbrellaX, который сейчас проходит приведение к 
 приложение или сайт, серверный вызов, ключ, подпись и счётчик там, где для
 этого хватает данных. WebAuthn проверяется локально. Apple App Attest и Android
 Play Integrity всё ещё закрыто отказывают, пока не подключены внешние корни
-доверия, разбор платформенного токена и мобильная/серверная связка. Подробная
-граница:
+доверия, разбор платформенного токена и мобильная/серверная связка. Неполный
+путь `ClientCore::new_with_http2` тоже закрыто отказывает, пока каждый сервис
+не получит SPKI-ключи и настоящие транспорты postman, KT и call relay.
+Подробная граница:
 [`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
 Боевые атакующие ворота ядра протокола записаны в
 [`docs/security/protocol-core-attack-gates.md`](docs/security/protocol-core-attack-gates.md).
@@ -578,6 +588,12 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace --all-features --lock
 
 ```bash
 bash scripts/audit-public-access-notices.sh
+```
+
+Проверка тестовых и неполных боевых путей:
+
+```bash
+bash scripts/audit-test-only-production-boundary.sh
 ```
 
 Проверка правил задач GitHub:

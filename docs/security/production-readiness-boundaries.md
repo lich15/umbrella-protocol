@@ -20,6 +20,9 @@ Closed gates:
 - HTTP/2 transport: the internal production builder validates real deployment
   hosts and builds a `reqwest` client with system certificate verification plus
   SPKI pinning. This does not open public FFI bootstrap yet.
+- Incomplete HTTP/2 bootstrap: `ClientCore::new_with_http2` fails closed until
+  the full production config carries SPKI pins for every service and replaces
+  postman, KT, and call relay stubs with real transports.
 - TLS pinning: placeholder acceptance is forbidden; the production transport
   uses a real `rustls` verifier that checks the normal certificate result first
   and only then checks the configured SPKI pins.
@@ -58,6 +61,9 @@ Closed gates:
 - HTTP/2 транспорт: внутренний боевой сборщик проверяет настоящие адреса
   развёртывания и собирает `reqwest`-клиент с системной проверкой сертификата
   плюс закреплёнными SPKI-ключами. Это ещё не открывает публичный FFI-запуск.
+- Неполный HTTP/2 bootstrap: `ClientCore::new_with_http2` закрыто отказывает,
+  пока полная боевая настройка не несёт SPKI-ключи для каждого сервиса и пока
+  postman, KT и call relay не заменены с заглушек на реальные транспорты.
 - TLS pinning: заглушка, которая “просто проходит”, запрещена; боевой
   транспорт использует настоящий `rustls`-проверяющий, который сначала
   проверяет обычный результат сертификата и только потом сверяет закреплённые
