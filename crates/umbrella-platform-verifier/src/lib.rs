@@ -22,7 +22,7 @@ pub use android::{AndroidPlayIntegrityConfig, AndroidPlayIntegrityVerifier};
 pub use apple::{AppleAppAttestConfig, AppleAppAttestEnvironment, AppleAppAttestVerifier};
 pub use error::{PlatformVerifierError, Result};
 pub use types::{
-    DevicePublicKey, PlatformKind, PlatformVerificationContext, PlatformVerifier,
-    PlatformVerifierOutput, RegisteredPlatformKey, ServerNonce,
+    validate_token_size, DevicePublicKey, PlatformKind, PlatformVerificationContext,
+    PlatformVerifier, PlatformVerifierOutput, RegisteredPlatformKey, ServerNonce,
 };
 pub use web::WebAuthnVerifier;

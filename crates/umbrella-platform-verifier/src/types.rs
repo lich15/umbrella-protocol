@@ -1,11 +1,26 @@
 //! Общие типы платформенной проверки.
 //! Common platform-verification types.
 
-use crate::error::Result;
+use crate::error::{PlatformVerifierError, Result};
 
 /// Максимальный размер платформенного токена.
 /// Maximum accepted platform token size.
 pub const MAX_PLATFORM_TOKEN_BYTES: usize = 4096;
+
+/// Проверить размер токена.
+/// Validate platform token size.
+pub fn validate_token_size(token: &[u8], max: usize) -> Result<()> {
+    if token.is_empty() {
+        return Err(PlatformVerifierError::EmptyToken);
+    }
+    if token.len() > max {
+        return Err(PlatformVerifierError::TokenTooLarge {
+            got: token.len(),
+            max,
+        });
+    }
+    Ok(())
+}
 
 /// Серверный одноразовый вызов.
 /// Server-issued one-time nonce.
@@ -72,4 +87,32 @@ pub trait PlatformVerifier: core::fmt::Debug {
     /// Проверить платформенное доказательство.
     /// Verify a platform proof.
     fn verify(&self, ctx: PlatformVerificationContext<'_>) -> Result<PlatformVerifierOutput>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::PlatformVerifierError;
+
+    #[test]
+    fn token_guard_rejects_empty() {
+        let err = validate_token_size(&[], MAX_PLATFORM_TOKEN_BYTES).unwrap_err();
+        assert!(matches!(err, PlatformVerifierError::EmptyToken));
+    }
+
+    #[test]
+    fn token_guard_rejects_oversize() {
+        let token = vec![0u8; MAX_PLATFORM_TOKEN_BYTES + 1];
+        let err = validate_token_size(&token, MAX_PLATFORM_TOKEN_BYTES).unwrap_err();
+        assert!(matches!(
+            err,
+            PlatformVerifierError::TokenTooLarge { got, max }
+                if got == MAX_PLATFORM_TOKEN_BYTES + 1 && max == MAX_PLATFORM_TOKEN_BYTES
+        ));
+    }
+
+    #[test]
+    fn token_guard_accepts_non_empty_within_limit() {
+        validate_token_size(b"x", MAX_PLATFORM_TOKEN_BYTES).unwrap();
+    }
 }
