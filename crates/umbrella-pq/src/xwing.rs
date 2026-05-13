@@ -8,14 +8,14 @@
 //! Used as the pq-ciphersuite in MLS (IANA 0x004D) and as ephemeral KEM in
 //! sealed-sender hybrid envelope (block 8.6).
 //!
-//! Бэкенд: `libcrux-kem 0.0.7` через API-имя `Algorithm::XWingKemDraft06`.
+//! Бэкенд: `libcrux-kem 0.0.8` через API-имя `Algorithm::XWingKemDraft06`.
 //! Реальный вывод закреплён официальным draft-10 Appendix C KAT в
 //! `tests/xwing_draft10_kat.rs`; отличие имени upstream API от draft-10
 //! документальное, не wire-format mismatch. Используется derand API чтобы
 //! обойти несовместимость `rand_core` версий между libcrux (0.9) и нашим
 //! workspace (0.6).
 //!
-//! Backend: `libcrux-kem 0.0.7` via the upstream API name
+//! Backend: `libcrux-kem 0.0.8` via the upstream API name
 //! `Algorithm::XWingKemDraft06`. Actual output is pinned against the official
 //! draft-10 Appendix C KAT in `tests/xwing_draft10_kat.rs`; the upstream API
 //! name is documentary drift, not a wire-format mismatch. Uses derand API to

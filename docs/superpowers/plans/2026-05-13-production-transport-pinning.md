@@ -55,7 +55,7 @@
 - Modify: `Cargo.toml`
 - Modify: `crates/umbrella-client/Cargo.toml`
 
-- [ ] **Step 1: Confirm clean worktree and initialized submodules**
+- [x] **Step 1: Confirm clean worktree and initialized submodules**
 
 Run:
 
@@ -72,7 +72,7 @@ Expected:
  47dbedecad0c1fd8eb5368d582250ebfcc1e1ce6 crates/umbrella-tests/cross_impl/openmls ...
 ```
 
-- [ ] **Step 2: Record baseline test gate**
+- [x] **Step 2: Record baseline test gate**
 
 Run:
 
@@ -86,7 +86,7 @@ Expected:
 test result: ok
 ```
 
-- [ ] **Step 3: Add direct dependencies**
+- [x] **Step 3: Add direct dependencies**
 
 In root `Cargo.toml`, under the TLS dependencies, add:
 
@@ -115,7 +115,7 @@ In `crates/umbrella-client/Cargo.toml`, under `[dev-dependencies]`, add:
 rcgen = { workspace = true }
 ```
 
-- [ ] **Step 4: Update lockfile once, then return to locked commands**
+- [x] **Step 4: Update lockfile once, then return to locked commands**
 
 Run:
 
@@ -129,7 +129,7 @@ Expected:
 Finished `dev` profile
 ```
 
-- [ ] **Step 5: Verify supply-chain policy after adding dependencies**
+- [x] **Step 5: Verify supply-chain policy after adding dependencies**
 
 Run:
 
@@ -143,7 +143,7 @@ Expected:
 advisories ok, bans ok, licenses ok, sources ok
 ```
 
-- [ ] **Step 6: Commit dependency iteration**
+- [x] **Step 6: Commit dependency iteration**
 
 Run:
 

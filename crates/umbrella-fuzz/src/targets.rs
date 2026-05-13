@@ -822,7 +822,7 @@ pub fn fuzz_xwing_ciphertext_parser(data: &[u8]) {
 ///
 /// Side-channel timing leak в ML-KEM-768 decapsulation (KyberSlash, Bernstein
 /// et al. 2024) митигирован архитектурно через formal verification backend
-/// `libcrux_ml_kem 0.0.8` (hax-проверенная реализация FIPS 203). Этот fuzz
+/// `libcrux_ml_kem 0.0.9` (hax-проверенная реализация FIPS 203). Этот fuzz
 /// таргет проверяет structural property (no-panic invariant); timing-leak
 /// constant-time property delegated к libcrux upstream proof + dudect
 /// бенчам block 10.24 (architectural delegation, parallel `RowCipher::
@@ -831,7 +831,7 @@ pub fn fuzz_xwing_ciphertext_parser(data: &[u8]) {
 ///
 /// The side-channel timing leak in ML-KEM-768 decapsulation (KyberSlash,
 /// Bernstein et al. 2024) is mitigated architecturally via the formal
-/// verification of the `libcrux_ml_kem 0.0.8` backend (hax-verified FIPS 203
+/// verification of the `libcrux_ml_kem 0.0.9` backend (hax-verified FIPS 203
 /// implementation). This fuzz target checks the structural no-panic
 /// invariant; the timing-leak constant-time property is delegated to the
 /// libcrux upstream proof + the dudect benches in block 10.24 (architectural
@@ -886,12 +886,12 @@ pub fn fuzz_ml_kem_decapsulate(data: &[u8]) {
 
     // FIPS 203 implicit rejection: возвращает SecretBox<[u8; 32]> без panic
     // даже на garbage ciphertext. Структурная property — никаких unreachable!()
-    // / unwrap() / out-of-bounds в pure-Rust libcrux_ml_kem 0.0.8.
+    // / unwrap() / out-of-bounds в pure-Rust libcrux_ml_kem 0.0.9.
     //
     // FIPS 203 implicit rejection: returns SecretBox<[u8; 32]> without
     // panicking even on garbage ciphertext. Structural property — no
     // unreachable!() / unwrap() / out-of-bounds in pure-Rust
-    // libcrux_ml_kem 0.0.8.
+    // libcrux_ml_kem 0.0.9.
     let _ = ml_kem_768_decaps(&sk, &ct);
 }
 

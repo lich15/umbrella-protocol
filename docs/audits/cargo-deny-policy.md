@@ -22,6 +22,17 @@ Known vulnerable dependencies fail the check unless the repository contains a
 specific, dated exception with a technical reason. Exceptions must be narrow and
 removed when a fixed dependency is available.
 
+## Duplicate-Version Exceptions
+
+Duplicate dependencies are denied by default. Current narrow exceptions are
+allowed only when the latest upstream release still forces the old dependency.
+As of 2026-05-13, `openmls_rust_crypto 0.5.1` is the newest available MLS
+RustCrypto provider and still pulls `hpke-rs` with `libcrux-sha3 0.0.8`.
+Umbrella's own PQ layer uses `libcrux-ml-dsa 0.0.9`, `libcrux-ml-kem 0.0.9`,
+and `libcrux-kem 0.0.8` so `RUSTSEC-2026-0125` and `RUSTSEC-2026-0126` are
+fixed. The old OpenMLS transitive libcrux internals must be rechecked when a
+new OpenMLS provider is released.
+
 ## Command
 
 ```bash
@@ -53,6 +64,18 @@ Strong copyleft или source-available лицензии, конфликтующ
 Известные уязвимые зависимости проваливают проверку, если в репозитории нет
 точечного датированного исключения с технической причиной. Исключения должны
 быть узкими и удаляться после появления исправленной зависимости.
+
+## Исключения для дублей
+
+Дубли зависимостей запрещены по умолчанию. Узкие исключения разрешены только
+когда последний выпуск внешней библиотеки всё ещё тянет старую зависимость.
+На 2026-05-13 `openmls_rust_crypto 0.5.1` — самый свежий доступный MLS
+RustCrypto-провайдер, и он всё ещё тянет `hpke-rs` с `libcrux-sha3 0.0.8`.
+Собственный PQ-слой Umbrella использует `libcrux-ml-dsa 0.0.9`,
+`libcrux-ml-kem 0.0.9` и `libcrux-kem 0.0.8`, поэтому
+`RUSTSEC-2026-0125` и `RUSTSEC-2026-0126` закрыты. Старые внутренности
+libcrux внутри OpenMLS надо перепроверить, когда выйдет новый провайдер
+OpenMLS.
 
 ## Команда
 

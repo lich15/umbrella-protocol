@@ -1,4 +1,4 @@
-b7dd8bbfc9478249271528fe5e91b21126016f4bffec54569676688633f996a5  data/stability-ml-dsa-65.json
-98caf3b68e15a186722344e20a0ae1708034e8bdb1008a983d1ebadaca1befdb  data/stability-ml-kem-768.json
+279497a8e3123221bbe6327d279949bfb2e02c6dfa1f17f4e16aefec9b6e2ada  data/stability-ml-dsa-65.json
+fe2ac1aaf239d14407ab7c2726f2613f985ef12f1111f2d79ba1cc3826898712  data/stability-ml-kem-768.json
 81cc20bd4a5144a1c2d06eb37ad577d2a56b021f07a9e34b5e06326efd01e5ea  data/stability-slh-dsa-128f.json
-61fe01f4b4ec1335627ba4baacde63476bcb4ec237e46b93da121185cf662855  data/stability-x-wing.json
+e4890dcc457e7a75258813acd734a4610b5e779ecb897ecc5f02e39e33f12487  data/stability-x-wing.json

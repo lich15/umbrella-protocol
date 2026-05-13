@@ -1,6 +1,6 @@
 {
   "algorithm": "x-wing",
-  "source": "umbrella-pq stability KAT — generated 2026-04-25 from libcrux-kem 0.0.7 API name Algorithm::XWingKemDraft06; official draft-10 Appendix C KAT is enforced by crates/umbrella-pq/tests/xwing_draft10_kat.rs.",
+  "source": "umbrella-pq stability KAT — generated 2026-04-25 from libcrux-kem 0.0.8 API name Algorithm::XWingKemDraft06; official draft-10 Appendix C KAT is enforced by crates/umbrella-pq/tests/xwing_draft10_kat.rs.",
   "vectors": [
     {
       "vector_id": 0,

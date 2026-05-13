@@ -49,13 +49,13 @@ pub use targets::{
 // `fuzz_ml_kem_decapsulate` — закрывает 1 GAP col 1 row 10 KyberSlash в
 // threat × crate matrix block 10.22 (structural no-panic property для
 // FIPS 203 implicit-rejection decaps; KyberSlash timing leak митигирован
-// архитектурно через `libcrux_ml_kem 0.0.8` formally-verified backend).
+// архитектурно через `libcrux_ml_kem 0.0.9` formally-verified backend).
 //
 // Block 10.27 (Phase 3 cross-cutting dev crates audit) added
 // `fuzz_ml_kem_decapsulate` — closes the 1 GAP at col 1 row 10 KyberSlash
 // in the block 10.22 threat × crate matrix (structural no-panic property
 // for FIPS 203 implicit-rejection decaps; the KyberSlash timing leak is
-// mitigated architecturally via the `libcrux_ml_kem 0.0.8` formally
+// mitigated architecturally via the `libcrux_ml_kem 0.0.9` formally
 // verified backend).
 #[cfg(feature = "pq")]
 pub use targets::{

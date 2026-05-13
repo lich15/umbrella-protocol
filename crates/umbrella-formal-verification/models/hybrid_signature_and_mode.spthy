@@ -51,7 +51,7 @@
    - ML-DSA-65 EUF-CMA modelled as abstract trapdoor:
        mldsa_pk/1 [private], mldsa_sign/2, mldsa_verify/3; equation
        mldsa_verify(mldsa_sign(m, sk), m, mldsa_pk(sk)) = true.
-     Real-world basis: NIST FIPS 204 + libcrux-ml-dsa 0.0.8 (hax-verified
+     Real-world basis: NIST FIPS 204 + libcrux-ml-dsa 0.0.9 (hax-verified
      для secret-independence).
    - AND-mode composite verify: hybrid_verify_accept rule fires только
      когда оба `verify(...) = true` И `mldsa_verify(...) = true` через

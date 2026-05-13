@@ -365,7 +365,7 @@ fn attack_2e_hybrid_replace_ml_dsa_with_different_message_sig_reject() {
 
 // =============================================================================
 // Атака 3 — KyberSlash structural verification + Pattern V grep
-// (row 10 KyberSlash side-channel — libcrux 0.0.8 formally hax-verified)
+// (row 10 KyberSlash side-channel — libcrux 0.0.9 formally hax-verified)
 // =============================================================================
 //
 // SPEC-01 § 4 row 10 «KyberSlash side-channel» — adversary measures decapsulation
@@ -373,7 +373,7 @@ fn attack_2e_hybrid_replace_ml_dsa_with_different_message_sig_reject() {
 // timing oracle. KyberSlash 2024 affected BoringSSL/Mbed-TLS implementations с
 // non-CT integer comparisons in decapsulation.
 //
-// Mitigation: libcrux-ml-kem 0.0.8 — formally hax-verified — гарантирует CT
+// Mitigation: libcrux-ml-kem 0.0.9 — formally hax-verified — гарантирует CT
 // arithmetic. Это library-level mitigation. Наша обёртка не должна вводить
 // non-CT branches вокруг libcrux calls.
 //

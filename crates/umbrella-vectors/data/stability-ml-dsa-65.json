@@ -1,6 +1,6 @@
 {
   "algorithm": "ml-dsa-65",
-  "source": "umbrella-pq stability KAT — generated 2026-04-25 from libcrux-ml-dsa 0.0.8 ml_dsa_65::generate_key_pair; fixes deterministic seed→keypair для reproducibility. Note: ML-DSA-65 sign использует hedged randomness — signature не deterministic для fixed seed, vectors проверяют только keygen и verify acceptance.",
+  "source": "umbrella-pq stability KAT — generated 2026-04-25 from libcrux-ml-dsa 0.0.9 ml_dsa_65::generate_key_pair; fixes deterministic seed→keypair для reproducibility. Note: ML-DSA-65 sign использует hedged randomness — signature не deterministic для fixed seed, vectors проверяют только keygen и verify acceptance.",
   "vectors": [
     {
       "vector_id": 0,

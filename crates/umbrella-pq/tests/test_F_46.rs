@@ -6,7 +6,7 @@
 //! Контекст / Context:
 //!
 //! Umbrella-pq использует **derand API** libcrux/fips205 (фиксированный seed/randomness vs
-//! `RngCore + CryptoRng` direct passing) — потому что libcrux-kem 0.0.7 non-derand path
+//! `RngCore + CryptoRng` direct passing) — потому что libcrux-kem 0.0.8 non-derand path
 //! требует rand_core 0.9 (наш workspace на rand_core 0.6). 7 sites имеют pattern:
 //!
 //! ```rust
@@ -21,7 +21,7 @@
 //! semantics).
 //!
 //! umbrella-pq uses the **derand API** of libcrux/fips205 (fixed seed/randomness vs direct
-//! `RngCore + CryptoRng` passing) — because libcrux-kem 0.0.7's non-derand path requires
+//! `RngCore + CryptoRng` passing) — because libcrux-kem 0.0.8's non-derand path requires
 //! rand_core 0.9 (our workspace is on rand_core 0.6). 7 sites have the pattern above.
 //!
 //! All 7 sites must call `seed.zeroize()` after backend consumption to prevent LLVM

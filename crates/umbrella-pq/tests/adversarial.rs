@@ -108,9 +108,9 @@ fn wrong_public_key_rejected() {
     ));
 }
 
-/// Regression for the 2026 libcrux ML-DSA hint-counter bug class:
-/// malformed public signatures must be rejected as verification errors,
-/// never as process panics.
+/// Regression for the 2026 libcrux ML-DSA hint-counter / hint-use bug class
+/// (`RUSTSEC-2026-0125`, `RUSTSEC-2026-0126`): malformed public signatures
+/// must be rejected as verification errors, never accepted and never as process panics.
 #[test]
 fn ml_dsa_65_overflowed_hint_counter_rejected_without_panic() {
     const COMMITMENT_HASH_LEN: usize = 48;

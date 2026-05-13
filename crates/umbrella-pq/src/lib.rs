@@ -13,14 +13,14 @@
 //!
 //! Бэкенды pinned exact; upstream assurance принимается только в scoped виде:
 //!
-//! - `libcrux-ml-kem 0.0.8` (mlkem768 feature) — ML-KEM-768 (FIPS 203).
-//! - `libcrux-kem 0.0.7` — X-Wing combiner (upstream API name
+//! - `libcrux-ml-kem 0.0.9` (mlkem768 feature) — ML-KEM-768 (FIPS 203).
+//! - `libcrux-kem 0.0.8` — X-Wing combiner (upstream API name
 //!   `Algorithm::XWingKemDraft06`, output checked against draft-10 KAT).
-//! - `libcrux-ml-dsa 0.0.8` (mldsa65 feature) — ML-DSA-65 (FIPS 204).
+//! - `libcrux-ml-dsa 0.0.9` (mldsa65 feature) — ML-DSA-65 (FIPS 204).
 //! - `fips205 0.4.1` (slh_dsa_sha2_128f feature) — SLH-DSA-SHA2-128f-simple (FIPS 205).
 //!
 //! libcrux-* используется через **derand API** (`generate_key_pair([u8; SEED])`,
-//! `encapsulate_derand(&seed)`) потому что libcrux-kem 0.0.7 в её non-derand path
+//! `encapsulate_derand(&seed)`) потому что libcrux-kem 0.0.8 в её non-derand path
 //! требует `rand_core 0.9` `CryptoRng`, несовместимый с workspace `rand_core 0.6`.
 //! Наш API принимает `&mut R: RngCore + CryptoRng` от workspace `rand_core 0.6` и
 //! наполняет нужный seed через `fill_bytes`.
@@ -30,14 +30,14 @@
 //! Backends are pinned exactly; upstream assurance is accepted only with
 //! scoped boundaries:
 //!
-//! - `libcrux-ml-kem 0.0.8` (mlkem768 feature) — ML-KEM-768 (FIPS 203).
-//! - `libcrux-kem 0.0.7` — X-Wing combiner (upstream API name
+//! - `libcrux-ml-kem 0.0.9` (mlkem768 feature) — ML-KEM-768 (FIPS 203).
+//! - `libcrux-kem 0.0.8` — X-Wing combiner (upstream API name
 //!   `Algorithm::XWingKemDraft06`, output checked against draft-10 KAT).
-//! - `libcrux-ml-dsa 0.0.8` (mldsa65 feature) — ML-DSA-65 (FIPS 204).
+//! - `libcrux-ml-dsa 0.0.9` (mldsa65 feature) — ML-DSA-65 (FIPS 204).
 //! - `fips205 0.4.1` (slh_dsa_sha2_128f feature) — SLH-DSA-SHA2-128f-simple (FIPS 205).
 //!
 //! libcrux-* is used via the **derand API** (`generate_key_pair([u8; SEED])`,
-//! `encapsulate_derand(&seed)`) because libcrux-kem 0.0.7's non-derand path requires
+//! `encapsulate_derand(&seed)`) because libcrux-kem 0.0.8's non-derand path requires
 //! `rand_core 0.9` `CryptoRng`, incompatible with workspace `rand_core 0.6`. Our API
 //! accepts `&mut R: RngCore + CryptoRng` from workspace `rand_core 0.6` and fills the
 //! required seed via `fill_bytes`.

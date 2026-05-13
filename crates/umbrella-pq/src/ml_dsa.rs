@@ -1,5 +1,5 @@
-//! ML-DSA-65 (NIST FIPS 204) wrapper через `libcrux-ml-dsa 0.0.8` derand API.
-//! ML-DSA-65 (NIST FIPS 204) wrapper using `libcrux-ml-dsa 0.0.8` derand API.
+//! ML-DSA-65 (NIST FIPS 204) wrapper через `libcrux-ml-dsa 0.0.9` derand API.
+//! ML-DSA-65 (NIST FIPS 204) wrapper using `libcrux-ml-dsa 0.0.9` derand API.
 //!
 //! Hedged-randomness mode (NIST SP 800-204): signature использует rng-derived
 //! 32-byte randomness вместе с deterministic компонентом для дополнительной

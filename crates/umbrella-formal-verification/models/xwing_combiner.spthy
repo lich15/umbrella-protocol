@@ -33,7 +33,7 @@
    ----------------------------------------------------------------------------
    Axioms / abstractions:
 
-   - libcrux-kem 0.0.7 exposes the API name Algorithm::XWingKemDraft06, but
+   - libcrux-kem 0.0.8 exposes the API name Algorithm::XWingKemDraft06, but
      the Rust implementation is checked against draft-connolly-cfrg-xwing-kem-10
      Appendix C KAT in umbrella-pq. The combiner model abstracts the same joint
      security requirement: K is bound to both component shared secrets and the

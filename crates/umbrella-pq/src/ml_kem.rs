@@ -1,12 +1,12 @@
-//! ML-KEM-768 (NIST FIPS 203) wrapper через `libcrux-ml-kem 0.0.8` derand API.
-//! ML-KEM-768 (NIST FIPS 203) wrapper using `libcrux-ml-kem 0.0.8` derand API.
+//! ML-KEM-768 (NIST FIPS 203) wrapper через `libcrux-ml-kem 0.0.9` derand API.
+//! ML-KEM-768 (NIST FIPS 203) wrapper using `libcrux-ml-kem 0.0.9` derand API.
 //!
-//! Derand API используется потому что libcrux-ml-kem 0.0.8 принимает фиксированный
+//! Derand API используется потому что libcrux-ml-kem 0.0.9 принимает фиксированный
 //! seed (`[u8; 64]` для keygen, `[u8; 32]` для encaps), что независимо от версии
 //! `rand_core` в downstream. Наш API принимает `&mut R: RngCore + CryptoRng` от
 //! workspace `rand_core 0.6` и наполняет нужный seed через `fill_bytes`.
 //!
-//! Derand API is used because libcrux-ml-kem 0.0.8 takes fixed-size seeds
+//! Derand API is used because libcrux-ml-kem 0.0.9 takes fixed-size seeds
 //! (`[u8; 64]` for keygen, `[u8; 32]` for encaps), which is independent of the
 //! downstream `rand_core` version. Our API accepts `&mut R: RngCore + CryptoRng`
 //! from workspace `rand_core 0.6` and fills the required seed via `fill_bytes`.

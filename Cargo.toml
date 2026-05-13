@@ -99,9 +99,9 @@ bip39 = "2.2"
 # PQ-бэкенды pinned exact, потому что upstream assurance и security fixes
 # привязаны к конкретному release. libcrux formal-verification claims scoped,
 # не blanket proof для всех wrapper/admitted modules.
-libcrux-ml-kem = { version = "=0.0.8", default-features = false, features = ["mlkem768"] }
-libcrux-kem    = { version = "=0.0.7", default-features = false }
-libcrux-ml-dsa = { version = "=0.0.8", default-features = false, features = ["mldsa65"] }
+libcrux-ml-kem = { version = "=0.0.9", default-features = false, features = ["mlkem768"] }
+libcrux-kem    = { version = "=0.0.8", default-features = false }
+libcrux-ml-dsa = { version = "=0.0.9", default-features = false, features = ["mldsa65"] }
 fips205        = { version = "=0.4.1", default-features = false, features = ["slh_dsa_sha2_128f"] }
 
 # SHA-3 для X-Wing combiner fallback (если libcrux-kem API изменится).
@@ -183,6 +183,8 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "h
 # (SPEC-06/10 hardening). `ring` — audited crypto provider with FIPS-draft.
 rustls = { version = "0.23.40", default-features = false, features = ["std", "logging", "ring"] }
 rustls-native-certs = "0.8"
+rustls-platform-verifier = "0.7.0"
+x509-cert = { version = "0.2.5", default-features = false }
 
 # ——— WebRTC сетевой слой (production design Решение 4, production release) ———
 # ——— WebRTC networking layer (production design Decision 4, Release milestone) ———
@@ -213,6 +215,7 @@ serde_json = "1.0.149"
 # ——— Dev tooling ———
 tempfile = "3.27"
 wiremock = "0.6.5"
+rcgen = "0.14.8"
 
 # Tests
 proptest = "1.11"

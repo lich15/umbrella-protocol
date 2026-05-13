@@ -1,6 +1,6 @@
 {
   "algorithm": "ml-kem-768",
-  "source": "umbrella-pq stability KAT — generated 2026-04-25 from libcrux-ml-kem 0.0.8 mlkem768::generate_key_pair + encapsulate; fixes deterministic seed→output для reproducibility между платформами и защита от silent regression при upgrade.",
+  "source": "umbrella-pq stability KAT — generated 2026-04-25 from libcrux-ml-kem 0.0.9 mlkem768::generate_key_pair + encapsulate; fixes deterministic seed→output для reproducibility между платформами и защита от silent regression при upgrade.",
   "vectors": [
     {
       "vector_id": 0,

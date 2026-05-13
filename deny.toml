@@ -117,6 +117,10 @@ skip = [
     { crate = "sha2@0.10.9", reason = "transitive RustCrypto/OpenMLS/HPKE stack still uses digest 0.10; workspace code uses sha2 0.11 directly" },
     { crate = "hmac@0.12.1", reason = "transitive through hkdf 0.12 in RustCrypto/OpenMLS/HPKE stack; workspace code uses hmac 0.13 directly" },
     { crate = "hkdf@0.12.4", reason = "transitive RustCrypto/OpenMLS/HPKE stack still uses hkdf 0.12; workspace code uses hkdf 0.13 directly" },
+    { crate = "core-models@0.0.5", reason = "latest openmls_rust_crypto 0.5.1 still pulls hpke-rs/libcrux-sha3 0.0.8; Umbrella PQ uses libcrux 0.0.9 to fix RUSTSEC-2026-0125/0126" },
+    { crate = "libcrux-intrinsics@0.0.6", reason = "latest openmls_rust_crypto 0.5.1 still pulls hpke-rs/libcrux-sha3 0.0.8; Umbrella PQ uses libcrux 0.0.9 to fix RUSTSEC-2026-0125/0126" },
+    { crate = "libcrux-sha3@0.0.8", reason = "latest openmls_rust_crypto 0.5.1 still pulls hpke-rs/libcrux-sha3 0.0.8; no fixed openmls_rust_crypto release exists yet" },
+    { crate = "libcrux-traits@0.0.6", reason = "latest openmls_rust_crypto 0.5.1 still pulls hpke-rs/libcrux-sha3 0.0.8; Umbrella PQ uses libcrux 0.0.9 to fix RUSTSEC-2026-0125/0126" },
 ]
 
 # skip-tree — пропустить ВСЁ поддерево зависимостей под указанным crate.

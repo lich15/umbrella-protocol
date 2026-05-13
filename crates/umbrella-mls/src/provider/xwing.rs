@@ -1,10 +1,10 @@
 //! UmbrellaXWingProvider — кастомный `OpenMlsCrypto` provider для активации
 //! ciphersuite `MLS_256_XWING_CHACHA20POLY1305_SHA256_Ed25519` (IANA 0x004D)
-//! поверх `libcrux-kem 0.0.7` X-Wing API, проверенного официальным draft-10 KAT.
+//! поверх `libcrux-kem 0.0.8` X-Wing API, проверенного официальным draft-10 KAT.
 //!
 //! UmbrellaXWingProvider — custom `OpenMlsCrypto` provider that activates the
 //! `MLS_256_XWING_CHACHA20POLY1305_SHA256_Ed25519` ciphersuite (IANA 0x004D)
-//! atop the `libcrux-kem 0.0.7` X-Wing API, checked against the official draft-10 KAT.
+//! atop the `libcrux-kem 0.0.8` X-Wing API, checked against the official draft-10 KAT.
 //!
 //! ## Архитектура
 //!
@@ -400,14 +400,14 @@ fn derive_keypair(ikm: &[u8]) -> Result<HpkeKeyPair, CryptoError> {
 ///
 /// Делегирует все не-X-Wing операции в обёрнутый `OpenMlsRustCrypto`. Для
 /// `HpkeKemType::XWingKemDraft6` реализует HPKE base mode RFC 9180 §5.1
-/// поверх `umbrella_pq::xwing_*` (`libcrux-kem 0.0.7`
+/// поверх `umbrella_pq::xwing_*` (`libcrux-kem 0.0.8`
 /// API-имя `Algorithm::XWingKemDraft06`, вывод проверен draft-10 KAT).
 ///
 /// Custom openmls provider with X-Wing ciphersuite (0x004D) support.
 ///
 /// Delegates every non-X-Wing operation to the wrapped `OpenMlsRustCrypto`.
 /// For `HpkeKemType::XWingKemDraft6` it implements HPKE base mode RFC 9180
-/// §5.1 atop `umbrella_pq::xwing_*` (`libcrux-kem 0.0.7`
+/// §5.1 atop `umbrella_pq::xwing_*` (`libcrux-kem 0.0.8`
 /// API name `Algorithm::XWingKemDraft06`, output checked by draft-10 KAT).
 #[derive(Default, Debug)]
 pub struct UmbrellaXWingProvider {

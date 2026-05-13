@@ -32,11 +32,11 @@ fn vectors_dir() -> PathBuf {
 
 /// ML-KEM-768 stability KAT: deterministic seed → keygen → encaps → decaps roundtrip.
 /// Каждый vector с fixed seed должен давать тот же pk/sk на любой платформе и при
-/// любом upgrade libcrux-ml-kem 0.0.8.
+/// любом upgrade libcrux-ml-kem 0.0.9.
 ///
 /// ML-KEM-768 stability KAT: deterministic seed → keygen → encaps → decaps roundtrip.
 /// Each vector with a fixed seed must yield the same pk/sk on any platform and across
-/// any libcrux-ml-kem 0.0.8 upgrades.
+/// any libcrux-ml-kem 0.0.9 upgrades.
 #[test]
 fn stability_kat_ml_kem_768_roundtrip() {
     let path = vectors_dir().join("stability-ml-kem-768.json");

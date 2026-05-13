@@ -12,7 +12,7 @@
 //!    (`MLS_256_XWING_CHACHA20POLY1305_SHA256_Ed25519`). Делегирует не-X-Wing
 //!    операции в `OpenMlsRustCrypto`, X-Wing branch (HPKE base mode RFC 9180 §5.1
 //!    поверх DHKEM(X-Wing) + HKDF-SHA256 + ChaCha20-Poly1305) реализует сам через
-//!    `umbrella_pq::xwing::*` (`libcrux-kem 0.0.7` upstream API name
+//!    `umbrella_pq::xwing::*` (`libcrux-kem 0.0.8` upstream API name
 //!    `Algorithm::XWingKemDraft06`, checked against draft-10 KAT).
 //!
 //! ## Почему два провайдера, а не conditional alias
