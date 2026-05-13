@@ -34,6 +34,12 @@ transport and verifier is wired end to end. Cryptographic crates and test
 harnesses remain available for verification, but unfinished public paths must
 fail fast instead of using test-only constructors.
 
+Phase 2 hardening is active. The current boundary is documented in
+[`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md):
+public FFI bootstrap, the production HTTP/2 transport gate, TLS pinning, and
+the production attestation verifier fail closed until their real integrations
+are complete.
+
 ---
 
 ## Русский
@@ -69,3 +75,9 @@ Umbrella Protocol 1.0.0 — пакет с доступным для чтения
 и проверочные стенды остаются доступными для проверки, но незавершённые
 публичные пути должны отказывать явно, а не пользоваться тестовыми
 конструкторами.
+
+Фаза 2 приведения к документам активна. Текущая граница описана в
+[`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md):
+публичный внешний запуск, боевой HTTP/2-транспорт, закрепление TLS-ключей и
+боевая проверка устройства отказывают закрыто, пока настоящая связка не
+завершена.

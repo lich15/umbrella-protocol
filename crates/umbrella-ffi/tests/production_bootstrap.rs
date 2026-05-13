@@ -32,6 +32,8 @@ fn assert_production_bootstrap_unavailable(err: UmbrellaError) {
         UmbrellaError::Internal(message) => {
             assert!(message.contains("production bootstrap is not available"));
             assert!(message.contains("test constructors"));
+            assert!(message.contains("production HTTP/2 transport gate"));
+            assert!(message.contains("production attestation verifier"));
         }
         other => panic!("expected Internal production-bootstrap error, got {other:?}"),
     }

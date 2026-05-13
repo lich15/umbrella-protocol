@@ -12,6 +12,9 @@ Rust toolchain: stable 1.95.0
 Status: source-available package for non-commercial security and cryptographic
 testing. Public FFI/client production bootstrap is gated until every required
 transport and verifier is wired end to end.
+Phase 2 status: public FFI bootstrap, production HTTP/2 transport gate, TLS
+pinning, and production attestation verifier fail closed until real production
+integrations are complete.
 
 Primary public materials:
   README.md
@@ -59,6 +62,9 @@ Rust toolchain: stable 1.95.0
 безопасности и криптографического тестирования. Публичный боевой запуск клиента
 через внешний интерфейс для мобильных привязок закрыт до полной связки
 транспортов и боевых проверок.
+Статус Фазы 2: публичный внешний запуск, боевой HTTP/2-транспорт, закрепление
+TLS-ключей и боевая проверка устройства отказывают закрыто, пока настоящая
+боевая связка не завершена.
 
 Основные публичные материалы:
   README.md

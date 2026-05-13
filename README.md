@@ -10,6 +10,11 @@ repository contains implemented Rust cryptographic crates and test harnesses,
 but the public FFI/client production bootstrap is gated until every required
 transport and verifier is wired end to end.
 
+Phase 2 hardening is active. Production readiness is now fail-closed at the
+public FFI boundary, the production HTTP/2 transport gate, TLS pinning, and the
+production attestation verifier. See
+[`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
+
 This repository is public for transparency, reproducible builds, non-commercial
 security testing, cryptographic testing, and responsible vulnerability reports.
 Umbrella Protocol is source-available, not open-source. Commercial use and
@@ -375,6 +380,11 @@ UmbrellaX, который сейчас проходит приведение к 
 реализованные крейты на Rust и проверочные стенды, но публичный боевой запуск
 клиента через внешний интерфейс для мобильных привязок закрыт до полной связки
 транспортов и боевых проверок.
+
+Фаза 2 приведения к документам активна. Боевая готовность теперь закрыта до
+полной связки публичного внешнего запуска, боевого HTTP/2-транспорта,
+закрепления TLS-ключей и боевой проверки устройства. Подробности:
+[`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
 
 Репозиторий открыт для прозрачности, воспроизводимых сборок, некоммерческих
 проверок безопасности, криптографических испытаний и ответственных сообщений об

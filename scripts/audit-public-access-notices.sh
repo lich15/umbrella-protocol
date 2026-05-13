@@ -33,6 +33,8 @@ require_pattern "README.md" "source-available, not open-source"
 require_pattern "README.md" "PUBLIC_ACCESS.md"
 require_pattern "README.md" "бизнес-продукт"
 require_pattern "README.md" "embedding in a business product"
+require_pattern "README.md" "Phase 2 hardening is active|Фаза 2 приведения к документам активна"
+require_pattern "README.md" "production-readiness-boundaries.md"
 
 require_pattern "SECURITY.md" "fuzzing"
 require_pattern "SECURITY.md" "does not grant commercial use"
@@ -40,8 +42,14 @@ require_pattern "CONTRIBUTING.md" "PUBLIC_ACCESS.md"
 require_pattern "CONTRIBUTING.md" "Commercial use"
 
 require_pattern "docs/README.md" "protocol-compliance hardening|приведение к документам"
+require_pattern "docs/README.md" "Phase 2 hardening is active|Фаза 2 приведения к документам активна"
+require_pattern "docs/README.md" "production-readiness-boundaries.md"
 require_pattern "docs/README.md" "private protocol specifications"
 require_pattern "docs/security/release-manifest-v1.0.0.txt" "Public Access"
+require_pattern "docs/security/release-manifest-v1.0.0.txt" "Phase 2 status|Статус Фазы 2"
+require_pattern "docs/security/production-readiness-boundaries.md" "FFI bootstrap"
+require_pattern "docs/security/production-readiness-boundaries.md" "Platform::Testing"
+require_pattern "docs/security/production-readiness-boundaries.md" "TLS pinning"
 
 if [[ "$failed" -ne 0 ]]; then
   exit "$failed"
