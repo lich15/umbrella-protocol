@@ -13,8 +13,9 @@ Changed:
   `UmbrellaX_protocol_public_ru.pdf` and `UmbrellaX_protocol_public_en.pdf`.
 - Removed the older short PDF/HTML overview files to avoid two competing public
   document sets.
-- Kept public wording focused on the production package, reproducible local
-  verification, non-commercial security review, and responsible disclosure.
+- Kept public wording focused on the source-available protocol package,
+  reproducible local verification, non-commercial security review, and
+  responsible disclosure.
 - Kept private protocol specifications, working notes, local machine paths,
   unrelated repository plans, and obsolete release-risk wording outside the
   published documentation set.
@@ -24,12 +25,12 @@ Security notes:
 - Public Access terms remain explicit: this is source-available, not open-source.
 - Commercial use, redistribution, embedding in a business product, or operating
   a derived service still requires written permission.
-- Production-ready means complete for the published production scope; it does
-  not mean risk-free or immune to future vulnerabilities.
+- Current readiness is scoped by `docs/security/current-status.md`; no document
+  should imply that unfinished public client paths are open for production use.
 
 ### 1.0.0-production - 2026-05-10
 
-Initial clean production-ready source package.
+Initial clean source package for public protocol inspection and hardening.
 
 Added:
 
@@ -65,9 +66,9 @@ Security:
   `UmbrellaX_protocol_public_ru.pdf` и `UmbrellaX_protocol_public_en.pdf`.
 - Старые короткие PDF/HTML-обзоры удалены, чтобы не было двух конкурирующих
   публичных наборов документов.
-- Формулировки оставлены вокруг production-пакета, локальной воспроизводимой
-  проверки, некоммерческого security-review и ответственного раскрытия
-  уязвимостей.
+- Формулировки оставлены вокруг пакета протокола с доступным для чтения кодом,
+  локальной воспроизводимой проверки, некоммерческого анализа безопасности и
+  ответственного раскрытия уязвимостей.
 - Приватные спецификации протокола, рабочие заметки, локальные пути машины,
   планы других репозиториев и устаревшие формулировки риска выпуска не входят
   в опубликованный набор документации.
@@ -77,12 +78,14 @@ Security:
 - Условия Public Access остаются явными: это source-available, не open-source.
 - Коммерческое использование, распространение, встраивание в бизнес-продукт или
   запуск производного сервиса требуют письменного разрешения.
-- Production-ready означает завершённость в опубликованной области, но не
-  обещает нулевой риск или невозможность будущих уязвимостей.
+- Текущая готовность ограничена файлом `docs/security/current-status.md`;
+  незавершённые публичные клиентские пути не должны выглядеть открытыми для
+  боевого применения.
 
 ### 1.0.0-production - 2026-05-10
 
-Первый чистый production-ready исходный пакет.
+Первый чистый исходный пакет для публичной проверки протокола и дальнейшего
+усиления.
 
 Добавлено:
 

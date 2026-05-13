@@ -10,16 +10,18 @@ repository contains implemented Rust cryptographic crates and test harnesses,
 but the public FFI/client production bootstrap is gated until every required
 transport and verifier is wired end to end.
 
-Phase 2 hardening is active. The internal production HTTP/2 builder now wires
-platform certificate verification together with SPKI pinning. Public FFI
-bootstrap remains gated until real platform attestation verifiers, mobile
-bridges, and server integration are wired end to end. Cloud unwrap and OPRF
-already have contextual server-side attestation gates that fail closed without
-those real platform verifiers. A local platform-verifier crate now checks shared
-token-size, app/site, nonce, key, signature, and counter rules where enough
-material is available. WebAuthn has local assertion verification. Apple App
-Attest and Android Play Integrity still fail closed until external trust
-material, platform-token parsers, and mobile/server integration are wired. See
+Current hardening status is recorded in
+[`docs/security/current-status.md`](docs/security/current-status.md). The
+internal production HTTP/2 builder wires platform certificate verification
+together with SPKI pinning. Public FFI bootstrap remains gated until real
+platform attestation verifiers, mobile bridges, and server integration are wired
+end to end. Cloud unwrap and OPRF have contextual server-side attestation gates
+that fail closed without those real platform verifiers. A local
+platform-verifier crate checks shared token-size, app/site, nonce, key,
+signature, and counter rules where enough material is available. WebAuthn has
+local assertion verification. Apple App Attest and Android Play Integrity still
+fail closed until external trust material, platform-token parsers, and
+mobile/server integration are wired. See
 [`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
 
 This repository is public for transparency, reproducible builds, non-commercial
@@ -394,15 +396,19 @@ UmbrellaX, который сейчас проходит приведение к 
 клиента через внешний интерфейс для мобильных привязок закрыт до полной связки
 транспортов и боевых проверок.
 
-Фаза 2 приведения к документам активна. Внутренний боевой сборщик HTTP/2 теперь
-связывает системную проверку сертификата с закреплёнными SPKI-ключами.
-Публичный FFI-запуск остаётся закрыт, пока не связаны боевая платформенная
-проверка, мобильные мосты и серверная интеграция. Новый локальный крейт
-платформенной проверки уже проверяет размер токена, приложение или сайт,
-серверный вызов, ключ, подпись и счётчик там, где для этого хватает данных.
-WebAuthn проверяется локально. Apple App Attest и Android Play Integrity всё
-ещё закрыты отказом, пока не подключены внешние корни доверия, разбор
-платформенного токена и мобильная/серверная связка. Подробности:
+Текущий статус приведения к документам записан в
+[`docs/security/current-status.md`](docs/security/current-status.md).
+Внутренний боевой сборщик HTTP/2 связывает системную проверку сертификата с
+закреплёнными SPKI-ключами. Публичный FFI-запуск остаётся закрыт, пока не
+связаны настоящие платформенные проверяющие, мобильные мосты и серверная
+интеграция. Развёртка облачного ключа и OPRF имеют серверные проверки с
+контекстом, которые закрыто отказывают без настоящих платформенных
+проверяющих. Локальный крейт платформенной проверки проверяет размер токена,
+приложение или сайт, серверный вызов, ключ, подпись и счётчик там, где для
+этого хватает данных. WebAuthn проверяется локально. Apple App Attest и Android
+Play Integrity всё ещё закрыто отказывают, пока не подключены внешние корни
+доверия, разбор платформенного токена и мобильная/серверная связка. Подробная
+граница:
 [`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
 
 Репозиторий открыт для прозрачности, воспроизводимых сборок, некоммерческих

@@ -9,8 +9,8 @@ non-commercial security testing, reproducible builds, and responsible
 vulnerability disclosure. It is not open-source under the Open Source Initiative
 definition.
 
-The goal is simple: security researchers can inspect how the production protocol
-is built without receiving permission to commercially reuse the implementation.
+The goal is simple: security researchers can inspect how the published protocol
+implementation is built without receiving permission to commercially reuse it.
 
 ## Allowed Without a Commercial License
 
@@ -71,8 +71,9 @@ Umbrella Protocol опубликован как source-available для проз
 воспроизводимых сборок и ответственного раскрытия уязвимостей. Это не
 open-source по определению Open Source Initiative.
 
-Цель простая: исследователи безопасности могут проверить, как устроен
-production-протокол, но это не даёт права коммерчески использовать реализацию.
+Цель простая: исследователи безопасности могут проверить, как устроена
+опубликованная реализация протокола, но это не даёт права коммерчески
+использовать её.
 
 ## Разрешено без коммерческой лицензии
 

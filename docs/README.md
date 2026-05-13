@@ -34,18 +34,19 @@ transport and verifier is wired end to end. Cryptographic crates and test
 harnesses remain available for verification, but unfinished public paths must
 fail fast instead of using test-only constructors.
 
-Phase 2 hardening is active. The current boundary is documented in
+Current hardening status is recorded in
+[`security/current-status.md`](security/current-status.md). The internal
+production HTTP/2 builder wires platform certificate verification together with
+SPKI pinning. Public FFI bootstrap remains gated until real platform
+attestation verifiers, mobile bridges, and server integration are wired end to
+end. Cloud unwrap and OPRF have contextual server-side attestation gates that
+fail closed without those real platform verifiers. A local platform-verifier
+crate checks shared token-size, app/site, nonce, key, signature, and counter
+rules where enough material is available. WebAuthn has local assertion
+verification. Apple App Attest and Android Play Integrity still fail closed
+until external trust material, platform-token parsers, and mobile/server
+integration are wired. See
 [`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md).
-The internal production HTTP/2 builder now wires platform certificate
-verification together with SPKI pinning. Public FFI bootstrap remains gated
-until real platform attestation verifiers, mobile bridges, and server
-integration are wired end to end. Cloud unwrap and OPRF already have
-contextual server-side attestation gates that fail closed without those real
-platform verifiers. A local platform-verifier crate now checks shared
-token-size, app/site, nonce, key, signature, and counter rules where enough
-material is available. WebAuthn has local assertion verification. Apple App
-Attest and Android Play Integrity still fail closed until external trust
-material, platform-token parsers, and mobile/server integration are wired.
 
 The current status of formal verification and local lint gates is recorded in
 [`audits/formal-lint-status-2026-05-13.md`](audits/formal-lint-status-2026-05-13.md).
@@ -88,19 +89,19 @@ Umbrella Protocol 1.0.0 — пакет с доступным для чтения
 публичные пути должны отказывать явно, а не пользоваться тестовыми
 конструкторами.
 
-Фаза 2 приведения к документам активна. Текущая граница описана в
+Текущий статус приведения к документам записан в
+[`security/current-status.md`](security/current-status.md). Внутренний боевой
+сборщик HTTP/2 связывает системную проверку сертификата с закреплёнными
+SPKI-ключами. Публичный FFI-запуск остаётся закрыт, пока не связаны настоящие
+платформенные проверяющие, мобильные мосты и серверная интеграция. Развёртка
+облачного ключа и OPRF имеют серверные проверки с контекстом, которые закрыто
+отказывают без настоящих платформенных проверяющих. Локальный крейт
+платформенной проверки проверяет размер токена, приложение или сайт, серверный
+вызов, ключ, подпись и счётчик там, где для этого хватает данных. WebAuthn
+проверяется локально. Apple App Attest и Android Play Integrity всё ещё закрыто
+отказывают, пока не подключены внешние корни доверия, разбор платформенного
+токена и мобильная/серверная связка. Подробная граница:
 [`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md).
-Внутренний боевой сборщик HTTP/2 теперь связывает системную проверку
-сертификата с закреплёнными SPKI-ключами. Публичный FFI-запуск остаётся закрыт,
-пока не связаны настоящие платформенные проверяющие, мобильные мосты и
-серверная интеграция. Развёртка облачного ключа и OPRF уже имеют серверные
-проверки с контекстом, которые закрыто отказывают без этих настоящих
-платформенных проверяющих. Новый локальный крейт платформенной проверки уже
-проверяет размер токена, приложение или сайт, серверный вызов, ключ, подпись и
-счётчик там, где для этого хватает данных. WebAuthn проверяется локально.
-Apple App Attest и Android Play Integrity всё ещё закрыты отказом, пока не
-подключены внешние корни доверия, разбор платформенного токена и
-мобильная/серверная связка.
 
 Текущий статус формальных проверок и местных строгих правил записан в
 [`audits/formal-lint-status-2026-05-13.md`](audits/formal-lint-status-2026-05-13.md).
