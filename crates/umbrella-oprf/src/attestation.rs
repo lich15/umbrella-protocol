@@ -327,6 +327,255 @@ pub fn verify_signed_request(req: &SignedOprfRequest) -> Result<(), OprfError> {
         .map_err(|_| OprfError::CryptoVerificationFailed)
 }
 
+/// Разрешённое окно свежести для боевой серверной проверки.
+/// Freshness window for production server-side verification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductionFreshnessPolicy {
+    /// Максимальный возраст server nonce. Maximum server nonce age.
+    pub max_nonce_age_millis: u64,
+    /// Допустимый перекос времени в будущее. Allowed future clock skew.
+    pub max_future_skew_millis: u64,
+}
+
+impl Default for ProductionFreshnessPolicy {
+    fn default() -> Self {
+        Self {
+            max_nonce_age_millis: 5 * 60 * 1000,
+            max_future_skew_millis: 30 * 1000,
+        }
+    }
+}
+
+/// Состояние устройства из серверного снимка журнала ключей.
+/// Device state from the server-side key-transparency snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProductionDeviceState {
+    /// Устройства нет в снимке. Device is absent from the snapshot.
+    Unknown,
+    /// Устройство ждёт подтверждения. Device awaits approval.
+    Pending,
+    /// Устройство отозвано. Device is revoked.
+    Revoked,
+    /// Устройство активно. Device is active.
+    Active {
+        /// Время разрешения устройства. Device authorization time.
+        authorized_since_unix_millis: u64,
+    },
+    /// Первое активное устройство или восстановление после катастрофы.
+    /// First active device or catastrophic-recovery bootstrap.
+    BootstrapActive {
+        /// Время разрешения устройства. Device authorization time.
+        authorized_since_unix_millis: u64,
+    },
+}
+
+/// Тип платформенного проверяющего.
+/// Platform verifier kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlatformVerifierKind {
+    /// Настоящий проверяющий пока не подключён. Real verifier is not wired yet.
+    Unavailable,
+    /// Apple App Attest. Apple App Attest.
+    AppleAppAttest,
+    /// Android Play Integrity. Android Play Integrity.
+    AndroidPlayIntegrity,
+    /// WebAuthn. WebAuthn.
+    WebAuthn,
+    /// Только для тестов, запрещён в боевом контексте.
+    /// Test-only, rejected in production context.
+    TestOnly,
+}
+
+/// Вход платформенного проверяющего.
+/// Input passed to a platform attestation verifier.
+#[derive(Debug, Clone, Copy)]
+pub struct PlatformVerificationInput<'a> {
+    /// Платформа запроса. Request platform.
+    pub platform: Platform,
+    /// Байты токена. Token bytes.
+    pub token: &'a [u8],
+    /// Серверный вызов. Server nonce.
+    pub server_nonce: &'a [u8; NONCE_LEN],
+    /// Публичный ключ устройства. Device public key.
+    pub device_pubkey: &'a [u8; DEVICE_PUBKEY_LEN],
+    /// Текущее серверное время. Current server time.
+    pub now_unix_millis: u64,
+}
+
+/// Платформенный проверяющий для боевого серверного пути.
+/// Platform verifier for the production server-side path.
+pub trait ProductionPlatformVerifier: std::fmt::Debug {
+    /// Тип проверяющего. Verifier kind.
+    fn kind(&self) -> PlatformVerifierKind;
+
+    /// Проверить платформенный токен.
+    /// Verify the platform token.
+    ///
+    /// # Errors
+    /// Возвращает точную причину отказа.
+    fn verify_platform_attestation(
+        &self,
+        input: PlatformVerificationInput<'_>,
+    ) -> Result<(), OprfError>;
+}
+
+/// Проверяющий, который честно закрывает путь до подключения настоящей платформы.
+/// Verifier that fail-closes until real platform validation is wired.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UnavailableProductionPlatformVerifier;
+
+impl ProductionPlatformVerifier for UnavailableProductionPlatformVerifier {
+    fn kind(&self) -> PlatformVerifierKind {
+        PlatformVerifierKind::Unavailable
+    }
+
+    fn verify_platform_attestation(
+        &self,
+        input: PlatformVerificationInput<'_>,
+    ) -> Result<(), OprfError> {
+        Err(OprfError::ProductionAttestationVerifierUnavailable {
+            platform_tag: input.platform.tag(),
+        })
+    }
+}
+
+/// Контекст боевой проверки OPRF-запроса.
+/// Production verification context for an OPRF request.
+#[derive(Debug)]
+pub struct ProductionOprfVerificationContext<'a> {
+    expected_server_nonce: [u8; NONCE_LEN],
+    server_nonce_issued_at_unix_millis: u64,
+    now_unix_millis: u64,
+    freshness: ProductionFreshnessPolicy,
+    device_state: ProductionDeviceState,
+    platform_verifier: &'a dyn ProductionPlatformVerifier,
+}
+
+impl<'a> ProductionOprfVerificationContext<'a> {
+    /// Создать боевой контекст.
+    /// Create a production context.
+    ///
+    /// # Errors
+    /// - [`OprfError::ProductionTestVerifierRejected`] если передан тестовый проверяющий.
+    pub fn new(
+        expected_server_nonce: [u8; NONCE_LEN],
+        server_nonce_issued_at_unix_millis: u64,
+        now_unix_millis: u64,
+        freshness: ProductionFreshnessPolicy,
+        device_state: ProductionDeviceState,
+        platform_verifier: &'a dyn ProductionPlatformVerifier,
+    ) -> Result<Self, OprfError> {
+        if platform_verifier.kind() == PlatformVerifierKind::TestOnly {
+            return Err(OprfError::ProductionTestVerifierRejected);
+        }
+        Ok(Self {
+            expected_server_nonce,
+            server_nonce_issued_at_unix_millis,
+            now_unix_millis,
+            freshness,
+            device_state,
+            platform_verifier,
+        })
+    }
+}
+
+fn check_production_nonce(
+    request_nonce: &[u8; NONCE_LEN],
+    expected_nonce: &[u8; NONCE_LEN],
+) -> Result<(), OprfError> {
+    if request_nonce != expected_nonce {
+        return Err(OprfError::ProductionServerNonceMismatch);
+    }
+    Ok(())
+}
+
+fn check_production_freshness(
+    nonce_issued_at_unix_millis: u64,
+    now_unix_millis: u64,
+    freshness: ProductionFreshnessPolicy,
+) -> Result<(), OprfError> {
+    if nonce_issued_at_unix_millis > now_unix_millis {
+        let skew_millis = nonce_issued_at_unix_millis - now_unix_millis;
+        if skew_millis > freshness.max_future_skew_millis {
+            return Err(OprfError::ProductionServerNonceIssuedInFuture {
+                skew_millis,
+                max_future_skew_millis: freshness.max_future_skew_millis,
+            });
+        }
+    } else {
+        let age_millis = now_unix_millis - nonce_issued_at_unix_millis;
+        if age_millis > freshness.max_nonce_age_millis {
+            return Err(OprfError::ProductionServerNonceExpired {
+                age_millis,
+                max_age_millis: freshness.max_nonce_age_millis,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn check_production_device_state(
+    state: ProductionDeviceState,
+    nonce_issued_at_unix_millis: u64,
+) -> Result<(), OprfError> {
+    let authorized_since_unix_millis = match state {
+        ProductionDeviceState::Unknown => return Err(OprfError::ProductionDeviceUnknown),
+        ProductionDeviceState::Pending => {
+            return Err(OprfError::ProductionDevicePendingAuthorization);
+        }
+        ProductionDeviceState::Revoked => return Err(OprfError::ProductionDeviceRevoked),
+        ProductionDeviceState::Active {
+            authorized_since_unix_millis,
+        }
+        | ProductionDeviceState::BootstrapActive {
+            authorized_since_unix_millis,
+        } => authorized_since_unix_millis,
+    };
+
+    if authorized_since_unix_millis > nonce_issued_at_unix_millis {
+        return Err(OprfError::ProductionDeviceNotActiveYet {
+            authorized_since_unix_millis,
+            nonce_issued_at_unix_millis,
+        });
+    }
+
+    Ok(())
+}
+
+/// Боевая проверка подписанного OPRF-запроса с серверным контекстом.
+/// Production verification for signed OPRF requests with server context.
+///
+/// Порядок строгий: подпись, nonce, свежесть, устройство, платформа.
+/// Strict order: signature, nonce, freshness, device, platform.
+///
+/// # Errors
+/// Возвращает первую причину отказа в указанном порядке.
+pub fn verify_signed_request_for_production_with_context(
+    req: &SignedOprfRequest,
+    ctx: &ProductionOprfVerificationContext<'_>,
+) -> Result<(), OprfError> {
+    verify_signed_request(req)?;
+    check_production_nonce(&req.nonce, &ctx.expected_server_nonce)?;
+    check_production_freshness(
+        ctx.server_nonce_issued_at_unix_millis,
+        ctx.now_unix_millis,
+        ctx.freshness,
+    )?;
+    check_production_device_state(ctx.device_state, ctx.server_nonce_issued_at_unix_millis)?;
+    match req.attestation.platform {
+        Platform::Testing => Err(OprfError::CryptoVerificationFailed),
+        Platform::IOs | Platform::Android | Platform::Web => ctx
+            .platform_verifier
+            .verify_platform_attestation(PlatformVerificationInput {
+                platform: req.attestation.platform,
+                token: req.attestation.token.as_slice(),
+                server_nonce: &req.nonce,
+                device_pubkey: &req.device_pubkey,
+                now_unix_millis: ctx.now_unix_millis,
+            }),
+    }
+}
+
 /// Боевая проверка подписанного OPRF-запроса.
 /// Production verification for a signed OPRF request.
 ///
@@ -379,6 +628,92 @@ mod tests {
 
     fn sign_with(sk: &SigningKey, message: &[u8]) -> [u8; DEVICE_SIG_LEN] {
         sk.sign(message).to_bytes()
+    }
+
+    #[derive(Debug, Default)]
+    struct CountingUnavailableVerifier {
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl CountingUnavailableVerifier {
+        fn calls(&self) -> usize {
+            self.calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl ProductionPlatformVerifier for CountingUnavailableVerifier {
+        fn kind(&self) -> PlatformVerifierKind {
+            PlatformVerifierKind::Unavailable
+        }
+
+        fn verify_platform_attestation(
+            &self,
+            input: PlatformVerificationInput<'_>,
+        ) -> Result<(), OprfError> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(OprfError::ProductionAttestationVerifierUnavailable {
+                platform_tag: input.platform.tag(),
+            })
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct TestOnlySuccessVerifier;
+
+    impl ProductionPlatformVerifier for TestOnlySuccessVerifier {
+        fn kind(&self) -> PlatformVerifierKind {
+            PlatformVerifierKind::TestOnly
+        }
+
+        fn verify_platform_attestation(
+            &self,
+            _input: PlatformVerificationInput<'_>,
+        ) -> Result<(), OprfError> {
+            Ok(())
+        }
+    }
+
+    fn production_android_oprf_request(
+        sk: &SigningKey,
+        vk: &DalekVerifyingKey,
+        nonce: [u8; NONCE_LEN],
+    ) -> SignedOprfRequest {
+        let input = OprfInput::new(b"+15550101010").unwrap();
+        let (blinded, _state) = blind(input, &mut OsRng).unwrap();
+        let attestation =
+            PlatformAttestation::new(Platform::Android, b"play-integrity-token").unwrap();
+        let canonical = canonical_signing_input(&blinded, &attestation, &nonce);
+        SignedOprfRequest {
+            blinded,
+            attestation,
+            nonce,
+            device_signature: sign_with(sk, &canonical),
+            device_pubkey: vk.to_bytes(),
+        }
+    }
+
+    fn active_device_state() -> ProductionDeviceState {
+        ProductionDeviceState::Active {
+            authorized_since_unix_millis: 1_700_000_000_000,
+        }
+    }
+
+    fn production_context<'a>(
+        verifier: &'a dyn ProductionPlatformVerifier,
+        expected_server_nonce: [u8; NONCE_LEN],
+        nonce_issued_at_unix_millis: u64,
+        now_unix_millis: u64,
+        device_state: ProductionDeviceState,
+    ) -> ProductionOprfVerificationContext<'a> {
+        ProductionOprfVerificationContext::new(
+            expected_server_nonce,
+            nonce_issued_at_unix_millis,
+            now_unix_millis,
+            ProductionFreshnessPolicy::default(),
+            device_state,
+            verifier,
+        )
+        .expect("context must be valid for non-test-only verifier")
     }
 
     #[test]
@@ -542,6 +877,165 @@ mod tests {
             OprfError::ProductionAttestationVerifierUnavailable { platform_tag }
                 if platform_tag == Platform::Android.tag()
         ));
+    }
+
+    #[test]
+    fn production_context_rejects_test_only_platform_verifier() {
+        let nonce = fresh_nonce();
+        let err = ProductionOprfVerificationContext::new(
+            nonce,
+            1_700_000_000_000,
+            1_700_000_000_001,
+            ProductionFreshnessPolicy::default(),
+            active_device_state(),
+            &TestOnlySuccessVerifier,
+        )
+        .unwrap_err();
+        assert!(matches!(err, OprfError::ProductionTestVerifierRejected));
+    }
+
+    #[test]
+    fn production_context_rejects_bad_signature_before_platform_verifier() {
+        let (sk, vk) = make_device_keypair();
+        let nonce = fresh_nonce();
+        let mut signed = production_android_oprf_request(&sk, &vk, nonce);
+        signed.device_signature[0] ^= 1;
+        let verifier = CountingUnavailableVerifier::default();
+        let ctx = production_context(
+            &verifier,
+            nonce,
+            1_700_000_000_000,
+            1_700_000_000_100,
+            active_device_state(),
+        );
+        let err = verify_signed_request_for_production_with_context(&signed, &ctx).unwrap_err();
+        assert!(matches!(err, OprfError::CryptoVerificationFailed));
+        assert_eq!(verifier.calls(), 0);
+    }
+
+    #[test]
+    fn production_context_rejects_server_nonce_mismatch() {
+        let (sk, vk) = make_device_keypair();
+        let request_nonce = fresh_nonce();
+        let expected_nonce = fresh_nonce();
+        let signed = production_android_oprf_request(&sk, &vk, request_nonce);
+        let verifier = CountingUnavailableVerifier::default();
+        let ctx = production_context(
+            &verifier,
+            expected_nonce,
+            1_700_000_000_000,
+            1_700_000_000_100,
+            active_device_state(),
+        );
+        let err = verify_signed_request_for_production_with_context(&signed, &ctx).unwrap_err();
+        assert!(matches!(err, OprfError::ProductionServerNonceMismatch));
+        assert_eq!(verifier.calls(), 0);
+    }
+
+    #[test]
+    fn production_context_rejects_expired_server_nonce() {
+        let (sk, vk) = make_device_keypair();
+        let nonce = fresh_nonce();
+        let signed = production_android_oprf_request(&sk, &vk, nonce);
+        let verifier = CountingUnavailableVerifier::default();
+        let ctx = production_context(
+            &verifier,
+            nonce,
+            1_700_000_000_000,
+            1_700_000_400_001,
+            active_device_state(),
+        );
+        let err = verify_signed_request_for_production_with_context(&signed, &ctx).unwrap_err();
+        assert!(matches!(
+            err,
+            OprfError::ProductionServerNonceExpired { .. }
+        ));
+        assert_eq!(verifier.calls(), 0);
+    }
+
+    #[test]
+    fn production_context_rejects_future_server_nonce_issue_time() {
+        let (sk, vk) = make_device_keypair();
+        let nonce = fresh_nonce();
+        let signed = production_android_oprf_request(&sk, &vk, nonce);
+        let verifier = CountingUnavailableVerifier::default();
+        let ctx = production_context(
+            &verifier,
+            nonce,
+            1_700_000_400_001,
+            1_700_000_000_000,
+            active_device_state(),
+        );
+        let err = verify_signed_request_for_production_with_context(&signed, &ctx).unwrap_err();
+        assert!(matches!(
+            err,
+            OprfError::ProductionServerNonceIssuedInFuture { .. }
+        ));
+        assert_eq!(verifier.calls(), 0);
+    }
+
+    #[test]
+    fn production_context_rejects_unknown_pending_and_revoked_devices() {
+        let (sk, vk) = make_device_keypair();
+        let nonce = fresh_nonce();
+        let signed = production_android_oprf_request(&sk, &vk, nonce);
+        let verifier = CountingUnavailableVerifier::default();
+
+        let ctx = production_context(
+            &verifier,
+            nonce,
+            1_700_000_000_000,
+            1_700_000_000_100,
+            ProductionDeviceState::Unknown,
+        );
+        let err = verify_signed_request_for_production_with_context(&signed, &ctx).unwrap_err();
+        assert!(matches!(err, OprfError::ProductionDeviceUnknown));
+
+        let ctx = production_context(
+            &verifier,
+            nonce,
+            1_700_000_000_000,
+            1_700_000_000_100,
+            ProductionDeviceState::Pending,
+        );
+        let err = verify_signed_request_for_production_with_context(&signed, &ctx).unwrap_err();
+        assert!(matches!(
+            err,
+            OprfError::ProductionDevicePendingAuthorization
+        ));
+
+        let ctx = production_context(
+            &verifier,
+            nonce,
+            1_700_000_000_000,
+            1_700_000_000_100,
+            ProductionDeviceState::Revoked,
+        );
+        let err = verify_signed_request_for_production_with_context(&signed, &ctx).unwrap_err();
+        assert!(matches!(err, OprfError::ProductionDeviceRevoked));
+        assert_eq!(verifier.calls(), 0);
+    }
+
+    #[test]
+    fn production_context_active_device_reaches_platform_verifier_fail_closed() {
+        let (sk, vk) = make_device_keypair();
+        let nonce = fresh_nonce();
+        let signed = production_android_oprf_request(&sk, &vk, nonce);
+        let verifier = CountingUnavailableVerifier::default();
+        let ctx = production_context(
+            &verifier,
+            nonce,
+            1_700_000_000_000,
+            1_700_000_000_100,
+            active_device_state(),
+        );
+        let err = verify_signed_request_for_production_with_context(&signed, &ctx).unwrap_err();
+        assert!(matches!(
+            err,
+            OprfError::ProductionAttestationVerifierUnavailable { platform_tag }
+                if platform_tag == Platform::Android.tag()
+        ));
+        assert_eq!(verifier.calls(), 1);
     }
 
     #[test]

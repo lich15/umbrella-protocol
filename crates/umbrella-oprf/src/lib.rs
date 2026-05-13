@@ -36,9 +36,13 @@ pub mod threshold;
 
 pub use attestation::{
     canonical_signing_input, seal_request, verify_signed_request,
-    verify_signed_request_for_production, AttestationProvider, Platform, PlatformAttestation,
-    SignedOprfRequest, TestingAttestationProvider, DEVICE_PUBKEY_LEN, DEVICE_SIG_LEN,
-    MAX_ATTESTATION_TOKEN_BYTES, NONCE_LEN, SIGNATURE_DOMAIN_SEPARATOR, WIRE_VERSION,
+    verify_signed_request_for_production, verify_signed_request_for_production_with_context,
+    AttestationProvider, Platform, PlatformAttestation, PlatformVerificationInput,
+    PlatformVerifierKind, ProductionDeviceState, ProductionFreshnessPolicy,
+    ProductionOprfVerificationContext, ProductionPlatformVerifier, SignedOprfRequest,
+    TestingAttestationProvider, UnavailableProductionPlatformVerifier, DEVICE_PUBKEY_LEN,
+    DEVICE_SIG_LEN, MAX_ATTESTATION_TOKEN_BYTES, NONCE_LEN, SIGNATURE_DOMAIN_SEPARATOR,
+    WIRE_VERSION,
 };
 pub use client::{batch_contact_query, batch_finalize, ContactQuery, MAX_BATCH_SIZE};
 pub use error::OprfError;
