@@ -63,7 +63,7 @@ mod production_boundary_tests {
     #[tokio::test]
     async fn new_with_http2_fails_closed_until_full_production_transport_is_wired() {
         let result = ClientCore::new_with_http2(production_shaped_config(), test_seed())
-            .await
+            .await;
         let err = match result {
             Ok(_) => panic!("new_with_http2 must fail closed until production transport is fully wired"),
             Err(err) => err,

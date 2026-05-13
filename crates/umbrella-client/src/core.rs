@@ -243,14 +243,16 @@ pub struct ClientCore {
     /// Транспорт к cloud-backup-svc (Sealed Servers fan-out 3-of-5).
     /// Общий `dyn AsyncUnwrapTransport`-slot: тестовый [`ClientCore::new_for_test`]
     /// подставляет `StubUnwrapTransport` (через blanket adapter в
-    /// `transport::stub`), production [`ClientCore::new_with_http2`] —
-    /// `Http2UnwrapTransport`. Ушёл с конкретного типа в блоке 7.4.
+    /// `transport::stub`). Полный боевой конструктор должен подставить
+    /// реальные транспорты только после появления SPKI-настроек для всех
+    /// сервисов; текущий [`ClientCore::new_with_http2`] закрыто отказывает.
     ///
     /// Transport to cloud-backup-svc (Sealed Servers fan-out 3-of-5). Held as
     /// `dyn AsyncUnwrapTransport`: `new_for_test` plugs in `StubUnwrapTransport`
-    /// via the blanket adapter in `transport::stub`, while `new_with_http2`
-    /// plugs in `Http2UnwrapTransport`. Migrated off the concrete type in
-    /// Block 7.4.
+    /// via the blanket adapter in `transport::stub`. A full production
+    /// constructor must install real transports only after SPKI settings exist
+    /// for every service; the current [`ClientCore::new_with_http2`] fails
+    /// closed.
     pub(crate) unwrap_transport: Arc<dyn AsyncUnwrapTransport + Send + Sync>,
 
     /// Транспорт к blind-postman-svc для Cloud ciphertext и Secret inbox.
@@ -320,86 +322,29 @@ impl ClientCore {
         }))
     }
 
-    /// Bootstrap с реальным HTTP/2 `Http2UnwrapTransport` к `cloud-backup-svc`
-    /// и real HTTP/2 клиентами ко всем остальным `Umbrella server implementation` сервисам.
+    /// Закрытая граница неполного HTTP/2 bootstrap.
     ///
-    /// В блоке 7.4 только `unwrap_transport` переходит на реальный HTTP/2 —
-    /// остальные поля (`postman_transport`, `kt_transport`,
-    /// `call_relay_transport`) остаются stub'ами до блока 7.7 финализации FFI,
-    /// когда они тоже унифицируются через `dyn`-traits (AsyncPostmanTransport /
-    /// AsyncKtTransport / AsyncCallRelayTransport). Построение real
-    /// `Http2Postman/Kt/CallRelay` тут сделано чтобы compile-time гарантировать
-    /// что конфигурация URL'ов валидна, но их инстансы не попадают в
-    /// `ClientCore` (пока).
+    /// Этот метод оставлен как fail-fast защита для старых внутренних вызовов:
+    /// он не должен создавать клиент, пока конфигурация не несёт SPKI pins для
+    /// всех сервисов и пока `postman`, `kt` и `call_relay` не переведены с
+    /// заглушек на реальные `dyn`-транспорты.
     ///
-    /// Bootstrap with real HTTP/2 `Http2UnwrapTransport` backed by
-    /// `cloud-backup-svc` and real HTTP/2 clients for the other `Umbrella server implementation`
-    /// services. Block 7.4 only migrates `unwrap_transport` to real HTTP/2 —
-    /// other fields remain stubs until Block 7.7 unifies them behind
-    /// `dyn`-traits. Real `Http2Postman/Kt/CallRelay` are still constructed
-    /// here so URL validity is checked at compile-time; they just don't land
-    /// in `ClientCore` yet.
+    /// Closed boundary for incomplete HTTP/2 bootstrap.
+    ///
+    /// This method remains as a fail-fast guard for older internal callers. It
+    /// must not create a client until the config carries SPKI pins for all
+    /// services and `postman`, `kt`, and `call_relay` are moved from stubs to
+    /// real `dyn` transports.
     ///
     /// # Ошибки / Errors
     ///
-    /// - [`ClientError::Identity`] если derivation identity провалилась.
-    /// - [`ClientError::Network`] если config URL'ы не parseable, список
-    ///   sealed_server_urls содержит не 5 элементов, или `reqwest::Client`
-    ///   builder провалился.
+    /// Всегда возвращает [`ClientError::Network`] с понятной причиной закрытия.
     pub async fn new_with_http2(config: ClientConfig, seed: IdentitySeed) -> Result<Arc<Self>> {
-        use reqwest::Url;
-
-        use crate::transport::{
-            build_http2_client, Http2CallRelayTransport, Http2Config, Http2KtTransport,
-            Http2PostmanTransport, Http2UnwrapTransport, SEALED_SERVER_COUNT,
-        };
-
-        let identity = Arc::new(IdentityKey::derive(&seed, 0)?);
-        let http = build_http2_client(Http2Config::default())?;
-
-        if config.sealed_server_urls.len() != SEALED_SERVER_COUNT {
-            return Err(ClientError::Network(format!(
-                "sealed_server_urls must contain exactly {SEALED_SERVER_COUNT} URLs, got {}",
-                config.sealed_server_urls.len()
-            )));
-        }
-        let mut parsed_urls: Vec<Url> = Vec::with_capacity(SEALED_SERVER_COUNT);
-        for (idx, raw) in config.sealed_server_urls.iter().enumerate() {
-            parsed_urls.push(Url::parse(raw).map_err(|e| {
-                ClientError::Network(format!("sealed_server_urls[{idx}] parse: {e}"))
-            })?);
-        }
-        let sealed_urls: [Url; SEALED_SERVER_COUNT] = parsed_urls
-            .try_into()
-            .map_err(|_| ClientError::Internal("sealed_urls slice to array".into()))?;
-
-        let postman_url = Url::parse(&config.postman_url)
-            .map_err(|e| ClientError::Network(format!("postman_url parse: {e}")))?;
-        let kt_url = Url::parse(&config.kt_url)
-            .map_err(|e| ClientError::Network(format!("kt_url parse: {e}")))?;
-        let call_relay_url = Url::parse(&config.call_relay_url)
-            .map_err(|e| ClientError::Network(format!("call_relay_url parse: {e}")))?;
-
-        let unwrap_transport: Arc<dyn AsyncUnwrapTransport + Send + Sync> =
-            Arc::new(Http2UnwrapTransport::new(Arc::clone(&http), sealed_urls));
-
-        // Build the remaining real transports to validate config at compile+parse
-        // time, even though they don't land in ClientCore until Block 7.7.
-        let _postman = Http2PostmanTransport::new(Arc::clone(&http), postman_url);
-        let _kt = Http2KtTransport::new(Arc::clone(&http), kt_url);
-        let _call_relay = Http2CallRelayTransport::new(Arc::clone(&http), call_relay_url);
-
-        Ok(Arc::new(Self {
-            identity,
-            device_index: 0,
-            kt_state: Arc::new(RwLock::new(KtLogState::new())),
-            unwrap_transport,
-            postman_transport: Arc::new(StubPostmanTransport::default()),
-            kt_transport: Arc::new(StubKtTransport::default()),
-            call_relay_transport: Arc::new(StubCallRelayTransport::default()),
-            user_policy: Arc::new(RwLock::new(CallPolicy::default())),
-            config,
-        }))
+        let _ = (config, seed);
+        Err(ClientError::Network(
+            "production HTTP/2 bootstrap is closed: ClientCore::new_with_http2 does not carry SPKI pins and still leaves postman/KT/call relay stubs; use only explicit test constructors until full production transport wiring exists"
+                .to_string(),
+        ))
     }
 
     /// Index текущего устройства (0 = primary).
@@ -589,5 +534,49 @@ impl UmbrellaClient {
     #[must_use]
     pub fn core(&self) -> Arc<ClientCore> {
         self.core.clone()
+    }
+}
+
+#[cfg(test)]
+mod production_boundary_tests {
+    use super::*;
+    use rand_core::OsRng;
+    use umbrella_identity::{IdentitySeed, MnemonicLanguage};
+
+    fn production_shaped_config() -> ClientConfig {
+        ClientConfig {
+            sealed_server_urls: (0..5)
+                .map(|idx| format!("https://sealed-{idx}.umbrella.example"))
+                .collect(),
+            postman_url: "https://postman.umbrella.example".to_string(),
+            kt_url: "https://kt.umbrella.example".to_string(),
+            call_relay_url: "https://relay.umbrella.example".to_string(),
+            ..ClientConfig::default()
+        }
+    }
+
+    fn test_seed() -> IdentitySeed {
+        IdentitySeed::generate(&mut OsRng, MnemonicLanguage::English)
+    }
+
+    #[tokio::test]
+    async fn new_with_http2_fails_closed_until_full_production_transport_is_wired() {
+        let result = ClientCore::new_with_http2(production_shaped_config(), test_seed()).await;
+        let err = match result {
+            Ok(_) => {
+                panic!("new_with_http2 must fail closed until production transport is fully wired")
+            }
+            Err(err) => err,
+        };
+        let msg = err.to_string();
+
+        assert!(
+            msg.contains("production HTTP/2 bootstrap is closed"),
+            "unexpected error: {msg}"
+        );
+        assert!(
+            msg.contains("SPKI") && msg.contains("stubs"),
+            "error must name missing SPKI/stub boundary: {msg}"
+        );
     }
 }
