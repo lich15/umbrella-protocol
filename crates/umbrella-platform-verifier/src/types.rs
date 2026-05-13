@@ -96,14 +96,20 @@ mod tests {
 
     #[test]
     fn token_guard_rejects_empty() {
-        let err = validate_token_size(&[], MAX_PLATFORM_TOKEN_BYTES).unwrap_err();
+        let err = match validate_token_size(&[], MAX_PLATFORM_TOKEN_BYTES) {
+            Ok(()) => panic!("empty token must be rejected"),
+            Err(err) => err,
+        };
         assert!(matches!(err, PlatformVerifierError::EmptyToken));
     }
 
     #[test]
     fn token_guard_rejects_oversize() {
         let token = vec![0u8; MAX_PLATFORM_TOKEN_BYTES + 1];
-        let err = validate_token_size(&token, MAX_PLATFORM_TOKEN_BYTES).unwrap_err();
+        let err = match validate_token_size(&token, MAX_PLATFORM_TOKEN_BYTES) {
+            Ok(()) => panic!("oversized token must be rejected"),
+            Err(err) => err,
+        };
         assert!(matches!(
             err,
             PlatformVerifierError::TokenTooLarge { got, max }
@@ -113,6 +119,8 @@ mod tests {
 
     #[test]
     fn token_guard_accepts_non_empty_within_limit() {
-        validate_token_size(b"x", MAX_PLATFORM_TOKEN_BYTES).unwrap();
+        if let Err(err) = validate_token_size(b"x", MAX_PLATFORM_TOKEN_BYTES) {
+            panic!("non-empty token within the limit must be accepted: {err:?}");
+        }
     }
 }
