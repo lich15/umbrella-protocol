@@ -38,8 +38,10 @@ Phase 2 hardening is active. The current boundary is documented in
 [`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md).
 The internal production HTTP/2 builder now wires platform certificate
 verification together with SPKI pinning. Public FFI bootstrap remains gated
-until production attestation, mobile bridges, and server integration are wired
-end to end.
+until real platform attestation verifiers, mobile bridges, and server
+integration are wired end to end. Cloud unwrap and OPRF already have
+contextual server-side attestation gates that fail closed without those real
+platform verifiers.
 
 The current status of formal verification and local lint gates is recorded in
 [`audits/formal-lint-status-2026-05-13.md`](audits/formal-lint-status-2026-05-13.md).
@@ -86,8 +88,10 @@ Umbrella Protocol 1.0.0 — пакет с доступным для чтения
 [`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md).
 Внутренний боевой сборщик HTTP/2 теперь связывает системную проверку
 сертификата с закреплёнными SPKI-ключами. Публичный FFI-запуск остаётся закрыт,
-пока не связаны боевая attestation-проверка, мобильные мосты и серверная
-интеграция.
+пока не связаны настоящие платформенные проверяющие, мобильные мосты и
+серверная интеграция. Развёртка облачного ключа и OPRF уже имеют серверные
+проверки с контекстом, которые закрыто отказывают без этих настоящих
+платформенных проверяющих.
 
 Текущий статус формальных проверок и местных строгих правил записан в
 [`audits/formal-lint-status-2026-05-13.md`](audits/formal-lint-status-2026-05-13.md).

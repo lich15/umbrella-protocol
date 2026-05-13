@@ -11,10 +11,13 @@ License: Umbrella Public Access License
 Rust toolchain: stable 1.95.0
 Status: source-available package for non-commercial security and cryptographic
 testing. Public FFI/client production bootstrap remains gated until production
-attestation, mobile bridges, and server integration are wired end to end.
+platform attestation verifiers, mobile bridges, and server integration are
+wired end to end.
 Phase 2 status: the internal production HTTP/2 builder now wires platform
 certificate verification together with SPKI pinning. Public FFI bootstrap still
-fails closed instead of using test constructors.
+fails closed instead of using test constructors. Cloud unwrap and OPRF have
+contextual server-side attestation gates, but real iOS, Android, and Web
+platform verifiers remain closed.
 
 Primary public materials:
   README.md
@@ -62,10 +65,12 @@ Rust toolchain: stable 1.95.0
 Статус: пакет с доступным для чтения исходным кодом для некоммерческой проверки
 безопасности и криптографического тестирования. Публичный боевой запуск клиента
 через внешний интерфейс для мобильных привязок остаётся закрыт, пока не связаны
-боевая attestation-проверка, мобильные мосты и серверная интеграция.
+настоящие платформенные проверяющие, мобильные мосты и серверная интеграция.
 Статус Фазы 2: внутренний боевой сборщик HTTP/2 теперь связывает системную
 проверку сертификата с закреплёнными SPKI-ключами. Публичный FFI-запуск всё ещё
-отказывает закрыто, а не пользуется тестовыми конструкторами.
+отказывает закрыто, а не пользуется тестовыми конструкторами. Развёртка
+облачного ключа и OPRF имеют серверные проверки с контекстом, но настоящие
+iOS, Android и Web-проверяющие остаются закрытыми.
 
 Основные публичные материалы:
   README.md

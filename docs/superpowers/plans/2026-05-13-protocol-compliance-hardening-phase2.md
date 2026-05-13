@@ -1,5 +1,10 @@
 # Protocol Compliance Hardening Phase 2 Implementation Plan
 
+> **Историческая заметка:** этот файл сохранён как история планирования Фазы 2.
+> Он не является текущим списком незакрытых задач. Текущую правду смотреть в
+> `docs/README.md`, `docs/security/production-readiness-boundaries.md` и
+> свежих спецификациях.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Закрыть Фазу 2 утверждённой спецификации: боевой транспорт, аттестация, звонки, мобильные мосты, серверные связки и формальные проверки не должны выглядеть готовыми без настоящих ворот безопасности.

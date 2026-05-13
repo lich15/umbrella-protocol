@@ -1,5 +1,10 @@
 # Protocol Compliance Hardening Phase 1 Implementation Plan
 
+> **Историческая заметка:** этот файл сохранён как история планирования Фазы 1.
+> Он не является текущим списком незакрытых задач. Текущую правду смотреть в
+> `docs/README.md`, `docs/security/production-readiness-boundaries.md` и
+> свежих спецификациях.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Закрыть первую фазу утверждённой спецификации `docs/superpowers/specs/2026-05-13-protocol-compliance-hardening-design.md`: контрольные суммы векторов, строгий отказ неизвестному устройству, честные тесты разделённого вида журнала ключей, запрет тихого тестового запуска через публичный FFI.

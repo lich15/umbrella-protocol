@@ -12,8 +12,10 @@ transport and verifier is wired end to end.
 
 Phase 2 hardening is active. The internal production HTTP/2 builder now wires
 platform certificate verification together with SPKI pinning. Public FFI
-bootstrap remains gated until production attestation, mobile bridges, and
-server integration are wired end to end. See
+bootstrap remains gated until real platform attestation verifiers, mobile
+bridges, and server integration are wired end to end. Cloud unwrap and OPRF
+already have contextual server-side attestation gates that fail closed without
+those real platform verifiers. See
 [`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
 
 This repository is public for transparency, reproducible builds, non-commercial

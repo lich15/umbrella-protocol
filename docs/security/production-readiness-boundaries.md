@@ -19,8 +19,13 @@ Closed gates:
 - TLS pinning: placeholder acceptance is forbidden; the production transport
   uses a real `rustls` verifier that checks the normal certificate result first
   and only then checks the configured SPKI pins.
-- Attestation: `Platform::Testing` is rejected by production verifiers. iOS,
-  Android, and Web tokens fail closed until real platform verifiers are wired.
+- Server-side attestation gate: cloud unwrap and OPRF production paths now have
+  contextual Rust verifiers that check signature, server nonce, freshness,
+  device state, platform, and an explicit platform verifier in fail-closed
+  order.
+- Platform attestation verifiers: `Platform::Testing` is rejected by production
+  verifiers. iOS, Android, and Web tokens fail closed until real platform
+  verifiers are wired.
 - Mobile bridge: Swift, Kotlin, and Web platform attestation bridges are not yet
   a production-ready trust boundary.
 - Server integration: mock server behavior does not count as production
@@ -44,9 +49,13 @@ Closed gates:
   транспорт использует настоящий `rustls`-проверяющий, который сначала
   проверяет обычный результат сертификата и только потом сверяет закреплённые
   SPKI-ключи.
-- Attestation: `Platform::Testing` отвергается боевыми проверяющими. iOS,
-  Android и Web тоже отказывают, пока настоящие платформенные проверяющие не
-  подключены.
+- Серверная проверка устройства: боевые пути развёртки облачного ключа и OPRF
+  теперь имеют контекстные Rust-проверяющие. Они по порядку проверяют подпись,
+  серверный вызов, свежесть, состояние устройства, платформу и явный
+  платформенный проверяющий. Любой отказ закрывает путь.
+- Платформенные проверяющие: `Platform::Testing` отвергается боевыми
+  проверяющими. iOS, Android и Web тоже отказывают, пока настоящие
+  платформенные проверяющие не подключены.
 - Мобильный мост: Swift, Kotlin и Web-мосты для attestation пока не являются
   боевой границей доверия.
 - Серверная интеграция: поведение mock-сервера не считается готовностью
