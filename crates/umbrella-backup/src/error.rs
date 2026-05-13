@@ -71,6 +71,11 @@ pub enum BackupError {
     #[error("production server nonce mismatch")]
     ProductionServerNonceMismatch,
 
+    /// Серверный вызов уже был использован и не может дать вторую долю ключа.
+    /// Server nonce was already consumed and cannot yield a second key share.
+    #[error("production server nonce replay")]
+    ProductionServerNonceReplay,
+
     /// Серверный вызов старше разрешённого окна свежести.
     /// Server-issued nonce is older than the allowed freshness window.
     #[error("production server nonce expired: age {age_millis} ms > max {max_age_millis} ms")]
