@@ -62,6 +62,8 @@ require_pattern "docs/security/production-readiness-boundaries.md" "FFI bootstra
 require_pattern "docs/security/production-readiness-boundaries.md" "Platform::Testing"
 require_pattern "docs/security/production-readiness-boundaries.md" "TLS pinning"
 require_pattern "docs/security/production-readiness-boundaries.md" "system certificate verification plus|системной проверкой сертификата"
+require_pattern "docs/security/protocol-core-attack-gates.md" "повтор серверного вызова"
+require_pattern "docs/security/protocol-core-attack-gates.md" "split-view"
 require_pattern "docs/audits/formal-lint-status-2026-05-13.md" "DYLINT_RUSTFLAGS"
 require_pattern "docs/audits/formal-lint-status-2026-05-13.md" "ProVerif"
 require_pattern "docs/audits/formal-lint-status-2026-05-13.md" "Tamarin"
