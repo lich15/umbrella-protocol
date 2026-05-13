@@ -17,11 +17,16 @@ The current rules focus on production safety:
 ## Command
 
 ```bash
-cargo dylint --all --manifest-path crates/umbrella-lints/Cargo.toml -- --workspace --all-targets --all-features
+DYLINT_RUSTFLAGS="-D warnings" cargo dylint --all --path crates/umbrella-lints --workspace -- --ignore-rust-version --all-targets --all-features --locked
 ```
 
-The Dylint job is advisory for local development and enforced in CI where the
-nightly toolchain is available.
+The command must load `crates/umbrella-lints` through `--path`; the older
+`--manifest-path` form can exit 0 while loading no local lint libraries.
+`--ignore-rust-version` is required while the pinned Dylint nightly is older
+than the stable Rust version declared by the main workspace.
+`DYLINT_RUSTFLAGS="-D warnings"` makes local lint findings fail the gate.
+Current gate status is recorded in
+[`formal-lint-status-2026-05-13.md`](formal-lint-status-2026-05-13.md).
 
 ---
 
@@ -40,8 +45,13 @@ Umbrella Protocol хранит собственные lint-правила в `cr
 ## Команда
 
 ```bash
-cargo dylint --all --manifest-path crates/umbrella-lints/Cargo.toml -- --workspace --all-targets --all-features
+DYLINT_RUSTFLAGS="-D warnings" cargo dylint --all --path crates/umbrella-lints --workspace -- --ignore-rust-version --all-targets --all-features --locked
 ```
 
-Dylint advisory для локальной разработки и enforced в CI там, где доступен
-nightly toolchain.
+Команда должна загружать `crates/umbrella-lints` через `--path`; старый вариант
+с `--manifest-path` может завершиться кодом 0, но не загрузить локальные
+правила. `--ignore-rust-version` нужен, пока закреплённый nightly для Dylint
+старше стабильного Rust, указанного основным workspace.
+`DYLINT_RUSTFLAGS="-D warnings"` делает предупреждения локальных правил
+ошибкой. Текущий статус ворот записан в
+[`formal-lint-status-2026-05-13.md`](formal-lint-status-2026-05-13.md).

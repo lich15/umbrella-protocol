@@ -28,6 +28,7 @@ Primary public materials:
 Verification artifacts:
   docs/security/sbom-v1.0.0.json
   docs/security/release-manifest-v1.0.0.txt
+  docs/audits/formal-lint-status-2026-05-13.md
   Cargo.lock
 
 Recommended local verification:
@@ -78,6 +79,7 @@ TLS-ключей и боевая проверка устройства отка�
 Проверочные артефакты:
   docs/security/sbom-v1.0.0.json
   docs/security/release-manifest-v1.0.0.txt
+  docs/audits/formal-lint-status-2026-05-13.md
   Cargo.lock
 
 Рекомендуемая локальная проверка:

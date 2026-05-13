@@ -76,15 +76,20 @@ jobs:
           cargo build --release
 
       - name: Run dylint against the main workspace
-        # `--manifest-path` указывает на sub-workspace, чтобы cargo-dylint
-        # подхватил собранный cdylib `libumbrella_lints.{so,dylib}`. Затем
-        # `--workspace` (после `--`) применяет lints ко всем крейтам
-        # основного workspace.
-        # `--manifest-path` points at the sub-workspace so cargo-dylint
-        # picks up the built cdylib `libumbrella_lints.{so,dylib}`. Then
-        # `--workspace` (after `--`) applies the lints to every crate in
-        # the main workspace.
+        # `--path` явно загружает локальные правила из sub-workspace.
+        # `--ignore-rust-version` нужен, пока pinned nightly для Dylint старше
+        # stable Rust, указанного основным workspace.
+        # `DYLINT_RUSTFLAGS="-D warnings"` делает finding локального правила
+        # реальным провалом job.
+        # `--path` explicitly loads local lints from the sub-workspace.
+        # `--ignore-rust-version` is needed while the Dylint pinned nightly is
+        # older than the stable Rust declared by the main workspace.
+        # `DYLINT_RUSTFLAGS="-D warnings"` turns a local-lint finding into a
+        # real job failure.
+        env:
+          DYLINT_RUSTFLAGS: "-D warnings"
         run: |
           cargo dylint --all \
-            --manifest-path crates/umbrella-lints/Cargo.toml \
-            -- --workspace --all-targets --all-features
+            --path crates/umbrella-lints \
+            --workspace \
+            -- --ignore-rust-version --all-targets --all-features --locked

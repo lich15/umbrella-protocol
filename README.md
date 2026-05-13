@@ -296,6 +296,11 @@ bash scripts/verify-tamarin-models.sh
 
 These commands need the matching external tools installed locally.
 
+The current status of formal verification and local lint gates is recorded in
+[`docs/audits/formal-lint-status-2026-05-13.md`](docs/audits/formal-lint-status-2026-05-13.md).
+A command counts as a current release gate only when that status file shows
+exit code 0 for the exact command.
+
 ### GitHub Checks
 
 On a normal push to `main`, the repository runs fast production checks:
@@ -669,6 +674,11 @@ bash scripts/verify-tamarin-models.sh
 ```
 
 Для этих команд нужны соответствующие внешние инструменты на компьютере.
+
+Текущий статус формальных проверок и местных строгих правил записан в
+[`docs/audits/formal-lint-status-2026-05-13.md`](docs/audits/formal-lint-status-2026-05-13.md).
+Команда считается воротами выпуска только если в этом файле у неё указан код
+0 для точного запуска.
 
 ### Проверки на GitHub
 

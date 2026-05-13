@@ -177,6 +177,13 @@ pub fn xwing_encaps<R: RngCore + CryptoRng>(
     result
 }
 
+/// Детерминированный X-Wing encapsulation с 64-байтовым `eseed` из интерфейса
+/// draft-connolly-cfrg-xwing-kem-10 `EncapsulateDerand(pk, eseed)`.
+///
+/// Это hook для KAT-тестов и воспроизводимости. Боевой код должен предпочитать
+/// [`xwing_encaps`], который заполняет `eseed` из CSPRNG и очищает временный
+/// seed перед возвратом.
+///
 /// Deterministic X-Wing encapsulation using the 64-byte `eseed` from the
 /// draft-connolly-cfrg-xwing-kem-10 `EncapsulateDerand(pk, eseed)` interface.
 ///

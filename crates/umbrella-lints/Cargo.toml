@@ -33,13 +33,15 @@
 # Запуск локально (см. `docs/audits/dylint-rules.md`):
 #   cargo install cargo-dylint dylint-link
 #   cd crates/umbrella-lints && cargo build
-#   cd ../.. && cargo dylint --all --workspace \
-#     --manifest-path crates/umbrella-lints/Cargo.toml -- --workspace
+#   cd ../.. && DYLINT_RUSTFLAGS="-D warnings" cargo dylint --all \
+#     --path crates/umbrella-lints --workspace \
+#     -- --ignore-rust-version --all-targets --all-features --locked
 # Local invocation (see `docs/audits/dylint-rules.md`):
 #   cargo install cargo-dylint dylint-link
 #   cd crates/umbrella-lints && cargo build
-#   cd ../.. && cargo dylint --all --workspace \
-#     --manifest-path crates/umbrella-lints/Cargo.toml -- --workspace
+#   cd ../.. && DYLINT_RUSTFLAGS="-D warnings" cargo dylint --all \
+#     --path crates/umbrella-lints --workspace \
+#     -- --ignore-rust-version --all-targets --all-features --locked
 
 [package]
 # `umbrella_lints` (snake_case) — конвенция dylint: cdylib генерирует

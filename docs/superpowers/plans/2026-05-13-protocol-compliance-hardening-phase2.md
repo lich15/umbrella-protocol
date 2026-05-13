@@ -845,7 +845,7 @@ Run and store the output:
 
 ```bash
 set +e
-cargo dylint --all --manifest-path crates/umbrella-lints/Cargo.toml -- --workspace --all-targets --all-features > target/phase2-formal-lint-evidence/dylint.out 2>&1
+DYLINT_RUSTFLAGS="-D warnings" cargo dylint --all --path crates/umbrella-lints --workspace -- --ignore-rust-version --all-targets --all-features --locked > target/phase2-formal-lint-evidence/dylint.out 2>&1
 echo $? > target/phase2-formal-lint-evidence/dylint.exit
 set -e
 ```
@@ -875,7 +875,7 @@ row() {
   exit_code="$(cat "target/phase2-formal-lint-evidence/${stem}.exit")"
   first_line="$(grep -m 1 -E '[^[:space:]]' "target/phase2-formal-lint-evidence/${stem}.out" || true)"
   if [[ -z "$first_line" ]]; then
-    first_line="команда не вывела текста"
+    first_line="нет вывода"
   fi
 
   if [[ "$exit_code" == "0" ]]; then
@@ -902,7 +902,7 @@ row() {
   row 'bash scripts/verify-formal-production-readiness.sh' formal-production-readiness 'Указать недостающий инструмент или failing model и завести отдельный план'
   row 'bash scripts/verify-proverif-models.sh' proverif 'Указать недостающий ProVerif или failing model и завести отдельный план'
   row 'bash scripts/verify-tamarin-models.sh' tamarin 'Указать недостающий Tamarin или failing model и завести отдельный план'
-  row 'cargo dylint --all --manifest-path crates/umbrella-lints/Cargo.toml -- --workspace --all-targets --all-features' dylint 'Указать конфликт версии, недостающий инструмент или первый lint finding'
+  row 'DYLINT_RUSTFLAGS="-D warnings" cargo dylint --all --path crates/umbrella-lints --workspace -- --ignore-rust-version --all-targets --all-features --locked' dylint 'Указать конфликт версии, недостающий инструмент или первый lint finding'
   printf '\nКоманда считается текущими воротами выпуска только если её строка имеет статус `Проходит`.\n'
 } > docs/audits/formal-lint-status-2026-05-13.md
 ```
@@ -931,7 +931,7 @@ Russian text:
 Run:
 
 ```bash
-rg -n "команда не вывела текста" docs/audits/formal-lint-status-2026-05-13.md
+rg -n "команда не вывела текста|No libraries were found|--manifest-path crates/umbrella-lints" docs/audits/formal-lint-status-2026-05-13.md
 ```
 
 Expected:

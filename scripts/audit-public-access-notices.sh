@@ -47,9 +47,13 @@ require_pattern "docs/README.md" "production-readiness-boundaries.md"
 require_pattern "docs/README.md" "private protocol specifications"
 require_pattern "docs/security/release-manifest-v1.0.0.txt" "Public Access"
 require_pattern "docs/security/release-manifest-v1.0.0.txt" "Phase 2 status|Статус Фазы 2"
+require_pattern "docs/security/release-manifest-v1.0.0.txt" "formal-lint-status-2026-05-13.md"
 require_pattern "docs/security/production-readiness-boundaries.md" "FFI bootstrap"
 require_pattern "docs/security/production-readiness-boundaries.md" "Platform::Testing"
 require_pattern "docs/security/production-readiness-boundaries.md" "TLS pinning"
+require_pattern "docs/audits/formal-lint-status-2026-05-13.md" "DYLINT_RUSTFLAGS"
+require_pattern "docs/audits/formal-lint-status-2026-05-13.md" "ProVerif"
+require_pattern "docs/audits/formal-lint-status-2026-05-13.md" "Tamarin"
 
 if [[ "$failed" -ne 0 ]]; then
   exit "$failed"

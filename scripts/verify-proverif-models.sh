@@ -7,10 +7,8 @@
 # на каждом, проверяет что output содержит "RESULT ... is true" либо
 # "cannot be proved false" и сохраняет artefacts в target/proverif-results/.
 #
-# Сейчас директория .pv файлов пустая — первая ProVerif модель создаётся в
-# блоке 9.4 (sealed-sender V2 + backup wrap V2 confidentiality). Скрипт
-# gracefully handles empty directory: выходит с кодом 0 и informational
-# сообщением.
+# Если .pv моделей нет, скрипт выходит с кодом 0 и informational сообщением.
+# Если модели есть, `proverif` ищется сначала в PATH, затем через `opam exec`.
 #
 # Запускайте из корня репо. Требует `proverif` 2.05+ в PATH.
 #
@@ -20,9 +18,9 @@
 # checks that the output contains "RESULT ... is true" or "cannot be proved
 # false", and saves artefacts in target/proverif-results/.
 #
-# Currently the .pv files directory is empty — the first ProVerif model is
-# The script gracefully handles an empty directory: it exits with code 0
-# and an informational message.
+# If there are no .pv models, the script exits with code 0 and an informational
+# message. If models exist, `proverif` is resolved from PATH first, then through
+# `opam exec`.
 #
 # Run from the repo root. Requires `proverif` 2.05+ in PATH.
 
@@ -47,8 +45,19 @@ if [ ${#models[@]} -eq 0 ]; then
     exit 0
 fi
 
-if ! command -v proverif >/dev/null 2>&1; then
-    echo "error: proverif not in PATH (install via opam install proverif or apt-get install proverif)" >&2
+proverif_cmd() {
+    if command -v proverif >/dev/null 2>&1; then
+        proverif "$@"
+    elif command -v opam >/dev/null 2>&1 && opam exec -- proverif -help >/dev/null 2>&1; then
+        opam exec -- proverif "$@"
+    else
+        return 127
+    fi
+}
+
+if ! proverif_cmd -help >/dev/null 2>&1; then
+    echo "error: proverif not in PATH and not available through opam exec" >&2
+    echo "install via opam install proverif or apt-get install proverif" >&2
     exit 127
 fi
 
@@ -57,7 +66,7 @@ for model in "${models[@]}"; do
     name=$(basename "$model" .pv)
     out="$RESULTS_DIR/$name.txt"
     echo "==> Verifying $name"
-    if proverif "$model" >"$out" 2>&1; then
+    if proverif_cmd "$model" >"$out" 2>&1; then
         if grep -Eq "RESULT.*is true|cannot be proved false" "$out"; then
             echo "    OK: $name verified"
         else
