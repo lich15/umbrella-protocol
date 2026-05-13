@@ -426,6 +426,22 @@ pub trait ProductionPlatformVerifier: std::fmt::Debug {
     ) -> Result<(), OprfError>;
 }
 
+/// Хранилище использованных серверных вызовов для боевой OPRF-проверки.
+/// Store of consumed server nonces for production OPRF verification.
+pub trait ProductionNonceReplayGuard: std::fmt::Debug {
+    /// Проверить и записать одноразовый серверный вызов.
+    /// Check and record a one-time server nonce.
+    ///
+    /// # Errors
+    /// Возвращает [`OprfError::ProductionServerNonceReplay`], если вызов уже был
+    /// принят ранее.
+    fn check_and_record_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        now_unix_millis: u64,
+    ) -> Result<(), OprfError>;
+}
+
 /// Проверяющий, который честно закрывает путь до подключения настоящей платформы.
 /// Verifier that fail-closes until real platform validation is wired.
 #[derive(Debug, Clone, Copy, Default)]
@@ -615,6 +631,7 @@ pub struct ProductionOprfVerificationContext<'a> {
     freshness: ProductionFreshnessPolicy,
     device_state: ProductionDeviceState,
     platform_verifier: &'a dyn ProductionPlatformVerifier,
+    nonce_replay_guard: &'a dyn ProductionNonceReplayGuard,
 }
 
 impl<'a> ProductionOprfVerificationContext<'a> {
@@ -630,6 +647,7 @@ impl<'a> ProductionOprfVerificationContext<'a> {
         freshness: ProductionFreshnessPolicy,
         device_state: ProductionDeviceState,
         platform_verifier: &'a dyn ProductionPlatformVerifier,
+        nonce_replay_guard: &'a dyn ProductionNonceReplayGuard,
     ) -> Result<Self, OprfError> {
         if platform_verifier.kind() == PlatformVerifierKind::TestOnly {
             return Err(OprfError::ProductionTestVerifierRejected);
@@ -641,6 +659,7 @@ impl<'a> ProductionOprfVerificationContext<'a> {
             freshness,
             device_state,
             platform_verifier,
+            nonce_replay_guard,
         })
     }
 }
@@ -730,15 +749,18 @@ pub fn verify_signed_request_for_production_with_context(
     check_production_device_state(ctx.device_state, ctx.server_nonce_issued_at_unix_millis)?;
     match req.attestation.platform {
         Platform::Testing => Err(OprfError::CryptoVerificationFailed),
-        Platform::IOs | Platform::Android | Platform::Web => ctx
-            .platform_verifier
-            .verify_platform_attestation(PlatformVerificationInput {
-                platform: req.attestation.platform,
-                token: req.attestation.token.as_slice(),
-                server_nonce: &req.nonce,
-                device_pubkey: &req.device_pubkey,
-                now_unix_millis: ctx.now_unix_millis,
-            }),
+        Platform::IOs | Platform::Android | Platform::Web => {
+            ctx.platform_verifier
+                .verify_platform_attestation(PlatformVerificationInput {
+                    platform: req.attestation.platform,
+                    token: req.attestation.token.as_slice(),
+                    server_nonce: &req.nonce,
+                    device_pubkey: &req.device_pubkey,
+                    now_unix_millis: ctx.now_unix_millis,
+                })?;
+            ctx.nonce_replay_guard
+                .check_and_record_nonce(&req.nonce, ctx.now_unix_millis)
+        }
     }
 }
 
@@ -839,6 +861,45 @@ mod tests {
         }
     }
 
+    #[derive(Debug, Default)]
+    struct AcceptingAndroidVerifier;
+
+    impl ProductionPlatformVerifier for AcceptingAndroidVerifier {
+        fn kind(&self) -> PlatformVerifierKind {
+            PlatformVerifierKind::AndroidPlayIntegrity
+        }
+
+        fn verify_platform_attestation(
+            &self,
+            input: PlatformVerificationInput<'_>,
+        ) -> Result<(), OprfError> {
+            assert_eq!(input.platform, Platform::Android);
+            Ok(())
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct RecordingNonceReplayGuard {
+        seen: std::sync::Mutex<std::collections::HashSet<[u8; NONCE_LEN]>>,
+    }
+
+    impl ProductionNonceReplayGuard for RecordingNonceReplayGuard {
+        fn check_and_record_nonce(
+            &self,
+            nonce: &[u8; NONCE_LEN],
+            _now_unix_millis: u64,
+        ) -> Result<(), OprfError> {
+            let mut seen = self
+                .seen
+                .lock()
+                .map_err(|_| OprfError::ProductionServerNonceReplay)?;
+            if !seen.insert(*nonce) {
+                return Err(OprfError::ProductionServerNonceReplay);
+            }
+            Ok(())
+        }
+    }
+
     fn production_android_oprf_request(
         sk: &SigningKey,
         vk: &DalekVerifyingKey,
@@ -866,6 +927,7 @@ mod tests {
 
     fn production_context<'a>(
         verifier: &'a dyn ProductionPlatformVerifier,
+        replay_guard: &'a dyn ProductionNonceReplayGuard,
         expected_server_nonce: [u8; NONCE_LEN],
         nonce_issued_at_unix_millis: u64,
         now_unix_millis: u64,
@@ -878,6 +940,7 @@ mod tests {
             ProductionFreshnessPolicy::default(),
             device_state,
             verifier,
+            replay_guard,
         )
         .expect("context must be valid for non-test-only verifier")
     }
@@ -1048,6 +1111,7 @@ mod tests {
     #[test]
     fn production_context_rejects_test_only_platform_verifier() {
         let nonce = fresh_nonce();
+        let replay_guard = RecordingNonceReplayGuard::default();
         let err = ProductionOprfVerificationContext::new(
             nonce,
             1_700_000_000_000,
@@ -1055,6 +1119,7 @@ mod tests {
             ProductionFreshnessPolicy::default(),
             active_device_state(),
             &TestOnlySuccessVerifier,
+            &replay_guard,
         )
         .unwrap_err();
         assert!(matches!(err, OprfError::ProductionTestVerifierRejected));
@@ -1067,8 +1132,10 @@ mod tests {
         let mut signed = production_android_oprf_request(&sk, &vk, nonce);
         signed.device_signature[0] ^= 1;
         let verifier = CountingUnavailableVerifier::default();
+        let replay_guard = RecordingNonceReplayGuard::default();
         let ctx = production_context(
             &verifier,
+            &replay_guard,
             nonce,
             1_700_000_000_000,
             1_700_000_000_100,
@@ -1086,8 +1153,10 @@ mod tests {
         let expected_nonce = fresh_nonce();
         let signed = production_android_oprf_request(&sk, &vk, request_nonce);
         let verifier = CountingUnavailableVerifier::default();
+        let replay_guard = RecordingNonceReplayGuard::default();
         let ctx = production_context(
             &verifier,
+            &replay_guard,
             expected_nonce,
             1_700_000_000_000,
             1_700_000_000_100,
@@ -1104,8 +1173,10 @@ mod tests {
         let nonce = fresh_nonce();
         let signed = production_android_oprf_request(&sk, &vk, nonce);
         let verifier = CountingUnavailableVerifier::default();
+        let replay_guard = RecordingNonceReplayGuard::default();
         let ctx = production_context(
             &verifier,
+            &replay_guard,
             nonce,
             1_700_000_000_000,
             1_700_000_400_001,
@@ -1125,8 +1196,10 @@ mod tests {
         let nonce = fresh_nonce();
         let signed = production_android_oprf_request(&sk, &vk, nonce);
         let verifier = CountingUnavailableVerifier::default();
+        let replay_guard = RecordingNonceReplayGuard::default();
         let ctx = production_context(
             &verifier,
+            &replay_guard,
             nonce,
             1_700_000_400_001,
             1_700_000_000_000,
@@ -1146,9 +1219,11 @@ mod tests {
         let nonce = fresh_nonce();
         let signed = production_android_oprf_request(&sk, &vk, nonce);
         let verifier = CountingUnavailableVerifier::default();
+        let replay_guard = RecordingNonceReplayGuard::default();
 
         let ctx = production_context(
             &verifier,
+            &replay_guard,
             nonce,
             1_700_000_000_000,
             1_700_000_000_100,
@@ -1159,6 +1234,7 @@ mod tests {
 
         let ctx = production_context(
             &verifier,
+            &replay_guard,
             nonce,
             1_700_000_000_000,
             1_700_000_000_100,
@@ -1172,6 +1248,7 @@ mod tests {
 
         let ctx = production_context(
             &verifier,
+            &replay_guard,
             nonce,
             1_700_000_000_000,
             1_700_000_000_100,
@@ -1188,8 +1265,10 @@ mod tests {
         let nonce = fresh_nonce();
         let signed = production_android_oprf_request(&sk, &vk, nonce);
         let verifier = CountingUnavailableVerifier::default();
+        let replay_guard = RecordingNonceReplayGuard::default();
         let ctx = production_context(
             &verifier,
+            &replay_guard,
             nonce,
             1_700_000_000_000,
             1_700_000_000_100,
@@ -1205,13 +1284,40 @@ mod tests {
     }
 
     #[test]
+    fn production_context_rejects_replayed_server_nonce_after_first_success() {
+        let (sk, vk) = make_device_keypair();
+        let nonce = fresh_nonce();
+        let signed = production_android_oprf_request(&sk, &vk, nonce);
+        let verifier = AcceptingAndroidVerifier;
+        let replay_guard = RecordingNonceReplayGuard::default();
+        let ctx = ProductionOprfVerificationContext::new(
+            nonce,
+            1_700_000_000_000,
+            1_700_000_000_100,
+            ProductionFreshnessPolicy::default(),
+            active_device_state(),
+            &verifier,
+            &replay_guard,
+        )
+        .expect("context with real verifier and replay guard is valid");
+
+        verify_signed_request_for_production_with_context(&signed, &ctx)
+            .expect("first use of server nonce is accepted");
+        let err = verify_signed_request_for_production_with_context(&signed, &ctx).unwrap_err();
+
+        assert!(matches!(err, OprfError::ProductionServerNonceReplay));
+    }
+
+    #[test]
     fn production_context_android_platform_uses_shared_platform_verifier() {
         let (sk, vk) = make_device_keypair();
         let nonce = fresh_nonce();
         let signed = production_android_oprf_request(&sk, &vk, nonce);
         let verifier = SharedPlatformVerifierForOprf::android_for_test("com.umbrella.app", false);
+        let replay_guard = RecordingNonceReplayGuard::default();
         let ctx = production_context(
             &verifier,
+            &replay_guard,
             nonce,
             1_700_000_000_000,
             1_700_000_000_100,
