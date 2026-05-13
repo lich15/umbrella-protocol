@@ -7,6 +7,7 @@ members = [
     "crates/umbrella-identity",
     "crates/umbrella-mls",
     "crates/umbrella-kt",
+    "crates/umbrella-platform-verifier",
     "crates/umbrella-oprf",
     "crates/umbrella-sealed-sender",
     "crates/umbrella-padding",
@@ -60,6 +61,7 @@ umbrella-pq = { path = "crates/umbrella-pq", version = "1.0.0" }
 umbrella-identity = { path = "crates/umbrella-identity", version = "1.0.0" }
 umbrella-mls = { path = "crates/umbrella-mls", version = "1.0.0" }
 umbrella-kt = { path = "crates/umbrella-kt", version = "1.0.0" }
+umbrella-platform-verifier = { path = "crates/umbrella-platform-verifier", version = "1.0.0" }
 umbrella-oprf = { path = "crates/umbrella-oprf", version = "1.0.0" }
 umbrella-sealed-sender = { path = "crates/umbrella-sealed-sender", version = "1.0.0" }
 umbrella-padding = { path = "crates/umbrella-padding", version = "1.0.0" }
@@ -209,6 +211,7 @@ tracing = "0.1"
 # ——— Util ———
 rand = "0.8"
 hex = "0.4.3"
+base64ct = { version = "1.8", features = ["alloc"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 

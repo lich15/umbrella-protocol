@@ -303,11 +303,12 @@ pub trait PlatformVerifier: core::fmt::Debug {
 }
 ```
 
-- [ ] **Step 7: Run skeleton check and commit**
+- [ ] **Step 7: Update lockfile once, run skeleton check, and commit**
 
 Run:
 
 ```bash
+cargo check -p umbrella-platform-verifier
 cargo check -p umbrella-platform-verifier --locked
 ```
 
@@ -321,6 +322,7 @@ Then commit:
 
 ```bash
 git add Cargo.toml crates/umbrella-platform-verifier
+git add Cargo.lock docs/superpowers/plans/2026-05-13-production-platform-verifiers.md
 git commit -m "platform: add verifier crate skeleton"
 ```
 
