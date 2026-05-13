@@ -966,7 +966,7 @@ git commit -m "client: wire production http2 tls pinning"
 - Modify: `crates/umbrella-ffi/src/export/client.rs`
 - Modify: `crates/umbrella-ffi/tests/production_bootstrap.rs`
 
-- [ ] **Step 1: Tighten FFI tests so the public error is honest**
+- [x] **Step 1: Tighten FFI tests so the public error is honest**
 
 In `crates/umbrella-ffi/tests/production_bootstrap.rs`, update `assert_production_bootstrap_unavailable`:
 
@@ -993,7 +993,7 @@ fn assert_production_bootstrap_unavailable(err: UmbrellaError) {
 }
 ```
 
-- [ ] **Step 2: Run red FFI test**
+- [x] **Step 2: Run red FFI test**
 
 Run:
 
@@ -1007,7 +1007,7 @@ Expected current failure:
 TLS pinning is now wired for the internal production transport
 ```
 
-- [ ] **Step 3: Update FFI fail-fast message**
+- [x] **Step 3: Update FFI fail-fast message**
 
 In `crates/umbrella-ffi/src/export/client.rs`, replace `production_bootstrap_unavailable` with:
 
@@ -1020,7 +1020,7 @@ fn production_bootstrap_unavailable() -> UmbrellaError {
 }
 ```
 
-- [ ] **Step 4: Run focused FFI tests**
+- [x] **Step 4: Run focused FFI tests**
 
 Run:
 
@@ -1035,7 +1035,7 @@ Expected:
 test result: ok
 ```
 
-- [ ] **Step 5: Commit FFI honesty update**
+- [x] **Step 5: Commit FFI honesty update**
 
 Run:
 

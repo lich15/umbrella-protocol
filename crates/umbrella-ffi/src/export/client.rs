@@ -32,7 +32,7 @@ use crate::types::ChatIdFfi;
 
 fn production_bootstrap_unavailable() -> UmbrellaError {
     UmbrellaError::Internal(
-        "production bootstrap is not available: public FFI must not use test constructors until the production HTTP/2 transport gate, TLS pinning, production attestation verifier, mobile bridge, and server integration paths are wired end to end"
+        "production bootstrap is not available: public FFI must not use test constructors until the production attestation verifier, mobile bridge, and server integration paths are wired end to end"
             .into(),
     )
 }
