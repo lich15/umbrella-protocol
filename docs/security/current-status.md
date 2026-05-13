@@ -1,6 +1,6 @@
 # Current Status
 
-Дата: 2026-05-13
+Дата: 2026-05-14
 
 [English](#english) | [Русский](#русский)
 
@@ -27,6 +27,10 @@ Implemented and currently documented:
 - Apple App Attest and Android Play Integrity paths that fail closed until
   external trust material, token parsers, and mobile/server integration are
   connected;
+- protocol-core attack gate matrix:
+  `docs/security/protocol-core-attack-gates.md`;
+- mandatory server-nonce replay rejection in the production OPRF and backup
+  unwrap contexts;
 - formal and local lint gate status recorded in
   `docs/audits/formal-lint-status-2026-05-13.md`.
 
@@ -68,6 +72,10 @@ Umbrella Protocol 1.0.0 — набор Rust-крейтов протокола с
 - пути Apple App Attest и Android Play Integrity, которые закрыто отказывают,
   пока не подключены внешние корни доверия, разбор токенов и мобильная/серверная
   связка;
+- матрица боевых атакующих ворот ядра протокола:
+  `docs/security/protocol-core-attack-gates.md`;
+- обязательная защита от повторного использования серверного вызова в боевых
+  контекстах OPRF и развёртки резервного ключа;
 - статус формальных проверок и местных правил в
   `docs/audits/formal-lint-status-2026-05-13.md`.
 

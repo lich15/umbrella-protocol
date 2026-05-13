@@ -23,6 +23,8 @@ local assertion verification. Apple App Attest and Android Play Integrity still
 fail closed until external trust material, platform-token parsers, and
 mobile/server integration are wired. See
 [`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
+Core protocol attack gates are recorded in
+[`docs/security/protocol-core-attack-gates.md`](docs/security/protocol-core-attack-gates.md).
 
 This repository is public for transparency, reproducible builds, non-commercial
 security testing, cryptographic testing, and responsible vulnerability reports.
@@ -410,6 +412,8 @@ Play Integrity всё ещё закрыто отказывают, пока не 
 доверия, разбор платформенного токена и мобильная/серверная связка. Подробная
 граница:
 [`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
+Боевые атакующие ворота ядра протокола записаны в
+[`docs/security/protocol-core-attack-gates.md`](docs/security/protocol-core-attack-gates.md).
 
 Репозиторий открыт для прозрачности, воспроизводимых сборок, некоммерческих
 проверок безопасности, криптографических испытаний и ответственных сообщений об

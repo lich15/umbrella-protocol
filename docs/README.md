@@ -47,6 +47,8 @@ verification. Apple App Attest and Android Play Integrity still fail closed
 until external trust material, platform-token parsers, and mobile/server
 integration are wired. See
 [`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md).
+Core protocol attack gates are recorded in
+[`security/protocol-core-attack-gates.md`](security/protocol-core-attack-gates.md).
 
 The current status of formal verification and local lint gates is recorded in
 [`audits/formal-lint-status-2026-05-13.md`](audits/formal-lint-status-2026-05-13.md).
@@ -102,6 +104,8 @@ SPKI-ключами. Публичный FFI-запуск остаётся зак
 отказывают, пока не подключены внешние корни доверия, разбор платформенного
 токена и мобильная/серверная связка. Подробная граница:
 [`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md).
+Боевые атакующие ворота ядра протокола записаны в
+[`security/protocol-core-attack-gates.md`](security/protocol-core-attack-gates.md).
 
 Текущий статус формальных проверок и местных строгих правил записан в
 [`audits/formal-lint-status-2026-05-13.md`](audits/formal-lint-status-2026-05-13.md).
