@@ -50,6 +50,7 @@ run_gate local-race-witness cargo test -p umbrella-tests concurrent_witness_veri
 run_gate protocol-attack-audit bash scripts/audit-protocol-core-attack-gates.sh
 run_gate test-only-boundary-audit bash scripts/audit-test-only-production-boundary.sh
 run_gate local-hardening-audit bash scripts/audit-local-release-hardening.sh "$evidence_dir/local-hardening-audit"
+run_gate miri-local-gates bash scripts/run-miri-local-gates.sh "$evidence_dir/miri-local"
 
 if command -v cargo-fuzz >/dev/null 2>&1 && cargo +nightly --version >/dev/null 2>&1; then
   run_gate fuzz-smoke bash scripts/run-fuzz-overnight.sh "$fuzz_seconds" kt_entry_v2_parser sealed_sender_v2_parser wrapped_key_v2_parser oprf_parse_blinded_request

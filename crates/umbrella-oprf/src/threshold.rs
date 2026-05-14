@@ -402,6 +402,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "threshold Ristretto255 reconstruction is too slow under Miri; native locked cargo test covers this algebra"
+    )]
     fn threshold_combine_3_of_5_reconstructs_single_server() {
         let config = ThresholdConfig::default();
         let (master_sk, shares) = make_shares(config);
@@ -425,6 +429,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "threshold OPRF path is too slow under Miri; native locked cargo test covers below-threshold rejection"
+    )]
     fn threshold_combine_rejects_below_threshold() {
         let config = ThresholdConfig::default();
         let (_, shares) = make_shares(config);
@@ -439,6 +447,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "threshold Ristretto255 evaluations are too slow under Miri; native locked cargo test covers duplicate rejection"
+    )]
     fn threshold_combine_rejects_duplicate_index() {
         let config = ThresholdConfig::default();
         let (_, shares) = make_shares(config);
@@ -467,6 +479,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "threshold Ristretto255 reconstruction is too slow under Miri; native locked cargo test covers order independence"
+    )]
     fn threshold_combine_order_independence() {
         // Combined output не должен зависеть от порядка shares в массиве:
         // Lagrange формула симметрична.
@@ -483,6 +499,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "threshold tamper path is too slow under Miri; native locked cargo test covers tampered share behavior"
+    )]
     fn threshold_tampered_share_breaks_combine() {
         // Подмена одного partial evaluation в подмножестве из 3 ломает результат.
         // Но ВЫБОР другого подмножества (без tampered) — всё ещё корректный.
@@ -522,6 +542,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "threshold Lagrange point checks are too slow under Miri; native locked cargo test covers the algebra"
+    )]
     fn lagrange_at_zero_sums_to_one() {
         // Свойство Lagrange базиса: Σ_{i ∈ S} λ_i(0) = 1 для любого S.
         // Тестируем для 3-из-5 subsets.
@@ -546,6 +570,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "Shamir scalar reconstruction is too slow under Miri; native locked cargo test covers this invariant"
+    )]
     fn shamir_split_reconstructs_original_scalar() {
         // Проверяем, что Shamir-split → Lagrange combine скаляров в x=0
         // восстанавливает оригинал. Это fundamental для OPRF threshold.

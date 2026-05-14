@@ -49,6 +49,10 @@ fn assert_production_bootstrap_unavailable(err: UmbrellaError) {
 }
 
 #[tokio::test]
+#[cfg_attr(
+    miri,
+    ignore = "tokio runtime opens kqueue on macOS, which Miri does not support; native cargo test covers this fail-fast path"
+)]
 async fn public_bootstrap_does_not_call_test_constructor() {
     let result = UmbrellaClientHandle::bootstrap(valid_config(), VALID_MNEMONIC.into()).await;
     match result {
@@ -59,6 +63,10 @@ async fn public_bootstrap_does_not_call_test_constructor() {
 
 #[cfg(not(feature = "pq"))]
 #[tokio::test]
+#[cfg_attr(
+    miri,
+    ignore = "tokio runtime opens kqueue on macOS, which Miri does not support; native cargo test covers this fail-fast path"
+)]
 async fn public_bootstrap_classical_does_not_call_test_constructor() {
     let result =
         UmbrellaClientHandle::bootstrap_classical(valid_config(), VALID_MNEMONIC.into()).await;
@@ -72,6 +80,10 @@ async fn public_bootstrap_classical_does_not_call_test_constructor() {
 
 #[cfg(feature = "pq")]
 #[tokio::test]
+#[cfg_attr(
+    miri,
+    ignore = "tokio runtime opens kqueue on macOS, which Miri does not support; native cargo test covers this fail-fast path"
+)]
 async fn public_bootstrap_pq_does_not_call_test_constructor() {
     let result = UmbrellaClientHandle::bootstrap_pq(valid_config(), VALID_MNEMONIC.into()).await;
     match result {

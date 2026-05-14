@@ -354,6 +354,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "512-byte Ristretto255 roundtrip is too slow under Miri; native locked cargo test covers max input"
+    )]
     fn round_trip_max_size() {
         let buf = vec![0x55u8; 512];
         rt_single_server(&buf);
@@ -553,8 +557,10 @@ mod tests {
     // Property-based tests
     // ====================================================================
 
+    #[cfg(not(miri))]
     use proptest::prelude::*;
 
+    #[cfg(not(miri))]
     fn oprf_for(input_bytes: &[u8], sk: &[u8; SCALAR_LEN]) -> OprfLabel {
         let input = OprfInput::new(input_bytes).unwrap();
         let (blinded, state) = blind(input, &mut OsRng).unwrap();
@@ -562,6 +568,12 @@ mod tests {
         finalize(&state, input, &eval).unwrap()
     }
 
+    // Под Miri proptest слишком медленный для OPRF; фиксированные OPRF-тесты выше
+    // всё равно исполняются, а полный property-набор идёт в native cargo test.
+    //
+    // Under Miri, proptest is too slow for OPRF; fixed OPRF tests above still
+    // execute, while the full property suite runs in native cargo test.
+    #[cfg(not(miri))]
     proptest! {
         #![proptest_config(ProptestConfig {
             cases: 128,
