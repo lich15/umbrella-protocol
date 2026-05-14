@@ -40,6 +40,10 @@ Implemented and currently documented:
   unwrap contexts;
 - local dependency release gate runs `cargo deny check` and rejects missing
   `cargo-deny` as a gate failure;
+- external crypto attack ledger:
+  `docs/security/external-crypto-attack-ledger-2026-05-14.md`; it records
+  external standards/advisories and the local tests or release boundaries that
+  answer them;
 - formal and local lint gate status recorded in
   `docs/audits/formal-lint-status-2026-05-13.md`.
 
@@ -49,6 +53,9 @@ Not production-ready yet:
 - Swift, Kotlin, and Web attestation bridges as trust boundaries;
 - real server deployment integration;
 - real Apple and Android token validation with external trust material;
+- real production calling stack: local MLS/SFrame/calls tests are present, but
+  real media transport, network behaviour, device audio/video stacks, and
+  server relay deployment are still release boundaries;
 - public device-certification matrix;
 - full production witness deployment for key transparency.
 
@@ -95,6 +102,10 @@ Umbrella Protocol 1.0.0 — набор Rust-крейтов протокола с
   контекстах OPRF и развёртки резервного ключа;
 - локальные ворота зависимостей запускают `cargo deny check`; отсутствие
   `cargo-deny` считается отказом ворот, а не успехом;
+- внешний реестр криптографических атак:
+  `docs/security/external-crypto-attack-ledger-2026-05-14.md`; он связывает
+  внешние стандарты и advisory с локальными тестами или честными границами
+  выпуска;
 - статус формальных проверок и местных правил в
   `docs/audits/formal-lint-status-2026-05-13.md`.
 
@@ -104,6 +115,9 @@ Umbrella Protocol 1.0.0 — набор Rust-крейтов протокола с
 - Swift, Kotlin и Web-мосты как границы доверия;
 - связка с настоящим серверным развёртыванием;
 - настоящая проверка Apple и Android токенов с внешними корнями доверия;
+- настоящий боевой стек звонков: локальные MLS/SFrame/calls тесты есть, но
+  настоящий медиа-транспорт, поведение сети, аудио/видео-стек устройств и
+  серверное реле всё ещё остаются границами выпуска;
 - публичная матрица сертификации устройств;
 - полное боевое развёртывание свидетелей прозрачности ключей.
 

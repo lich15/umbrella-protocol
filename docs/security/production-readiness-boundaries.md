@@ -55,6 +55,13 @@ Closed gates:
   local tests can detect divergent observations after clients exchange them,
   but cannot prove that a live network always performs that exchange.
 
+### Calls and SFrame
+
+Local Rust code checks parser safety, vectors and mode enforcement, but this is
+not a real production calling proof. Real media transport, network behaviour,
+device audio/video stacks and server relay deployment remain release
+boundaries.
+
 ## Русский
 
 Этот файл фиксирует текущую границу боевой готовности для Фазы 2 приведения к
@@ -104,3 +111,10 @@ Closed gates:
 - Живая KT gossip/self-monitoring связка остаётся границей выпуска: локальные
   тесты обнаруживают разные наблюдения после обмена клиентов, но не доказывают,
   что живая сеть всегда выполнит такой обмен.
+
+### Звонки и SFrame
+
+Локальный Rust-код проверяет безопасность парсеров, тестовые векторы и
+соблюдение режимов, но это ещё не доказательство боевых звонков. Настоящий
+медиа-транспорт, поведение сети, аудио/видео-стек устройств и серверное
+развёртывание реле остаются границами выпуска.
