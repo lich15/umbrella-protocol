@@ -54,6 +54,15 @@ Core protocol attack gates are recorded in
 Local audits also include `scripts/audit-test-only-production-boundary.sh`,
 which checks that test-only and incomplete paths do not look like production
 paths.
+Local release hardening is recorded in
+[`audits/local-release-hardening-status-2026-05-14.md`](audits/local-release-hardening-status-2026-05-14.md)
+and can be run with:
+
+```bash
+bash scripts/run-local-release-hardening.sh short
+bash scripts/run-local-release-hardening.sh long
+bash scripts/audit-local-release-hardening.sh
+```
 
 The current status of formal verification and local lint gates is recorded in
 [`audits/formal-lint-status-2026-05-13.md`](audits/formal-lint-status-2026-05-13.md).
@@ -116,6 +125,15 @@ SPKI-ключами. Публичный FFI-запуск остаётся зак
 [`security/protocol-core-attack-gates.md`](security/protocol-core-attack-gates.md).
 Локальные аудиты также включают `scripts/audit-test-only-production-boundary.sh`;
 он проверяет, что тестовые и неполные пути не выглядят боевыми.
+Локальные выпускные ворота записаны в
+[`audits/local-release-hardening-status-2026-05-14.md`](audits/local-release-hardening-status-2026-05-14.md)
+и запускаются так:
+
+```bash
+bash scripts/run-local-release-hardening.sh short
+bash scripts/run-local-release-hardening.sh long
+bash scripts/audit-local-release-hardening.sh
+```
 
 Текущий статус формальных проверок и местных строгих правил записан в
 [`audits/formal-lint-status-2026-05-13.md`](audits/formal-lint-status-2026-05-13.md).

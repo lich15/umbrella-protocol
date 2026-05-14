@@ -25,6 +25,10 @@ Important boundaries:
 - These commands are current release gates only for the models and lint rules
   present in this repository today. They are not a mathematical proof of the
   whole deployed system.
+- Fresh local release hardening is now aggregated by
+  `bash scripts/run-local-release-hardening.sh short`; the long mode remains a
+  release-time/night run. Missing ProVerif, Tamarin, nightly Rust, or
+  cargo-fuzz is still a failed gate, not a successful check.
 - Dylint still uses pinned `nightly-2025-09-18` because the local lint crate is
   tied to Dylint and Clippy internals. `--ignore-rust-version` keeps the gate
   runnable while the main workspace declares stable Rust 1.95. A future Dylint
@@ -54,6 +58,10 @@ Important boundaries:
 - Эти команды являются текущими воротами выпуска только для моделей и правил,
   которые сейчас есть в репозитории. Это не математическое доказательство всей
   развёрнутой системы.
+- Свежие локальные выпускные ворота теперь собирает команда
+  `bash scripts/run-local-release-hardening.sh short`; длинный режим остаётся
+  ночным запуском перед выпуском. Отсутствие ProVerif, Tamarin, nightly Rust или
+  cargo-fuzz по-прежнему считается отказом ворот, а не успешной проверкой.
 - Dylint пока использует закреплённый `nightly-2025-09-18`, потому что местный
   крейт правил зависит от внутренних частей Dylint и Clippy. Флаг
   `--ignore-rust-version` нужен, чтобы ворота запускались при основном Rust

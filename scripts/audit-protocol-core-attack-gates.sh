@@ -43,6 +43,12 @@ require_pattern "crates/umbrella-sealed-sender/tests/phd_real_attacks_sealed_sen
 require_pattern "crates/umbrella-sealed-sender/tests/phd_real_attacks_sealed_sender.rs" "real_attack_replay_envelope_to_different_recipient_aad_blocks"
 require_pattern "docs/security/protocol-core-attack-gates.md" "повтор серверного вызова"
 require_pattern "docs/security/protocol-core-attack-gates.md" "split-view"
+require_pattern "crates/umbrella-kt/tests/split_view_exchange.rs" "threshold_signed_split_views_verify_locally_but_client_exchange_detects_divergence"
+require_pattern "crates/umbrella-tests/tests/local_load_and_race.rs" "local_load_many_kt_leaves_keep_valid_inclusion_and_witness_roots"
+require_pattern "crates/umbrella-tests/tests/local_load_and_race.rs" "concurrent_replay_guard_accepts_one_duplicate_hash_and_rejects_the_rest"
+require_pattern "crates/umbrella-tests/tests/local_load_and_race.rs" "concurrent_witness_verification_has_no_shared_state_corruption"
+require_pattern "scripts/audit-local-release-hardening.sh" "secret-looking structs derive Debug"
+require_pattern "docs/audits/local-release-hardening-status-2026-05-14.md" "split-view"
 
 if [[ "$failed" -ne 0 ]]; then
   exit "$failed"

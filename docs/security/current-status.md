@@ -32,6 +32,10 @@ Implemented and currently documented:
   connected;
 - protocol-core attack gate matrix:
   `docs/security/protocol-core-attack-gates.md`;
+- local release hardening status:
+  `docs/audits/local-release-hardening-status-2026-05-14.md`. It covers local
+  formal, fuzz, load, race, KT split-view exchange, secret-leak, and fail-closed
+  audits, but it is not a real server or real device proof;
 - mandatory server-nonce replay rejection in the production OPRF and backup
   unwrap contexts;
 - local dependency release gate runs `cargo deny check` and rejects missing
@@ -82,6 +86,11 @@ Umbrella Protocol 1.0.0 — набор Rust-крейтов протокола с
   связка;
 - матрица боевых атакующих ворот ядра протокола:
   `docs/security/protocol-core-attack-gates.md`;
+- статус локальных выпускных ворот:
+  `docs/audits/local-release-hardening-status-2026-05-14.md`. Там описаны
+  местные формальные проверки, fuzz, нагрузка, гонки, KT split-view сверка,
+  аудит утечек секретов и закрытых отказов, но это не доказательство настоящих
+  серверов или реальных устройств;
 - обязательная защита от повторного использования серверного вызова в боевых
   контекстах OPRF и развёртки резервного ключа;
 - локальные ворота зависимостей запускают `cargo deny check`; отсутствие

@@ -42,10 +42,18 @@ Closed gates:
 - Core attack matrix: `docs/security/protocol-core-attack-gates.md` records
   which tamper, replay, rollback, and mixed-version cases are covered by Rust
   tests.
+- Local release hardening: `scripts/run-local-release-hardening.sh short`
+  aggregates local formal checks, focused fuzz smoke, KT split-view exchange,
+  local load, race checks, secret-leak audit, and fail-closed boundary audit.
+  This is local evidence only and does not prove real server or real device
+  readiness.
 - Mobile bridge: Swift, Kotlin, and Web platform attestation bridges are not yet
   a production-ready trust boundary.
 - Server integration: mock server behavior does not count as production
   deployment readiness.
+- Live KT gossip/self-monitoring deployment remains a production boundary:
+  local tests can detect divergent observations after clients exchange them,
+  but cannot prove that a live network always performs that exchange.
 
 ## Русский
 
@@ -84,7 +92,15 @@ Closed gates:
   мобильная/серверная связка.
 - Матрица атак ядра: `docs/security/protocol-core-attack-gates.md` фиксирует,
   какие подмены, повторы, откаты и смешения версий покрыты Rust-тестами.
+- Локальные выпускные ворота: `scripts/run-local-release-hardening.sh short`
+  собирает местные формальные проверки, короткий fuzz, KT split-view сверку,
+  локальную нагрузку, проверки гонок, аудит утечек секретов и аудит закрытых
+  отказов. Это только местное доказательство; оно не доказывает готовность
+  настоящих серверов или реальных устройств.
 - Мобильный мост: Swift, Kotlin и Web-мосты для attestation пока не являются
   боевой границей доверия.
 - Серверная интеграция: поведение mock-сервера не считается готовностью
   боевого развёртывания.
+- Живая KT gossip/self-monitoring связка остаётся границей выпуска: локальные
+  тесты обнаруживают разные наблюдения после обмена клиентов, но не доказывают,
+  что живая сеть всегда выполнит такой обмен.

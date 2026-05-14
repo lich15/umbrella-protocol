@@ -304,6 +304,9 @@ Fuzzing entry points live in `crates/umbrella-fuzz/` and `oss-fuzz/`.
 ```bash
 cargo test -p umbrella-fuzz --locked
 bash scripts/run-fuzz-overnight.sh
+bash scripts/run-local-release-hardening.sh short
+bash scripts/run-local-release-hardening.sh long
+bash scripts/audit-local-release-hardening.sh
 ```
 
 Formal verification entry points live in `crates/umbrella-formal-verification/`.
@@ -318,6 +321,8 @@ These commands need the matching external tools installed locally.
 
 The current status of formal verification and local lint gates is recorded in
 [`docs/audits/formal-lint-status-2026-05-13.md`](docs/audits/formal-lint-status-2026-05-13.md).
+Local release hardening status is recorded in
+[`docs/audits/local-release-hardening-status-2026-05-14.md`](docs/audits/local-release-hardening-status-2026-05-14.md).
 A command counts as a current release gate only when that status file shows
 exit code 0 for the exact command.
 
@@ -702,6 +707,9 @@ examples/android-harness/app/build/outputs/apk/release/
 ```bash
 cargo test -p umbrella-fuzz --locked
 bash scripts/run-fuzz-overnight.sh
+bash scripts/run-local-release-hardening.sh short
+bash scripts/run-local-release-hardening.sh long
+bash scripts/audit-local-release-hardening.sh
 ```
 
 Входы для формальных моделей находятся в
@@ -717,6 +725,8 @@ bash scripts/verify-tamarin-models.sh
 
 Текущий статус формальных проверок и местных строгих правил записан в
 [`docs/audits/formal-lint-status-2026-05-13.md`](docs/audits/formal-lint-status-2026-05-13.md).
+Статус локальных выпускных ворот записан в
+[`docs/audits/local-release-hardening-status-2026-05-14.md`](docs/audits/local-release-hardening-status-2026-05-14.md).
 Команда считается воротами выпуска только если в этом файле у неё указан код
 0 для точного запуска.
 

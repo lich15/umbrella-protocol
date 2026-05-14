@@ -26,6 +26,7 @@
 | KT | подмена размера журнала или времени подписи свидетеля | закрыто тестом | `attack_canonical_sign_payload_binds_log_size_post_fix_f_phd_s68_1` |
 | KT | повтор старой подписанной эпохи | закрыто тестом | `attack_replay_old_signed_epoch_blocked_by_monotonic_epoch_check` |
 | KT | split-view при трёх злых свидетелях | честная граница | `threshold_compromised_views_can_verify_but_safety_numbers_diverge`: локально обе версии могут пройти, поэтому нужны сверка наблюдений и самопроверка |
+| KT | split-view обнаруживается при обмене наблюдениями клиентов | локально закрыто обнаружение | `threshold_signed_split_views_verify_locally_but_client_exchange_detects_divergence` |
 | OPRF | подмена blinded, token, nonce или device key | закрыто тестом | `verify_rejects_tampered_blinded`, `verify_rejects_tampered_token`, `verify_rejects_tampered_nonce`, `verify_rejects_wrong_device_pubkey` |
 | OPRF | повтор серверного вызова | закрыто тестом | `production_context_rejects_replayed_server_nonce_after_first_success` |
 | OPRF | повтор witness index или подмена доли | закрыто тестом | `threshold_combine_rejects_duplicate_index`, `threshold_tampered_share_breaks_combine` |
@@ -38,6 +39,10 @@
 | Sealed Sender | повтор к другому получателю | закрыто тестом | `real_attack_replay_envelope_to_different_recipient_aad_blocks` |
 | Sealed Sender | V1 как V2 и V2 как V1 | закрыто тестом | `real_attack_cross_version_replay_v1_to_v2_blocked` |
 | Зависимости | опасная зависимость или cargo-deny policy обходятся локально | закрыто воротами | `scripts/audit-dependency-policy.sh` |
+| Нагрузка | тысячи локальных KT-листьев с proof и witness-порогом | закрыто локальным тестом | `local_load_many_kt_leaves_keep_valid_inclusion_and_witness_roots` |
+| Гонки | одновременный replay одного hash | закрыто локальным тестом | `concurrent_replay_guard_accepts_one_duplicate_hash_and_rejects_the_rest` |
+| Гонки | параллельная проверка witness-эпох | закрыто локальным тестом | `concurrent_witness_verification_has_no_shared_state_corruption` |
+| Секреты | отладочный вывод и недоделанные пути | закрыто локальным аудитом | `scripts/audit-local-release-hardening.sh` |
 
 Оставшиеся границы выпуска:
 
