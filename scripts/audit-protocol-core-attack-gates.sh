@@ -49,6 +49,10 @@ require_pattern "crates/umbrella-tests/tests/local_load_and_race.rs" "concurrent
 require_pattern "crates/umbrella-tests/tests/local_load_and_race.rs" "concurrent_witness_verification_has_no_shared_state_corruption"
 require_pattern "scripts/audit-local-release-hardening.sh" "secret-looking structs derive Debug"
 require_pattern "docs/audits/local-release-hardening-status-2026-05-14.md" "split-view"
+require_pattern "docs/security/external-crypto-attack-ledger-2026-05-14.md" "RFC 9497"
+require_pattern "docs/security/external-crypto-attack-ledger-2026-05-14.md" "KyberSlash"
+require_pattern "docs/security/external-crypto-attack-ledger-2026-05-14.md" "граница выпуска"
+bash scripts/audit-external-crypto-attack-ledger.sh
 
 if [[ "$failed" -ne 0 ]]; then
   exit "$failed"
