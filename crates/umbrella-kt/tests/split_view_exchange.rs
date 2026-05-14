@@ -82,14 +82,7 @@ fn threshold_signed_split_views_verify_locally_but_client_exchange_detects_diver
         50_000,
         1_700_000_100,
     );
-    let bob_view = signed_view(
-        &witnesses,
-        &[0, 1, 2],
-        42,
-        evil_root,
-        50_001,
-        1_700_000_101,
-    );
+    let bob_view = signed_view(&witnesses, &[0, 1, 2], 42, evil_root, 50_001, 1_700_000_101);
 
     verify_signed_epoch(&alice_view, &set, 3).expect("alice sees a locally valid 3-of-5 epoch");
     verify_signed_epoch(&bob_view, &set, 3).expect("bob sees a locally valid 3-of-5 epoch");

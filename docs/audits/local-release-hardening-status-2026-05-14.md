@@ -29,6 +29,20 @@
 - Публичный боевой клиент остаётся закрыт, пока серверная и мобильная связка не
   готовы.
 
+## Последний локальный результат
+
+- `bash scripts/run-local-release-hardening.sh short` прошёл 2026-05-14 с кодом
+  0. Сводка лежит в
+  `target/audit-evidence/local-release-hardening/20260514-001957/summary.txt`.
+- `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets
+  --all-features --locked -- -D warnings`, `RUSTDOCFLAGS="-D warnings" cargo
+  doc --no-deps --workspace --all-features --locked` и `cargo test --workspace
+  --all-features --locked` прошли 2026-05-14.
+- `bash scripts/audit-dependency-policy.sh` прошёл 2026-05-14: запрещённая
+  зависимость `bincode` отсутствует, `cargo deny check` завершился успешно.
+- Полный тестовый журнал сохранён локально в
+  `target/audit-evidence/local-release-hardening/final/cargo-test-workspace.log`.
+
 ## Единая команда
 
 Короткий локальный прогон:
