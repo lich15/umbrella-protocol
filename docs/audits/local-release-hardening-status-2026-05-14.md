@@ -32,6 +32,10 @@
 
 ## Последний локальный результат
 
+- По отдельному запросу 2026-05-14 запущены сфокусированный Miri-скрипт и
+  полный fuzz всех 27 целей. Miri прошёл, fuzz завершился с итогом
+  `Failed: 0 / 27`. Подробная запись:
+  `docs/audits/full-fuzz-and-miri-run-2026-05-14.md`.
 - `bash scripts/run-local-release-hardening.sh short` прошёл 2026-05-14 с кодом
   0. Сводка лежит в
   `target/audit-evidence/local-release-hardening/20260514-012520/summary.txt`.
