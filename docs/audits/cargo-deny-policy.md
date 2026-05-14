@@ -94,3 +94,16 @@ cargo deny check
 отказом ворот, а не успешной проверкой.
 
 Каноническая конфигурация: [`deny.toml`](../../deny.toml).
+
+## Внешняя PQ advisory-проверка, 2026-05-14
+
+Сверено с внешним выпускным реестром атак:
+
+- FIPS 203 / ML-KEM: параметры и обработка ciphertext покрыты PQ-тестами и
+  `ml_kem_decapsulate_fuzz`.
+- KyberSlash учитывается как риск зависимости и backend, а не только как риск
+  парсера.
+- `scripts/audit-dependency-policy.sh` остаётся выпускными воротами для
+  RustSec и `cargo-deny`.
+- Короткий локальный fuzz-прогон записан в
+  `target/fuzz-overnight/20260514-184411`: 4 цели, падений нет.
