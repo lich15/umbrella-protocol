@@ -220,3 +220,87 @@ fn witness_signing_ledger_rejects_second_different_root_for_same_epoch() {
         "same witness must refuse second different root for same log epoch, got {err}"
     );
 }
+
+#[test]
+fn observation_history_rejects_epoch_regression_and_broken_chain() {
+    let witnesses = make_witnesses();
+    let set = witness_set(&witnesses);
+    let log_id = KtLogId::from_bytes([0xD8; 32]);
+    let genesis = [0x00; NODE_HASH_LEN];
+    let root_10 = [0x10; NODE_HASH_LEN];
+    let root_11 = [0x11; NODE_HASH_LEN];
+    let wrong_previous = [0x99; NODE_HASH_LEN];
+
+    let epoch_10 = KtObservation::new(
+        log_id,
+        genesis,
+        signed_view(&witnesses, &[0, 1, 2], 10, root_10, 10_000, 1_700_000_500),
+    );
+    let epoch_9 = KtObservation::new(
+        log_id,
+        genesis,
+        signed_view(
+            &witnesses,
+            &[0, 1, 2],
+            9,
+            [0x09; NODE_HASH_LEN],
+            9_000,
+            1_700_000_501,
+        ),
+    );
+    let broken_11 = KtObservation::new(
+        log_id,
+        wrong_previous,
+        signed_view(&witnesses, &[0, 1, 2], 11, root_11, 11_000, 1_700_000_502),
+    );
+
+    let mut history = umbrella_kt::KtObservationHistory::new();
+    assert_eq!(
+        history.observe(epoch_10, &set, 3).unwrap(),
+        KtTrustDecision::NeedsObservation
+    );
+
+    let regression = history.observe(epoch_9, &set, 3).unwrap_err();
+    assert!(format!("{regression}").contains("epoch regression"));
+
+    let broken = history.observe(broken_11, &set, 3).unwrap_err();
+    assert!(format!("{broken}").contains("epoch chain broken"));
+}
+
+#[test]
+fn observation_history_returns_evidence_for_same_epoch_conflict() {
+    let witnesses = make_witnesses();
+    let set = witness_set(&witnesses);
+    let log_id = KtLogId::from_bytes([0xE9; 32]);
+    let previous = [0x33; NODE_HASH_LEN];
+
+    let first = KtObservation::new(
+        log_id,
+        previous,
+        signed_view(
+            &witnesses,
+            &[0, 1, 2],
+            50,
+            [0x50; NODE_HASH_LEN],
+            50,
+            1_700_000_600,
+        ),
+    );
+    let second = KtObservation::new(
+        log_id,
+        previous,
+        signed_view(
+            &witnesses,
+            &[0, 1, 2],
+            50,
+            [0x51; NODE_HASH_LEN],
+            51,
+            1_700_000_601,
+        ),
+    );
+
+    let mut history = umbrella_kt::KtObservationHistory::new();
+    history.observe(first, &set, 3).unwrap();
+    let decision = history.observe(second, &set, 3).unwrap();
+    assert!(matches!(decision, KtTrustDecision::EquivocationDetected(_)));
+}

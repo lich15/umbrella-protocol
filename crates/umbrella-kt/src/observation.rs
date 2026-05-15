@@ -282,6 +282,74 @@ pub fn compare_observations(
     Ok(KtTrustDecision::NeedsObservation)
 }
 
+/// Local history of public KT observations for one log.
+/// Локальная история публичных KT-наблюдений одного журнала.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct KtObservationHistory {
+    log_id: Option<KtLogId>,
+    last: Option<KtObservation>,
+}
+
+impl KtObservationHistory {
+    /// Creates an empty observation history.
+    /// Создаёт пустую историю наблюдений.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Observes a signed epoch head and returns a trust decision.
+    /// Запоминает подписанную голову эпохи и возвращает решение доверия.
+    pub fn observe(
+        &mut self,
+        observation: KtObservation,
+        witness_set: &WitnessSet,
+        threshold: usize,
+    ) -> Result<KtTrustDecision> {
+        observation.validate(witness_set, threshold)?;
+        match self.log_id {
+            Some(existing) if existing != observation.log_id => {
+                return Err(KtError::InvalidObservation("different log id"));
+            }
+            None => self.log_id = Some(observation.log_id),
+            Some(_) => {}
+        }
+
+        let Some(last) = self.last.clone() else {
+            self.last = Some(observation);
+            return Ok(KtTrustDecision::NeedsObservation);
+        };
+
+        if observation.signed.epoch < last.signed.epoch {
+            return Err(KtError::InvalidEntry("epoch regression"));
+        }
+
+        if observation.signed.epoch == last.signed.epoch {
+            if observation.conflicts_with(&last) {
+                return Ok(KtTrustDecision::EquivocationDetected(
+                    EquivocationEvidence::try_new(last, observation, witness_set, threshold)?,
+                ));
+            }
+            self.last = Some(observation);
+            return Ok(KtTrustDecision::Accepted);
+        }
+
+        if observation.previous_root != last.signed.root {
+            return Err(KtError::InvalidEntry("epoch chain broken"));
+        }
+
+        self.last = Some(observation);
+        Ok(KtTrustDecision::Accepted)
+    }
+
+    /// Returns the last accepted observation.
+    /// Возвращает последнее принятое наблюдение.
+    #[must_use]
+    pub const fn last(&self) -> Option<&KtObservation> {
+        self.last.as_ref()
+    }
+}
+
 fn take<const N: usize>(bytes: &[u8], offset: &mut usize) -> Result<[u8; N]> {
     let end = offset
         .checked_add(N)

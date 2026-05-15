@@ -101,8 +101,8 @@ pub use monitor::{verify_own_entry, OwnExpectations};
 #[cfg(feature = "pq")]
 pub use monitor::{verify_own_v2_entry, HybridOwnExpectations};
 pub use observation::{
-    compare_observations, EquivocationEvidence, KtLogId, KtObservation, KtTrustDecision,
-    KT_OBSERVATION_VERSION, MAX_OBSERVATION_SIGNATURES,
+    compare_observations, EquivocationEvidence, KtLogId, KtObservation, KtObservationHistory,
+    KtTrustDecision, KT_OBSERVATION_VERSION, MAX_OBSERVATION_SIGNATURES,
 };
 pub use version::KtEntryVersion;
 pub use witness::{
