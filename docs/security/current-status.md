@@ -49,6 +49,11 @@ Implemented and currently documented:
 - root and fuzz lockfiles exclude the unused optional `hpke-rs` libcrux HPKE
   backend that pulled `RUSTSEC-2026-0124`; `scripts/audit-pq-backend-policy.sh`
   checks this boundary;
+- live dependency monitoring is documented in
+  `docs/security/dependency-monitoring.md`; Dependabot prepares dependency PRs,
+  and the daily dependency monitor checks root/fuzz RustSec advisories,
+  cargo-deny policy, PQ/backend boundaries, and dry-run update drift without
+  merging updates into `main`;
 - external crypto attack ledger:
   `docs/security/external-crypto-attack-ledger-2026-05-14.md` and
   `docs/security/external-crypto-attack-ledger-2026-05-15.md`; they record
@@ -122,6 +127,11 @@ Umbrella Protocol 1.1.0 — набор Rust-крейтов протокола с
 - корневой и fuzz lockfile не содержат неиспользуемый optional libcrux-бэкенд
   HPKE из `hpke-rs`, который тянул `RUSTSEC-2026-0124`; это проверяет
   `scripts/audit-pq-backend-policy.sh`;
+- живой мониторинг зависимостей описан в
+  `docs/security/dependency-monitoring.md`; Dependabot готовит PR с
+  обновлениями, а ежедневный сторож проверяет RustSec для корневого и fuzz
+  lockfile, cargo-deny, PQ/backend-границы и доступные обновления через dry-run,
+  не вливая изменения в `main`;
 - внешний реестр криптографических атак:
   `docs/security/external-crypto-attack-ledger-2026-05-14.md` и
   `docs/security/external-crypto-attack-ledger-2026-05-15.md`; они связывают

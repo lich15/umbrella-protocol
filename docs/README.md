@@ -14,6 +14,8 @@ verify, and test the protocol without exposing private working material.
 - `security/` - release manifest, SBOM, and security operation notes.
 - Current release notes:
   `security/release-notes-v1.1.0.md`.
+- Live dependency monitoring:
+  `security/dependency-monitoring.md`.
 - External crypto release audit:
   `audits/external-crypto-release-audit-status-2026-05-14.md`.
 - `WORKING_RULES.md` - рабочие постулаты проекта.
@@ -62,6 +64,11 @@ exchange and production witness channels remain production boundaries.
 It also removes the unused optional `hpke-rs` libcrux HPKE backend from the
 root and fuzz lockfiles so `RUSTSEC-2026-0124` is closed in the checked
 supply-chain graph, not ignored.
+Live dependency monitoring is documented in
+[`security/dependency-monitoring.md`](security/dependency-monitoring.md):
+Dependabot prepares dependency PRs, while the daily monitor checks root/fuzz
+RustSec advisories, cargo-deny policy, PQ/backend boundaries, and dry-run update
+drift without merging updates into `main`.
 Local audits also include `scripts/audit-test-only-production-boundary.sh`,
 which checks that test-only and incomplete paths do not look like production
 paths.
@@ -94,6 +101,8 @@ exit code 0 for the exact command.
 - `security/` - манифест выпуска, SBOM и заметки по безопасности.
 - Заметки текущего выпуска:
   `security/release-notes-v1.1.0.md`.
+- Живой мониторинг зависимостей:
+  `security/dependency-monitoring.md`.
 - Внешний крипто-аудит выпуска:
   `audits/external-crypto-release-audit-status-2026-05-14.md`.
 - `WORKING_RULES.md` - рабочие постулаты проекта.
@@ -145,6 +154,11 @@ SPKI-ключами. Публичный FFI-запуск остаётся зак
 Также из корневого и fuzz lockfile убран неиспользуемый optional libcrux-бэкенд
 HPKE из `hpke-rs`, поэтому `RUSTSEC-2026-0124` закрыт в проверяемом графе
 зависимостей, а не проигнорирован.
+Живой мониторинг зависимостей описан в
+[`security/dependency-monitoring.md`](security/dependency-monitoring.md):
+Dependabot готовит PR с обновлениями, а ежедневный сторож проверяет RustSec для
+корневого и fuzz lockfile, cargo-deny, PQ/backend-границы и доступные обновления
+через dry-run без вливания изменений в `main`.
 Локальные аудиты также включают `scripts/audit-test-only-production-boundary.sh`;
 он проверяет, что тестовые и неполные пути не выглядят боевыми.
 Локальные выпускные ворота записаны в

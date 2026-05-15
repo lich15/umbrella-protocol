@@ -1,0 +1,80 @@
+version: 2
+
+updates:
+  # RU: Основные Rust-зависимости. Обновления идут только PR, не напрямую в main.
+  # EN: Main Rust dependencies. Updates go through PRs only, never directly to main.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    target-branch: "main"
+    schedule:
+      interval: "daily"
+      time: "03:10"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "rust"
+      - "security-review-required"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      rust-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+
+  # RU: Fuzz имеет отдельный Cargo.lock, поэтому мониторится отдельно.
+  # EN: Fuzz has a separate Cargo.lock, so it is monitored separately.
+  - package-ecosystem: "cargo"
+    directory: "/crates/umbrella-fuzz/fuzz"
+    target-branch: "main"
+    schedule:
+      interval: "daily"
+      time: "03:25"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "rust"
+      - "fuzz"
+      - "security-review-required"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      fuzz-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+
+  # RU: GitHub Actions тоже обновляются PR, чтобы pinning оставался проверяемым.
+  # EN: GitHub Actions are also updated via PRs so pinning stays reviewable.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "security-review-required"
+    commit-message:
+      prefix: "deps"
+      include: "scope"

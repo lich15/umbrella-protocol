@@ -1,0 +1,116 @@
+name: dependency-monitor
+
+# RU: Живой сторож зависимостей. Он сообщает об опасности и готовит PR через
+# Dependabot, но не меняет main сам.
+# EN: Live dependency sentinel. It reports risk and prepares PRs through
+# Dependabot, but does not mutate main by itself.
+
+on:
+  schedule:
+    # RU: Каждый день 03:40 UTC, после Dependabot-сканирования Cargo.
+    # EN: Every day at 03:40 UTC, after the Cargo Dependabot scans.
+    - cron: '40 3 * * *'
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/**/Cargo.toml'
+      - 'crates/umbrella-fuzz/fuzz/Cargo.toml'
+      - 'crates/umbrella-fuzz/fuzz/Cargo.lock'
+      - 'deny.toml'
+      - 'supply-chain/**'
+      - 'third_party/**'
+      - 'scripts/audit-dependency-monitoring-config.sh'
+      - 'scripts/audit-github-actions.sh'
+      - 'scripts/audit-pq-backend-policy.sh'
+      - 'docs/security/dependency-monitoring.md'
+      - '.github/dependabot.yml'
+      - '.github/workflows/dependency-monitor.yml'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+  RUST_BACKTRACE: 1
+
+jobs:
+  rustsec:
+    name: RustSec and local dependency gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal
+          rustup default 1.95.0
+          rustc --version
+          cargo --version
+
+      - name: Install cargo-audit
+        env:
+          RUSTFLAGS: ""
+        run: cargo install cargo-audit --locked --version 0.22.1
+
+      - name: Audit root lockfile
+        run: cargo audit
+
+      - name: Audit fuzz lockfile
+        run: cargo audit -f crates/umbrella-fuzz/fuzz/Cargo.lock
+
+      - name: Enforce PQ backend and removed optional HPKE chain
+        run: bash scripts/audit-pq-backend-policy.sh
+
+  cargo-deny:
+    name: cargo-deny policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@91bf2b620e09e18d6eb78b92e7861937469acedb
+        with:
+          command: check
+          arg: --workspace --all-features
+          rust-version: stable
+
+  update-preview:
+    name: Available update preview
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal
+          rustup default 1.95.0
+
+      - name: Show root dependency updates without applying them
+        run: cargo update --dry-run --locked --verbose
+
+      - name: Show fuzz dependency updates without applying them
+        run: cargo update --manifest-path crates/umbrella-fuzz/fuzz/Cargo.toml --dry-run --locked --verbose
+
+  monitor-config:
+    name: Monitoring config guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Check monitoring files
+        run: bash scripts/audit-dependency-monitoring-config.sh
+
+      - name: Check workflow pinning
+        run: bash scripts/audit-github-actions.sh

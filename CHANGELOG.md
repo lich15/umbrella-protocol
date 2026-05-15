@@ -4,6 +4,19 @@
 
 ## English
 
+### Post-1.1.0 dependency monitoring - 2026-05-15
+
+Added:
+
+- Dependabot configuration for the root Cargo workspace, the separate fuzz
+  lockfile, and GitHub Actions.
+- Daily `dependency-monitor` workflow for root/fuzz RustSec checks,
+  cargo-deny policy, PQ/backend boundary checks, and dry-run update reporting.
+- Local audit script that prevents removing the monitoring files or turning
+  dependency updates into silent `main` changes.
+- Public dependency-monitoring document that explains the review-first update
+  policy.
+
 ### 1.1.0-security-hardening - 2026-05-15
 
 Added:
@@ -105,6 +118,20 @@ Security:
 ---
 
 ## Русский
+
+### Мониторинг зависимостей после 1.1.0 - 2026-05-15
+
+Добавлено:
+
+- Настройка Dependabot для корневой Cargo-области, отдельного fuzz lockfile и
+  GitHub Actions.
+- Ежедневный `dependency-monitor` для проверки RustSec по корневому и fuzz
+  lockfile, cargo-deny, PQ/backend-границ и сухого отчёта по доступным
+  обновлениям.
+- Локальный аудит, который не даёт удалить мониторинг или превратить обновления
+  зависимостей в тихие изменения `main`.
+- Публичный документ по мониторингу зависимостей с правилом: сначала проверка и
+  review, потом вливание.
 
 ### 1.1.0-security-hardening - 2026-05-15
 
