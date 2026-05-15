@@ -8,7 +8,9 @@
 //! контролируемый сервером, и MLS примет ghost как легитимного члена группы. KT делает такие
 //! подмены **публично наблюдаемыми**: все device-keys публикуются в append-only Merkle-лог,
 //! клиенты **самостоятельно проверяют** что их собственная запись не подменена (self-monitoring),
-//! а подписи log-корня независимыми witness-серверами (блок 3.4) гарантируют что log не раздвоён.
+//! а подписи log-корня независимыми witness-серверами (блок 3.4) повышают цену split-view
+//! атаки. Обнаружение раздвоения одной эпохи требует сверки публичных наблюдений или номеров
+//! безопасности; см. `observation` для проверяемого доказательства split-view.
 //!
 //! ## Что реализует текущий блок (3.3)
 //!
@@ -62,7 +64,9 @@
 //! with a server-controlled one, and MLS accepts the ghost as a legitimate member. KT makes
 //! such substitutions **publicly observable**: all device-keys go into an append-only Merkle
 //! log, clients **self-monitor** that their own record is unchanged, and independent witness
-//! signatures on the log root (block 3.4) guarantee the log is not forked.
+//! signatures on the log root (block 3.4) raise the cost of split-view attacks. Same-epoch
+//! fork detection requires comparing public observations or safety numbers; see
+//! `observation` for verifiable split-view evidence.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -74,6 +78,7 @@ pub mod entry_v2;
 pub mod error;
 pub mod merkle;
 pub mod monitor;
+pub mod observation;
 pub mod version;
 pub mod witness;
 
@@ -94,6 +99,10 @@ pub use merkle::{
 pub use monitor::{verify_own_entry, OwnExpectations};
 #[cfg(feature = "pq")]
 pub use monitor::{verify_own_v2_entry, HybridOwnExpectations};
+pub use observation::{
+    compare_observations, EquivocationEvidence, KtLogId, KtObservation, KtTrustDecision,
+    KT_OBSERVATION_VERSION, MAX_OBSERVATION_SIGNATURES,
+};
 pub use version::KtEntryVersion;
 pub use witness::{
     canonical_sign_payload, sign_payload_digest, verify_signed_epoch, SignedEpochRoot,

@@ -141,7 +141,7 @@ pub struct WitnessSignature {
 /// the witness signs not only `{epoch, root}` but also
 /// `{log_size, timestamp_unix_millis}` to provide cross-binding protection
 /// against reuse-across-different-log-states attacks.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignedEpochRoot {
     /// Номер эпохи. Epoch number.
     pub epoch: u64,

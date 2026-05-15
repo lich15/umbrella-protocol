@@ -72,6 +72,11 @@ pub enum KtError {
         required: usize,
     },
 
+    /// Public KT observation is malformed or cannot represent a valid trust decision.
+    /// Публичное KT-наблюдение испорчено или не может дать валидное решение доверия.
+    #[error("invalid KT observation: {0}")]
+    InvalidObservation(&'static str),
+
     // ADR-008 расширения (блок 5.7.3). SPEC-09 §7.4 (error variants).
     // ADR-008 extensions (block 5.7.3). SPEC-09 §7.4 (error variants).
     /// Общая ошибка entry-уровня: некорректный inter-entry state, нарушение
