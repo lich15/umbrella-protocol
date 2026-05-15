@@ -120,3 +120,57 @@ fn invalid_second_view_does_not_become_equivocation_evidence() {
         "bad second view must reject as invalid proof, got {err}"
     );
 }
+
+#[test]
+fn public_observation_encoding_round_trips_without_private_account_data() {
+    let witnesses = make_witnesses();
+    let set = witness_set(&witnesses);
+    let log_id = KtLogId::from_bytes([0xA5; 32]);
+    let previous_root = [0x11; NODE_HASH_LEN];
+    let private_account_marker = [0x44; 32];
+    let signed = signed_view(
+        &witnesses,
+        &[0, 1, 2],
+        77,
+        [0x22; NODE_HASH_LEN],
+        1234,
+        1_700_000_300,
+    );
+    let observation = KtObservation::new(log_id, previous_root, signed);
+
+    let encoded = observation.encode_public();
+    assert!(
+        !encoded
+            .windows(private_account_marker.len())
+            .any(|w| w == private_account_marker),
+        "public KT observation must not contain account_id or private account marker"
+    );
+
+    let decoded = KtObservation::decode_public(&encoded).expect("public observation decodes");
+    assert_eq!(decoded, observation);
+    decoded
+        .validate(&set, 3)
+        .expect("decoded observation remains valid");
+}
+
+#[test]
+fn public_observation_decoder_rejects_truncated_and_trailing_bytes() {
+    let witnesses = make_witnesses();
+    let signed = signed_view(
+        &witnesses,
+        &[0, 1, 2],
+        78,
+        [0x33; NODE_HASH_LEN],
+        99,
+        1_700_000_301,
+    );
+    let observation = KtObservation::new(KtLogId::from_bytes([0xB6; 32]), [0x10; 32], signed);
+    let encoded = observation.encode_public();
+
+    let truncated = &encoded[..encoded.len() - 1];
+    assert!(KtObservation::decode_public(truncated).is_err());
+
+    let mut trailing = encoded;
+    trailing.push(0x99);
+    assert!(KtObservation::decode_public(&trailing).is_err());
+}
