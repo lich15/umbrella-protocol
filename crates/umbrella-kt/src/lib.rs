@@ -81,6 +81,7 @@ pub mod monitor;
 pub mod observation;
 pub mod version;
 pub mod witness;
+pub mod witness_state;
 
 pub use authorization_entries::{
     apply_authorization_approval, apply_authorization_revocation, apply_identity_rotation,
@@ -108,3 +109,4 @@ pub use witness::{
     canonical_sign_payload, sign_payload_digest, verify_signed_epoch, SignedEpochRoot,
     WitnessPublic, WitnessSet, WitnessSignature, WITNESS_DOMAIN_SEP, WITNESS_VERSION,
 };
+pub use witness_state::{WitnessSigningDecision, WitnessSigningLedger};

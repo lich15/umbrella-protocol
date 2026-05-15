@@ -174,3 +174,49 @@ fn public_observation_decoder_rejects_truncated_and_trailing_bytes() {
     trailing.push(0x99);
     assert!(KtObservation::decode_public(&trailing).is_err());
 }
+
+#[test]
+fn witness_signing_ledger_rejects_second_different_root_for_same_epoch() {
+    let witnesses = make_witnesses();
+    let log_id = KtLogId::from_bytes([0xC7; 32]);
+    let first = signed_view(
+        &witnesses,
+        &[0],
+        88,
+        [0x41; NODE_HASH_LEN],
+        500,
+        1_700_000_400,
+    );
+    let same = signed_view(
+        &witnesses,
+        &[0],
+        88,
+        [0x41; NODE_HASH_LEN],
+        500,
+        1_700_000_401,
+    );
+    let fork = signed_view(
+        &witnesses,
+        &[0],
+        88,
+        [0x42; NODE_HASH_LEN],
+        501,
+        1_700_000_402,
+    );
+
+    let mut ledger = umbrella_kt::WitnessSigningLedger::new();
+    assert_eq!(
+        ledger.record_or_reject(log_id, &first).unwrap(),
+        umbrella_kt::WitnessSigningDecision::FirstSignature
+    );
+    assert_eq!(
+        ledger.record_or_reject(log_id, &same).unwrap(),
+        umbrella_kt::WitnessSigningDecision::RepeatedSameHead
+    );
+
+    let err = ledger.record_or_reject(log_id, &fork).unwrap_err();
+    assert!(
+        format!("{err}").contains("witness equivocation attempt"),
+        "same witness must refuse second different root for same log epoch, got {err}"
+    );
+}
