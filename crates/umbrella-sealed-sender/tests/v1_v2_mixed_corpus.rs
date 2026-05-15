@@ -115,11 +115,11 @@ fn dispatcher_pattern_works_for_v1_and_v2() {
         match SealedSenderVersion::try_from(wire[0])? {
             SealedSenderVersion::V1Classical => {
                 let opened = unseal(bob.as_ref(), wire)?;
-                Ok(opened.message)
+                Ok(opened.message.to_vec())
             }
             SealedSenderVersion::V2HybridXWing => {
                 let opened = unseal_v2(bob.as_ref(), &bob_xwing_pk, &bob_xwing_sk, wire)?;
-                Ok(opened.message)
+                Ok(opened.message.to_vec())
             }
         }
     };

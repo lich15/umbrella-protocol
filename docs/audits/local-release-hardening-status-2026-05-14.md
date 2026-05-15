@@ -17,6 +17,7 @@
 | Гонки replay | `cargo test -p umbrella-tests concurrent_replay_guard_accepts_one_duplicate_hash_and_rejects_the_rest --all-features --locked` | при одновременном повторе принимается только первый запрос |
 | Гонки witness | `cargo test -p umbrella-tests concurrent_witness_verification_has_no_shared_state_corruption --all-features --locked` | параллельная проверка подписанных эпох не портит состояние |
 | KT split-view сверка | `cargo test -p umbrella-kt threshold_signed_split_views_verify_locally_but_client_exchange_detects_divergence --all-features --locked` | две локально подписанные версии одной эпохи обнаруживаются при обмене наблюдениями клиентов |
+| Гигиена памяти | `cargo test -p umbrella-identity -p umbrella-client -p umbrella-sealed-sender --all-features --locked` | временные значения вывода ключей затираются, Sealed Sender plaintext очищается при Drop, retry-jitter использует системный RNG |
 | Секреты и закрытые пути | `bash scripts/audit-local-release-hardening.sh` | секретные типы и недоделанные пути не должны выглядеть как боевые |
 
 ## Честные границы
@@ -57,6 +58,12 @@
   дублирует обычные locked тесты.
 - Полный тестовый журнал сохранён локально в
   `target/audit-evidence/local-release-hardening/final/cargo-test-workspace-after-miri.log`.
+- Дополнительная гигиена памяти 2026-05-16 закрыта тестами
+  `bip39_derivation_temporaries_are_zeroizing`,
+  `slip10_derivation_temporaries_are_zeroized`,
+  `opened_envelope_message_is_zeroizing_wrapper` и
+  `retry_jitter_uses_system_rng_not_thread_rng`; подробности:
+  `docs/audits/security-hardening-audit-2026-05-16.md`.
 
 ## Единая команда
 

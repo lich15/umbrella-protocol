@@ -1,6 +1,6 @@
 # Боевые атакующие ворота ядра протокола
 
-Дата: 2026-05-15
+Дата: 2026-05-16
 
 ## Русский
 
@@ -35,6 +35,7 @@
 | OPRF | RFC 9497 wrong length, bad Ristretto point, empty/oversize input | закрыто тестом | `external_rfc9497_attacks.rs` |
 | OPRF | повтор серверного вызова | закрыто тестом | `production_context_rejects_replayed_server_nonce_after_first_success` |
 | OPRF | повтор witness index или подмена доли | закрыто тестом | `threshold_combine_rejects_duplicate_index`, `threshold_tampered_share_breaks_combine` |
+| Ключи | временные значения BIP-39 и SLIP-0010 остаются в памяти после вывода ключей | закрыто тестом | `bip39_derivation_temporaries_are_zeroizing`, `slip10_derivation_temporaries_are_zeroized` |
 | Backup | подмена chat_id, recipient, timestamp, token, nonce или device key | закрыто тестом | `verify_rejects_tampered_chat_id`, `verify_rejects_tampered_recipient_device_pubkey`, `verify_rejects_tampered_timestamp`, `verify_rejects_tampered_token`, `verify_rejects_tampered_nonce`, `verify_rejects_wrong_device_pubkey` |
 | Backup | повтор серверного вызова | закрыто тестом | `production_context_rejects_replayed_server_nonce_after_first_success` и `mock_transport_rejects_replayed_server_nonce` |
 | Backup | неверный AAD в V1/V2 развёртке | закрыто тестом | `unwrap_fails_on_tampered_aad`, `v2_unwrap_rejects_tampered_canonical_aad` |
@@ -43,11 +44,13 @@
 | Sealed Sender | подделанная внутренняя подпись V2 после успешного расшифрования | закрыто тестом | `forged_inner_signature_rejected_after_successful_v2_decrypt` |
 | Sealed Sender | повтор к другому получателю | закрыто тестом | `real_attack_replay_envelope_to_different_recipient_aad_blocks` |
 | Sealed Sender | V1 как V2 и V2 как V1 | закрыто тестом | `real_attack_cross_version_replay_v1_to_v2_blocked` |
+| Sealed Sender | расшифрованный текст возвращается как обычный heap-буфер без затирания при Drop | закрыто тестом | `opened_envelope_message_is_zeroizing_wrapper` |
 | Blind postman | unique flood сверх `rate-limit` раздувает replay-память | закрыто тестом | `rate_limited_unique_messages_do_not_fill_replay_window`: hash записывается в replay-окно только после разрешения rate-limit |
 | Зависимости | опасная зависимость или cargo-deny policy обходятся локально | закрыто воротами | `scripts/audit-dependency-policy.sh` |
 | Нагрузка | тысячи локальных KT-листьев с proof и witness-порогом | закрыто локальным тестом | `local_load_many_kt_leaves_keep_valid_inclusion_and_witness_roots` |
 | Гонки | одновременный replay одного hash | закрыто локальным тестом | `concurrent_replay_guard_accepts_one_duplicate_hash_and_rejects_the_rest` |
 | Гонки | параллельная проверка witness-эпох | закрыто локальным тестом | `concurrent_witness_verification_has_no_shared_state_corruption` |
+| Повторы | случайная задержка повторов использует не общий системный генератор | закрыто тестом | `retry_jitter_uses_system_rng_not_thread_rng` |
 | Секреты | `Debug` и отладочные журналы раскрывают plaintext, token, server nonce, подписи, QR payload, TURN password или routing identifiers | закрыто тестами и локальным аудитом | redaction-тесты в `umbrella-backup`, `umbrella-oprf`, `umbrella-client`, `umbrella-ffi`, `umbrella-mls`, `umbrella-calls`, `umbrella-platform-verifier`, `umbrella-sealed-sender`, `umbrella-padding`, `umbrella-server-blind-postman`; `scripts/audit-local-release-hardening.sh` |
 | Недоделанное | отладочный вывод и недоделанные пути выглядят боевыми | закрыто локальным аудитом | `scripts/audit-local-release-hardening.sh`, `scripts/audit-test-only-production-boundary.sh` |
 
