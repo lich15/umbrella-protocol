@@ -40,14 +40,14 @@ require_lock_version() {
   fi
 }
 
-require_toml_pin "libcrux-ml-dsa" "0.0.8"
-require_toml_pin "libcrux-ml-kem" "0.0.8"
-require_toml_pin "libcrux-kem" "0.0.7"
+require_toml_pin "libcrux-ml-dsa" "0.0.9"
+require_toml_pin "libcrux-ml-kem" "0.0.9"
+require_toml_pin "libcrux-kem" "0.0.8"
 require_toml_pin "fips205" "0.4.1"
 
-require_lock_version "libcrux-ml-dsa" "0.0.8"
-require_lock_version "libcrux-ml-kem" "0.0.8"
-require_lock_version "libcrux-kem" "0.0.7"
+require_lock_version "libcrux-ml-dsa" "0.0.9"
+require_lock_version "libcrux-ml-kem" "0.0.9"
+require_lock_version "libcrux-kem" "0.0.8"
 require_lock_version "fips205" "0.4.1"
 
 if ! cargo tree -p umbrella-pq --features full -e normal >"$backend_tree"; then
@@ -62,8 +62,20 @@ else
   done
 fi
 
+for lockfile in Cargo.lock crates/umbrella-fuzz/fuzz/Cargo.lock; do
+  if grep -Eq 'name = "(hpke-rs-libcrux|libcrux-aead|libcrux-chacha20poly1305)"' "$lockfile"; then
+    echo "$lockfile still contains unused vulnerable hpke-rs libcrux chain" >&2
+    failed=1
+  fi
+done
+
 if ! cargo audit; then
   echo "cargo audit reported a vulnerability" >&2
+  failed=1
+fi
+
+if ! cargo audit -f crates/umbrella-fuzz/fuzz/Cargo.lock; then
+  echo "cargo audit reported a vulnerability in fuzz Cargo.lock" >&2
   failed=1
 fi
 
@@ -72,5 +84,6 @@ if [[ "$failed" -ne 0 ]]; then
 fi
 
 echo "PQ backend policy OK"
-echo "libcrux-ml-dsa 0.0.8 includes fixes for verifier norm and hint-counter bugs"
-echo "libcrux-ml-kem 0.0.8, libcrux-kem 0.0.7, fips205 0.4.1 pinned exactly"
+echo "libcrux-ml-dsa 0.0.9 includes fixes for verifier norm and hint-counter bugs"
+echo "libcrux-ml-kem 0.0.9, libcrux-kem 0.0.8, fips205 0.4.1 pinned exactly"
+echo "unused hpke-rs libcrux optional chain is absent from root and fuzz lockfiles"

@@ -13,7 +13,7 @@ publish = false
 unsafe_code = "forbid"
 
 [features]
-# Hybrid post-quantum fuzz harnesses opt-in (v1.0.0 release, production release).
+# Hybrid post-quantum fuzz harnesses opt-in (v1.1.0 release, production release).
 #
 # Активирует 7 fuzz target'ов для PQ wire-форматов: X-Wing pubkey/ciphertext,
 # hybrid signature (Ed25519+ML-DSA-65), KT v2 entry с V1↔V2 dispatch,
@@ -26,7 +26,7 @@ unsafe_code = "forbid"
 # через umbrella-fuzz-targets sub-crate `default-features = false, features = ["pq"]`.
 # OSS-Fuzz buildscript всегда активирует pq feature для max coverage.
 #
-# Hybrid post-quantum fuzz harnesses opt-in (v1.0.0 release, production release).
+# Hybrid post-quantum fuzz harnesses opt-in (v1.1.0 release, production release).
 #
 # Activates 7 fuzz targets for PQ wire-formats: X-Wing pubkey/ciphertext,
 # hybrid signature (Ed25519+ML-DSA-65), KT v2 entry with V1↔V2 dispatch,
@@ -65,10 +65,10 @@ ed25519-dalek = { workspace = true }
 x25519-dalek = { workspace = true }
 rand_core = { workspace = true, features = ["getrandom"] }
 
-# v1.0.0 release production release — нужны для `fuzz_oprf_lagrange_determinism`:
+# v1.1.0 release production release — нужны для `fuzz_oprf_lagrange_determinism`:
 # `Scalar` для конверсии `[u8; SCALAR_LEN]` master_sk → `shamir_split_for_testing`
 # input + `heapless::Vec` для накопления partial evaluations в OPRF flow.
-# v1.0.0 release production release — needed for `fuzz_oprf_lagrange_determinism`:
+# v1.1.0 release production release — needed for `fuzz_oprf_lagrange_determinism`:
 # `Scalar` to convert `[u8; SCALAR_LEN]` master_sk → `shamir_split_for_testing`
 # input + `heapless::Vec` to accumulate partial evaluations in the OPRF flow.
 curve25519-dalek = { workspace = true }

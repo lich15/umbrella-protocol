@@ -33,6 +33,13 @@ and `libcrux-kem 0.0.8` so `RUSTSEC-2026-0125` and `RUSTSEC-2026-0126` are
 fixed. The old OpenMLS transitive libcrux internals must be rechecked when a
 new OpenMLS provider is released.
 
+As of 2026-05-15, `hpke-rs 0.6.1` also declared an unused optional libcrux HPKE
+backend that pulled `libcrux-chacha20poly1305 <0.0.8` into `Cargo.lock` and
+SBOM (`RUSTSEC-2026-0124`). Umbrella does not use that backend; the release
+patch in `third_party/hpke-rs-0.6.1-umbrella` removes only that optional edge.
+The root and fuzz lockfiles must not contain `hpke-rs-libcrux`, `libcrux-aead`,
+or `libcrux-chacha20poly1305`.
+
 ## Command
 
 ```bash
@@ -81,6 +88,13 @@ RustCrypto-провайдер, и он всё ещё тянет `hpke-rs` с `li
 `RUSTSEC-2026-0125` и `RUSTSEC-2026-0126` закрыты. Старые внутренности
 libcrux внутри OpenMLS надо перепроверить, когда выйдет новый провайдер
 OpenMLS.
+
+На 2026-05-15 `hpke-rs 0.6.1` также объявлял неиспользуемый optional
+libcrux-бэкенд HPKE, который попадал в `Cargo.lock` и SBOM через
+`libcrux-chacha20poly1305 <0.0.8` (`RUSTSEC-2026-0124`). Umbrella этот бэкенд
+не использует; выпускная заплатка в `third_party/hpke-rs-0.6.1-umbrella`
+удаляет только эту optional-связь. Корневой и fuzz lockfile не должны содержать
+`hpke-rs-libcrux`, `libcrux-aead` или `libcrux-chacha20poly1305`.
 
 ## Команда
 

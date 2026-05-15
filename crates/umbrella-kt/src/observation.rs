@@ -255,7 +255,7 @@ pub enum KtTrustDecision {
     NeedsObservation,
     /// Same log epoch has two valid conflicting views.
     /// У одной эпохи журнала есть две валидные конфликтующие версии.
-    EquivocationDetected(EquivocationEvidence),
+    EquivocationDetected(Box<EquivocationEvidence>),
 }
 
 /// Compares two public observations.
@@ -272,9 +272,9 @@ pub fn compare_observations(
         return Err(KtError::InvalidObservation("different log id"));
     }
     if first.conflicts_with(second) {
-        return Ok(KtTrustDecision::EquivocationDetected(
+        return Ok(KtTrustDecision::EquivocationDetected(Box::new(
             EquivocationEvidence::try_new(first.clone(), second.clone(), witness_set, threshold)?,
-        ));
+        )));
     }
     if first.same_log_epoch(second) {
         return Ok(KtTrustDecision::Accepted);
@@ -326,9 +326,9 @@ impl KtObservationHistory {
 
         if observation.signed.epoch == last.signed.epoch {
             if observation.conflicts_with(&last) {
-                return Ok(KtTrustDecision::EquivocationDetected(
+                return Ok(KtTrustDecision::EquivocationDetected(Box::new(
                     EquivocationEvidence::try_new(last, observation, witness_set, threshold)?,
-                ));
+                )));
             }
             self.last = Some(observation);
             return Ok(KtTrustDecision::Accepted);

@@ -2,13 +2,13 @@
 # Запрещает заразные лицензии (AGPL/BSL/SSPL), дублирующиеся версии зависимостей
 # (multiple-versions = "deny"), уязвимости (vulnerabilities auto-deny с 0.19+),
 # unsound advisory'и (unsound = "all"), unmaintained crates (unmaintained = "all").
-# Полная политика — `docs/audits/cargo-deny-policy.md` (v1.0.0).
+# Полная политика — `docs/audits/cargo-deny-policy.md` (v1.1.0).
 #
 # cargo-deny config for Umbrella Protocol — strict supply-chain policy.
 # Forbids viral licenses (AGPL/BSL/SSPL), duplicated dependency versions
 # (multiple-versions = "deny"), vulnerabilities (auto-deny since 0.19+),
 # unsound advisories (unsound = "all"), unmaintained crates (unmaintained = "all").
-# Full policy — `docs/audits/cargo-deny-policy.md` (v1.0.0).
+# Full policy — `docs/audits/cargo-deny-policy.md` (v1.1.0).
 
 [graph]
 all-features = true

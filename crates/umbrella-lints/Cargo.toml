@@ -5,8 +5,8 @@
 # part of the main Cargo workspace.
 # =============================================================================
 #
-# v1.0.0 release — Hardening, production release (process maturity quality gates).
-# v1.0.0 release — Hardening, production release (process maturity quality gates).
+# v1.1.0 release — Hardening, production release (process maturity quality gates).
+# v1.1.0 release — Hardening, production release (process maturity quality gates).
 #
 # Зачем sub-workspace (Pattern U из WORKING_RULES.md):
 #   - dylint требует nightly Rust (`#![feature(rustc_private)]`), а основной
@@ -51,7 +51,7 @@
 # `libumbrella_lints.{so,dylib,dll}`, the `dylint_version` symbol is
 # looked up by the base name without hyphens.
 name = "umbrella_lints"
-version = "1.0.0"
+version = "1.1.0"
 authors = ["UmbrellaX LLP <security@umbrellax.io>"]
 description = "Custom dylint lints for Umbrella Protocol — constant-time enforcement on Zeroize types, no .unwrap()/.expect() in lib.rs, mandatory RU+EN docstrings on public API."
 edition = "2024"

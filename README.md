@@ -5,7 +5,7 @@
 ## English
 
 Umbrella Protocol is a source-available cryptographic protocol stack under
-protocol-compliance hardening for the private messenger UmbrellaX. The
+security hardening for the private messenger UmbrellaX. The
 repository contains implemented Rust cryptographic crates and test harnesses,
 but the public FFI/client production bootstrap is gated until every required
 transport and verifier is wired end to end.
@@ -27,6 +27,14 @@ SPKI pins and real postman, KT, and call relay transports. See
 [`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
 Core protocol attack gates are recorded in
 [`docs/security/protocol-core-attack-gates.md`](docs/security/protocol-core-attack-gates.md).
+Local KT split-view hardening is implemented in `umbrella-kt`: public epoch
+observations, witness non-equivocation memory, strict observation history, and
+privacy-safe observation encoding are available for client-side detection. Live
+client observation exchange and public witness deployment remain production
+boundaries.
+Supply-chain hardening for 1.1.0 removes the unused optional `hpke-rs` libcrux
+HPKE backend from the root and fuzz lockfiles, so `RUSTSEC-2026-0124` is closed
+in the checked dependency graph instead of being ignored.
 External crypto release audit:
 [`docs/audits/external-crypto-release-audit-status-2026-05-14.md`](docs/audits/external-crypto-release-audit-status-2026-05-14.md).
 
@@ -37,7 +45,7 @@ embedding in a business product, service, SDK, messenger, or infrastructure
 platform require written permission. Read the access rules before using the
 code: [`PUBLIC_ACCESS.md`](PUBLIC_ACCESS.md) and [`LICENSE`](LICENSE).
 
-Version: **1.0.0 protocol-compliance hardening**.
+Version: **1.1.0 security hardening**.
 
 ### Quick Start
 
@@ -394,7 +402,9 @@ Start here:
   current public protocol paper in English.
 - [`UmbrellaX_protocol_public_ru.pdf`](UmbrellaX_protocol_public_ru.pdf):
   current public protocol paper in Russian.
-- [`docs/security/release-manifest-v1.0.0.txt`](docs/security/release-manifest-v1.0.0.txt):
+- [`docs/security/release-notes-v1.1.0.md`](docs/security/release-notes-v1.1.0.md):
+  public notes for the current release.
+- [`docs/security/release-manifest-v1.1.0.txt`](docs/security/release-manifest-v1.1.0.txt):
   release verification notes.
 - [`SECURITY.md`](SECURITY.md): vulnerability reporting process.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): contribution rules.
@@ -408,12 +418,12 @@ Commercial licensing: `licensing@umbrellax.io`
 ## Русский
 
 Umbrella Protocol — криптографический набор для приватного мессенджера
-UmbrellaX, который сейчас проходит приведение к документам. В репозитории есть
+UmbrellaX, который сейчас проходит усиление безопасности. В репозитории есть
 реализованные крейты на Rust и проверочные стенды, но публичный боевой запуск
 клиента через внешний интерфейс для мобильных привязок закрыт до полной связки
 транспортов и боевых проверок.
 
-Текущий статус приведения к документам записан в
+Текущий статус усиления безопасности записан в
 [`docs/security/current-status.md`](docs/security/current-status.md).
 Внутренний боевой сборщик HTTP/2 связывает системную проверку сертификата с
 закреплёнными SPKI-ключами. Публичный FFI-запуск остаётся закрыт, пока не
@@ -431,6 +441,14 @@ Play Integrity всё ещё закрыто отказывают, пока не 
 [`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
 Боевые атакующие ворота ядра протокола записаны в
 [`docs/security/protocol-core-attack-gates.md`](docs/security/protocol-core-attack-gates.md).
+Локальное усиление KT против split-view реализовано в `umbrella-kt`: публичные
+наблюдения эпох, память свидетеля, строгая история наблюдений и безопасный для
+приватности формат наблюдения доступны для обнаружения раздвоения клиентами.
+Живой обмен наблюдениями клиентов и публичное развёртывание свидетелей остаются
+границами боевого выпуска.
+Усиление цепочки зависимостей в 1.1.0 убирает неиспользуемый optional
+libcrux-бэкенд HPKE из `hpke-rs` в корневом и fuzz lockfile, поэтому
+`RUSTSEC-2026-0124` закрыт в проверяемом графе зависимостей, а не игнорируется.
 Внешний крипто-аудит выпуска:
 [`docs/audits/external-crypto-release-audit-status-2026-05-14.md`](docs/audits/external-crypto-release-audit-status-2026-05-14.md).
 
@@ -442,7 +460,7 @@ Play Integrity всё ещё закрыто отказывают, пока не 
 разрешения. Перед использованием прочитайте правила доступа:
 [`PUBLIC_ACCESS.md`](PUBLIC_ACCESS.md) и [`LICENSE`](LICENSE).
 
-Версия: **1.0.0, приведение к документам**.
+Версия: **1.1.0, усиление безопасности**.
 
 ### Быстрый старт
 
@@ -803,7 +821,9 @@ umbrella-client = { path = "crates/umbrella-client" }
   актуальный публичный документ протокола на английском.
 - [`UmbrellaX_protocol_public_ru.pdf`](UmbrellaX_protocol_public_ru.pdf):
   актуальный публичный документ протокола на русском.
-- [`docs/security/release-manifest-v1.0.0.txt`](docs/security/release-manifest-v1.0.0.txt):
+- [`docs/security/release-notes-v1.1.0.md`](docs/security/release-notes-v1.1.0.md):
+  публичные заметки текущего выпуска.
+- [`docs/security/release-manifest-v1.1.0.txt`](docs/security/release-manifest-v1.1.0.txt):
   заметки для проверки выпуска.
 - [`SECURITY.md`](SECURITY.md): порядок сообщения об уязвимости.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): правила участия.

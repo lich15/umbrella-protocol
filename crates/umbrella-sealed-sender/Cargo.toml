@@ -12,7 +12,7 @@ description = "Sealed Sender: HPKE-style envelope для скрытия отпр
 unsafe_code = "forbid"
 
 [features]
-# Hybrid post-quantum sealed-sender envelope opt-in (v1.0.0 release, production design Решение 4
+# Hybrid post-quantum sealed-sender envelope opt-in (v1.1.0 release, production design Решение 4
 # расширение для блока 8.6).
 #
 # Активирует:
@@ -29,7 +29,7 @@ unsafe_code = "forbid"
 # Без feature `pq` — V1 path работает identical (existing 0.0.11 wire-format
 # invariant сохранён; test corpus existing tests passes без изменений).
 #
-# Hybrid post-quantum sealed-sender envelope opt-in (v1.0.0 release, production design Decision 4
+# Hybrid post-quantum sealed-sender envelope opt-in (v1.1.0 release, production design Decision 4
 # extension for production release).
 default = []
 pq = ["dep:umbrella-pq", "umbrella-pq/ml-kem", "dep:secrecy"]
@@ -42,11 +42,11 @@ rand_core = { workspace = true }
 zeroize = { workspace = true }
 thiserror = { workspace = true }
 
-# Hybrid post-quantum (feature-gated, v1.0.0 release production design Решение 4 расширение).
+# Hybrid post-quantum (feature-gated, v1.1.0 release production design Решение 4 расширение).
 # `secrecy` нужен только под `pq` для `SecretBox<[u8; 32]>` shared secret из
 # `xwing_encaps` / `xwing_decaps` API.
 #
-# Hybrid post-quantum (feature-gated, v1.0.0 release production design Decision 4 extension).
+# Hybrid post-quantum (feature-gated, v1.1.0 release production design Decision 4 extension).
 # `secrecy` is needed only under `pq` for the `SecretBox<[u8; 32]>` shared
 # secret returned by `xwing_encaps` / `xwing_decaps`.
 umbrella-pq = { workspace = true, optional = true }

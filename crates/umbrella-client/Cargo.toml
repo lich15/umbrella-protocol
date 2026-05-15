@@ -13,7 +13,7 @@ unsafe_code = "forbid"
 
 [features]
 default = []
-# Hybrid post-quantum opt-in (v1.0.0 release production release , production design Решение 7
+# Hybrid post-quantum opt-in (v1.1.0 release production release , production design Решение 7
 # umbrella feature aggregator). Зонтичный pq для umbrella-client пробрасывает
 # pq features во все downstream PQ-aware крейты (umbrella-mls, umbrella-identity,
 # umbrella-kt, umbrella-sealed-sender, umbrella-backup) и подключает umbrella-pq
@@ -23,7 +23,7 @@ default = []
 # путь (Ed25519 identity + ciphersuite 0x0003) не меняется (FFI ABI invariant
 # production design, постулат 14).
 #
-# Hybrid post-quantum opt-in (v1.0.0 release Release milestone , production design Decision 7
+# Hybrid post-quantum opt-in (v1.1.0 release Release milestone , production design Decision 7
 # umbrella feature aggregator). The umbrella `pq` feature on umbrella-client
 # propagates pq features to all PQ-aware downstream crates (umbrella-mls,
 # umbrella-identity, umbrella-kt, umbrella-sealed-sender, umbrella-backup) and

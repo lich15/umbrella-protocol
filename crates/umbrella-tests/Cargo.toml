@@ -14,13 +14,13 @@ unsafe_code = "forbid"
 
 [features]
 default = []
-# Hybrid post-quantum opt-in (v1.0.0 release production release ).
+# Hybrid post-quantum opt-in (v1.1.0 release production release ).
 # Активирует pq_milestone.rs (`#![cfg(feature = "pq")]`) и пробрасывает
 # pq в downstream test deps (umbrella-client + umbrella-identity + umbrella-kt
 # + umbrella-sealed-sender + umbrella-backup + umbrella-pq) — без этого
 # scenarios не компилируются.
 #
-# Hybrid post-quantum opt-in (v1.0.0 release Release milestone ).
+# Hybrid post-quantum opt-in (v1.1.0 release Release milestone ).
 # Activates pq_milestone.rs (`#![cfg(feature = "pq")]`) and forwards pq
 # to downstream test deps (umbrella-client + umbrella-identity + umbrella-kt
 # + umbrella-sealed-sender + umbrella-backup + umbrella-pq) — without this
@@ -69,9 +69,9 @@ rand = { workspace = true }
 secrecy = { workspace = true }
 umbrella-crypto-primitives = { workspace = true }
 # subtle 2.6+ — `ConstantTimeEq` trait scope для dudect bench tests
-# `tests/dudect_constant_time.rs` (production v1.0.0 release 3 cross-cutting).
+# `tests/dudect_constant_time.rs` (production v1.1.0 release 3 cross-cutting).
 # subtle 2.6+ — the `ConstantTimeEq` trait scope for the dudect bench
-# tests in `tests/dudect_constant_time.rs` (production v1.0.0 release 3
+# tests in `tests/dudect_constant_time.rs` (production v1.1.0 release 3
 # cross-cutting).
 subtle = { workspace = true }
 curve25519-dalek = { workspace = true }

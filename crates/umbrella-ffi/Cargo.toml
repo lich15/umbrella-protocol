@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "uniffi FFI слой + ABI-stable UmbrellaError enum для Swift/Kotlin биндингов (v1.0.0 release, production design)."
+description = "uniffi FFI слой + ABI-stable UmbrellaError enum для Swift/Kotlin биндингов (v1.1.0 release, production design)."
 
 [lints.rust]
 # uniffi 0.28 через proc-macro генерирует `unsafe extern "C"` FFI функции;
@@ -17,7 +17,7 @@ unsafe_code = "warn"
 
 [features]
 default = []
-# Hybrid post-quantum opt-in (v1.0.0 release production release , production design Решение 7).
+# Hybrid post-quantum opt-in (v1.1.0 release production release , production design Решение 7).
 # FFI зонтичный feature пробрасывает pq в umbrella-client (которая сама собирает
 # zonтичный pq для всех downstream крейтов). Активирует FFI surface
 # `UmbrellaClientHandle::bootstrap_pq` (отдельный конструктор для PQ-режима);
@@ -28,7 +28,7 @@ default = []
 # Без feature `pq` FFI exposes только classical path (existing 0.0.11 Swift /
 # Kotlin приложения работают без изменений).
 #
-# Hybrid post-quantum opt-in (v1.0.0 release Release milestone , production design
+# Hybrid post-quantum opt-in (v1.1.0 release Release milestone , production design
 # Decision 7). The FFI umbrella feature propagates pq to umbrella-client (which
 # in turn aggregates pq across all downstream crates). It activates the
 # `UmbrellaClientHandle::bootstrap_pq` FFI surface (a parallel PQ-mode
@@ -61,8 +61,8 @@ uniffi = { workspace = true }
 thiserror = { workspace = true }
 
 [build-dependencies]
-# Scaffold генерация через uniffi::build в build.rs (v1.0.0 release).
-# Scaffold generation via uniffi::build in build.rs (v1.0.0 release).
+# Scaffold генерация через uniffi::build в build.rs (v1.1.0 release).
+# Scaffold generation via uniffi::build in build.rs (v1.1.0 release).
 uniffi = { workspace = true, features = ["build"] }
 
 [dev-dependencies]

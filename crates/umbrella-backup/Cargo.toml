@@ -13,12 +13,12 @@ unsafe_code = "forbid"
 
 [features]
 default = []
-# Hybrid post-quantum cloud-wrap layer (v1.0.0 release production release, production design Решение 4 расширение).
+# Hybrid post-quantum cloud-wrap layer (v1.1.0 release production release, production design Решение 4 расширение).
 # Подключает X-Wing envelope над V1 WrappedKey: post-quantum confidentiality
 # recovery key через outer X-Wing layer; existing V1 threshold-ElGamal layer
 # unchanged. Sealed Server ceremony (`server implementation`) **не меняется**.
 #
-# Hybrid post-quantum cloud-wrap layer (v1.0.0 release production release, production design Decision 4 extension).
+# Hybrid post-quantum cloud-wrap layer (v1.1.0 release production release, production design Decision 4 extension).
 # Enables an X-Wing envelope over V1 WrappedKey: post-quantum confidentiality of the
 # recovery key via an outer X-Wing layer; existing V1 threshold-ElGamal layer is
 # unchanged. The Sealed Server ceremony (`server implementation`) is **not** affected.
@@ -57,10 +57,10 @@ rand_core = { workspace = true }
 heapless = { workspace = true }
 thiserror = { workspace = true }
 
-# Hybrid post-quantum (feature-gated, v1.0.0 release production release).
+# Hybrid post-quantum (feature-gated, v1.1.0 release production release).
 # umbrella-pq для X-Wing primitives; secrecy для SecretBox<[u8; 32]> shared secret.
 #
-# Hybrid post-quantum (feature-gated, v1.0.0 release production release).
+# Hybrid post-quantum (feature-gated, v1.1.0 release production release).
 # umbrella-pq for X-Wing primitives; secrecy for SecretBox<[u8; 32]> shared secret.
 umbrella-pq = { workspace = true, optional = true }
 secrecy = { workspace = true, optional = true }

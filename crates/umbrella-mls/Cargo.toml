@@ -34,12 +34,12 @@ chacha20poly1305 = { workspace = true, optional = true }
 rand_core = { workspace = true, optional = true }
 
 [features]
-# Hybrid Post-Quantum opt-in (v1.0.0 release, production design Решение 4): активирует UmbrellaXWingProvider
+# Hybrid Post-Quantum opt-in (v1.1.0 release, production design Решение 4): активирует UmbrellaXWingProvider
 # для ciphersuite 0x004D (MLS_256_XWING_CHACHA20POLY1305_SHA256_Ed25519). Без феature
 # 0x004D НЕ декларируется в KeyPackage capabilities (postулат 14: иначе провайдер
 # panic'ает на HpkeKemType::XWingKemDraft6 через openmls_rust_crypto unimplemented!).
 #
-# Hybrid Post-Quantum opt-in (v1.0.0 release, production design Decision 4): activates UmbrellaXWingProvider
+# Hybrid Post-Quantum opt-in (v1.1.0 release, production design Decision 4): activates UmbrellaXWingProvider
 # for ciphersuite 0x004D (MLS_256_XWING_CHACHA20POLY1305_SHA256_Ed25519). Without the feature,
 # 0x004D is NOT declared in KeyPackage capabilities (postulate 14: otherwise the provider
 # would panic on HpkeKemType::XWingKemDraft6 via openmls_rust_crypto unimplemented!).

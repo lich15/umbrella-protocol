@@ -6,8 +6,8 @@
 
 ## English
 
-Umbrella Protocol 1.0.0 is a source-available Rust protocol package under
-protocol-compliance hardening. It contains real cryptographic crates, test
+Umbrella Protocol 1.1.0 is a source-available Rust protocol package under
+security hardening. It contains real cryptographic crates, test
 harnesses, formal models, fuzzing entry points, and local verification scripts.
 
 The full public client bootstrap is not open for production use yet. Public FFI
@@ -16,6 +16,8 @@ integration are wired end to end.
 
 Implemented and currently documented:
 
+- current public release notes:
+  `docs/security/release-notes-v1.1.0.md`;
 - cryptographic crates for identity, MLS profile, key transparency, OPRF,
   sealed sender, backup, padding, post-quantum helpers, and call primitives;
 - internal HTTP/2 production builder with system certificate verification and
@@ -44,6 +46,9 @@ Implemented and currently documented:
   unwrap contexts;
 - local dependency release gate runs `cargo deny check` and rejects missing
   `cargo-deny` as a gate failure;
+- root and fuzz lockfiles exclude the unused optional `hpke-rs` libcrux HPKE
+  backend that pulled `RUSTSEC-2026-0124`; `scripts/audit-pq-backend-policy.sh`
+  checks this boundary;
 - external crypto attack ledger:
   `docs/security/external-crypto-attack-ledger-2026-05-14.md` and
   `docs/security/external-crypto-attack-ledger-2026-05-15.md`; they record
@@ -71,8 +76,8 @@ production path.
 
 ## Русский
 
-Umbrella Protocol 1.0.0 — набор Rust-крейтов протокола с доступным для чтения
-исходным кодом. Сейчас проект проходит приведение к документам и усиление
+Umbrella Protocol 1.1.0 — набор Rust-крейтов протокола с доступным для чтения
+исходным кодом. Сейчас проект проходит усиление безопасности и честное описание
 боевых границ. В репозитории есть настоящие криптографические крейты, стенды
 проверки, формальные модели, входы для фаззинга и локальные скрипты проверки.
 
@@ -82,6 +87,8 @@ Umbrella Protocol 1.0.0 — набор Rust-крейтов протокола с
 
 Что уже реализовано и описано:
 
+- публичные заметки текущего выпуска:
+  `docs/security/release-notes-v1.1.0.md`;
 - криптографические крейты для личности, MLS-профиля, прозрачности ключей,
   OPRF, скрытия отправителя, резервных копий, выравнивания сообщений,
   постквантовых помощников и заготовок звонков;
@@ -112,6 +119,9 @@ Umbrella Protocol 1.0.0 — набор Rust-крейтов протокола с
   контекстах OPRF и развёртки резервного ключа;
 - локальные ворота зависимостей запускают `cargo deny check`; отсутствие
   `cargo-deny` считается отказом ворот, а не успехом;
+- корневой и fuzz lockfile не содержат неиспользуемый optional libcrux-бэкенд
+  HPKE из `hpke-rs`, который тянул `RUSTSEC-2026-0124`; это проверяет
+  `scripts/audit-pq-backend-policy.sh`;
 - внешний реестр криптографических атак:
   `docs/security/external-crypto-attack-ledger-2026-05-14.md` и
   `docs/security/external-crypto-attack-ledger-2026-05-15.md`; они связывают

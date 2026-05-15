@@ -12,7 +12,7 @@ description = "Key Transparency client с self-monitoring и multi-witness — �
 unsafe_code = "forbid"
 
 [features]
-# Hybrid post-quantum KT v2 schema opt-in (v1.0.0 release, production design Решение 6).
+# Hybrid post-quantum KT v2 schema opt-in (v1.1.0 release, production design Решение 6).
 # Активирует:
 # - `KtEntryV2` (identity announcement entry с hybrid Ed25519+ML-DSA-65 pubkey
 #   и optional SLH-DSA-128f backup-recovery pubkey) с leading version-байтом 0x02.
@@ -26,7 +26,7 @@ unsafe_code = "forbid"
 # Без feature `pq` крейт компилируется без PQ зависимостей; existing V1
 # behaviour не меняется (Merkle leaf hash invariant сохраняется).
 #
-# Hybrid post-quantum KT v2 schema opt-in (v1.0.0 release, production design Decision 6).
+# Hybrid post-quantum KT v2 schema opt-in (v1.1.0 release, production design Decision 6).
 # Activates:
 # - `KtEntryV2` (identity-announcement entry with hybrid Ed25519+ML-DSA-65 pubkey
 #   and optional SLH-DSA-128f backup-recovery pubkey) prefixed by version byte 0x02.
@@ -66,8 +66,8 @@ sha2 = { workspace = true }
 zeroize = { workspace = true }
 thiserror = { workspace = true }
 
-# Hybrid post-quantum (feature-gated, v1.0.0 release production design Решение 6).
-# Hybrid post-quantum (feature-gated, v1.0.0 release production design Decision 6).
+# Hybrid post-quantum (feature-gated, v1.1.0 release production design Решение 6).
+# Hybrid post-quantum (feature-gated, v1.1.0 release production design Decision 6).
 umbrella-pq = { workspace = true, optional = true }
 
 [dev-dependencies]

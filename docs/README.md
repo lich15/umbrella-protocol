@@ -5,13 +5,15 @@
 ## English
 
 This `docs/` tree contains the public production documentation for Umbrella
-Protocol 1.0.0. It is focused on materials that help a reader understand, build,
+Protocol 1.1.0. It is focused on materials that help a reader understand, build,
 verify, and test the protocol without exposing private working material.
 
 ## Contents
 
 - `audits/` - retained verification notes and tool-policy documents.
 - `security/` - release manifest, SBOM, and security operation notes.
+- Current release notes:
+  `security/release-notes-v1.1.0.md`.
 - External crypto release audit:
   `audits/external-crypto-release-audit-status-2026-05-14.md`.
 - `WORKING_RULES.md` - рабочие постулаты проекта.
@@ -26,8 +28,8 @@ public documentation set.
 
 ## Current Status
 
-Umbrella Protocol 1.0.0 is a source-available package under
-protocol-compliance hardening. The repository is published for transparency,
+Umbrella Protocol 1.1.0 is a source-available package under security
+hardening. The repository is published for transparency,
 non-commercial security testing, cryptographic testing, reproducible builds,
 and responsible vulnerability disclosure.
 
@@ -53,6 +55,13 @@ relay transports. See
 [`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md).
 Core protocol attack gates are recorded in
 [`security/protocol-core-attack-gates.md`](security/protocol-core-attack-gates.md).
+Version 1.1.0 adds local KT split-view hardening: public epoch observations,
+verifiable equivocation evidence, strict observation history, witness
+non-equivocation memory, and privacy-safe observation encoding. Live observation
+exchange and production witness channels remain production boundaries.
+It also removes the unused optional `hpke-rs` libcrux HPKE backend from the
+root and fuzz lockfiles so `RUSTSEC-2026-0124` is closed in the checked
+supply-chain graph, not ignored.
 Local audits also include `scripts/audit-test-only-production-boundary.sh`,
 which checks that test-only and incomplete paths do not look like production
 paths.
@@ -76,13 +85,15 @@ exit code 0 for the exact command.
 ## Русский
 
 Папка `docs/` содержит публичную production-документацию Umbrella Protocol
-1.0.0. Здесь оставлены материалы, которые помогают понять, собрать, проверить и
+1.1.0. Здесь оставлены материалы, которые помогают понять, собрать, проверить и
 протестировать протокол без раскрытия приватных рабочих материалов.
 
 ## Содержимое
 
 - `audits/` - сохранённые заметки по проверкам и политики инструментов.
 - `security/` - манифест выпуска, SBOM и заметки по безопасности.
+- Заметки текущего выпуска:
+  `security/release-notes-v1.1.0.md`.
 - Внешний крипто-аудит выпуска:
   `audits/external-crypto-release-audit-status-2026-05-14.md`.
 - `WORKING_RULES.md` - рабочие постулаты проекта.
@@ -98,8 +109,8 @@ exit code 0 for the exact command.
 
 ## Текущий статус
 
-Umbrella Protocol 1.0.0 — пакет с доступным для чтения исходным кодом, который
-сейчас проходит приведение к документам. Репозиторий опубликован для
+Umbrella Protocol 1.1.0 — пакет с доступным для чтения исходным кодом, который
+сейчас проходит усиление безопасности. Репозиторий опубликован для
 прозрачности, некоммерческой проверки безопасности, криптографических
 испытаний, воспроизводимых сборок и ответственного раскрытия уязвимостей.
 
@@ -127,6 +138,13 @@ SPKI-ключами. Публичный FFI-запуск остаётся зак
 [`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md).
 Боевые атакующие ворота ядра протокола записаны в
 [`security/protocol-core-attack-gates.md`](security/protocol-core-attack-gates.md).
+Версия 1.1.0 добавляет локальное усиление KT против split-view: публичные
+наблюдения эпох, проверяемое доказательство раздвоения, строгую историю
+наблюдений, память свидетеля и безопасный для приватности формат наблюдения.
+Живой обмен наблюдениями и боевые каналы свидетелей остаются границами выпуска.
+Также из корневого и fuzz lockfile убран неиспользуемый optional libcrux-бэкенд
+HPKE из `hpke-rs`, поэтому `RUSTSEC-2026-0124` закрыт в проверяемом графе
+зависимостей, а не проигнорирован.
 Локальные аудиты также включают `scripts/audit-test-only-production-boundary.sh`;
 он проверяет, что тестовые и неполные пути не выглядят боевыми.
 Локальные выпускные ворота записаны в

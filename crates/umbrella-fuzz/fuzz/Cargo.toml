@@ -52,6 +52,16 @@ libfuzzer-sys = "0.4"
 # 10.5b-active-retro session #65.
 umbrella-fuzz = { path = "..", features = ["pq"] }
 
+[patch.crates-io]
+# Same release-gate patch as the root workspace: remove the unused optional
+# hpke-rs libcrux backend from the fuzz Cargo.lock/SBOM so RUSTSEC-2026-0124
+# cannot be hidden in a secondary lockfile.
+#
+# Та же выпускная заплатка, что в корневой рабочей области: убираем
+# неиспользуемый optional libcrux-бэкенд hpke-rs из fuzz Cargo.lock/SBOM, чтобы
+# RUSTSEC-2026-0124 не прятался во втором lock-файле.
+hpke-rs = { path = "../../../third_party/hpke-rs-0.6.1-umbrella" }
+
 [[bin]]
 name = "parse_mls_envelope"
 path = "fuzz_targets/parse_mls_envelope.rs"

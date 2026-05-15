@@ -13,12 +13,12 @@ unsafe_code = "forbid"
 
 [features]
 default = []
-# Hybrid post-quantum identity layer (v1.0.0 release, production design Решение 5).
+# Hybrid post-quantum identity layer (v1.1.0 release, production design Решение 5).
 # Подключает Ed25519+ML-DSA-65 hybrid identity/device keys + SLH-DSA-128f backup recovery.
 # Под `pq` тянутся `umbrella-pq` features `ml-dsa` и `slh-dsa`, плюс deterministic
 # `ChaCha20Rng` для derive ML-DSA-65/SLH-DSA seeds из BIP-39 IdentitySeed.
 #
-# Hybrid post-quantum identity layer (v1.0.0 release, production design Decision 5).
+# Hybrid post-quantum identity layer (v1.1.0 release, production design Decision 5).
 # Enables the Ed25519+ML-DSA-65 hybrid identity/device keys plus the SLH-DSA-128f backup
 # recovery key. Under `pq` we pull `umbrella-pq` features `ml-dsa` and `slh-dsa` plus a
 # deterministic `ChaCha20Rng` to derive the ML-DSA-65/SLH-DSA seeds from BIP-39 IdentitySeed.
@@ -44,8 +44,8 @@ zeroize = { workspace = true }
 secrecy = { workspace = true }
 thiserror = { workspace = true }
 
-# Hybrid post-quantum (feature-gated, v1.0.0 release production design Решение 5).
-# Hybrid post-quantum (feature-gated, v1.0.0 release production design Decision 5).
+# Hybrid post-quantum (feature-gated, v1.1.0 release production design Решение 5).
+# Hybrid post-quantum (feature-gated, v1.1.0 release production design Decision 5).
 umbrella-pq = { workspace = true, optional = true }
 rand_chacha = { workspace = true, optional = true }
 

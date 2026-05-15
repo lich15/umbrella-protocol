@@ -4,6 +4,56 @@
 
 ## English
 
+### 1.1.0-security-hardening - 2026-05-15
+
+Added:
+
+- Key Transparency split-view hardening: public epoch observations, verifiable
+  equivocation evidence, strict observation history, and witness
+  non-equivocation memory.
+- Privacy-safe KT observation wire format. It excludes account ids, device
+  lists, contacts, chats, and message content.
+- External RFC 9497 OPRF attack tests for bad wire lengths, invalid points,
+  input-size boundaries, and subthreshold evaluation attempts.
+- Public release notes and manifest for version 1.1.0.
+- Local `hpke-rs 0.6.1` release patch that removes the unused optional libcrux
+  HPKE backend from root and fuzz lockfiles.
+
+Changed:
+
+- Workspace package version is now 1.1.0.
+- Public documentation now records local KT split-view detection as implemented
+  locally, while keeping live witness deployment and live client observation
+  exchange as production boundaries.
+- Release gates now include the KT split-view hardening checks, local release
+  hardening audit, external crypto attack ledger audit, and full workspace test
+  run.
+
+Security:
+
+- A locally valid split-view signed by a malicious witness threshold is no
+  longer treated as "closed by signatures alone"; the code now exposes
+  comparable observations and evidence so clients can detect conflicting
+  views.
+- Production-facing incomplete paths remain fail-closed instead of silently
+  using test-only constructors.
+- TLS/SPKI pinning, platform attestation, OPRF, backup, sealed sender,
+  downgrade, replay, tamper, and race checks remain covered by local tests and
+  documented release boundaries.
+- `RUSTSEC-2026-0124` is closed in the checked supply chain: the vulnerable
+  optional `libcrux-chacha20poly1305 <0.0.8` path is absent from root and fuzz
+  lockfiles instead of being ignored.
+
+Verification:
+
+- `cargo fmt --all -- --check`
+- `cargo test --workspace --all-features --locked`
+- `bash scripts/audit-protocol-core-attack-gates.sh`
+- `bash scripts/audit-local-release-hardening.sh ...`
+- `bash scripts/audit-public-access-notices.sh`
+- `bash scripts/audit-pq-backend-policy.sh`
+- `cargo audit -f crates/umbrella-fuzz/fuzz/Cargo.lock`
+
 ### Documentation refresh - 2026-05-12
 
 Changed:
@@ -55,6 +105,54 @@ Security:
 ---
 
 ## Русский
+
+### 1.1.0-security-hardening - 2026-05-15
+
+Добавлено:
+
+- Усиление Key Transparency против split-view: публичные наблюдения эпох,
+  проверяемое доказательство раздвоения, строгая история наблюдений и память
+  свидетеля, которая не даёт тихо подписать два разных корня одной эпохи.
+- Безопасный для приватности публичный формат KT-наблюдения. В нём нет
+  account_id, списка устройств, контактов, чатов и текста сообщений.
+- Атакующие тесты OPRF по RFC 9497: плохие длины, неверные точки, границы
+  размера входа и попытка собрать ответ ниже порога.
+- Публичные заметки и манифест выпуска для версии 1.1.0.
+- Локальная выпускная заплатка `hpke-rs 0.6.1`, которая убирает
+  неиспользуемый optional libcrux-бэкенд HPKE из корневого и fuzz lockfile.
+
+Изменено:
+
+- Общая версия Rust-пакета поднята до 1.1.0.
+- Публичная документация теперь честно пишет: локальное обнаружение KT
+  split-view реализовано, но живое развёртывание свидетелей и живой обмен
+  наблюдениями клиентов остаются границей боевого выпуска.
+- В выпускные ворота добавлены проверки KT split-view, локальный аудит
+  выпуска, внешний реестр крипто-атак и полный прогон всей рабочей области.
+
+Безопасность:
+
+- Split-view, подписанный злым порогом свидетелей, больше не описывается как
+  "закрытый одними подписями". Код теперь даёт сравниваемые наблюдения и
+  доказательство, чтобы клиенты могли поймать две разные версии.
+- Незавершённые публичные пути по-прежнему закрыто отказывают и не пользуются
+  тестовыми конструкторами.
+- TLS/SPKI pinning, платформенные проверки, OPRF, backup, sealed sender,
+  downgrade, replay, tamper и гонки остаются покрыты локальными тестами и
+  честно описанными границами выпуска.
+- `RUSTSEC-2026-0124` закрыт в проверяемой цепочке зависимостей: уязвимый
+  optional-путь `libcrux-chacha20poly1305 <0.0.8` отсутствует в корневом и fuzz
+  lockfile, а не игнорируется.
+
+Проверка:
+
+- `cargo fmt --all -- --check`
+- `cargo test --workspace --all-features --locked`
+- `bash scripts/audit-protocol-core-attack-gates.sh`
+- `bash scripts/audit-local-release-hardening.sh ...`
+- `bash scripts/audit-public-access-notices.sh`
+- `bash scripts/audit-pq-backend-policy.sh`
+- `cargo audit -f crates/umbrella-fuzz/fuzz/Cargo.lock`
 
 ### Обновление документации - 2026-05-12
 

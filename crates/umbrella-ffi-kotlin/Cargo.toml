@@ -35,13 +35,13 @@ unsafe_code = "warn"
 
 [features]
 default = []
-# Hybrid post-quantum opt-in (v1.0.0 release production release , production design Решение 7).
+# Hybrid post-quantum opt-in (v1.1.0 release production release , production design Решение 7).
 # Прокидывает pq в umbrella-ffi → umbrella-client → all PQ-aware downstream
 # крейты. AAR сборщик `build-aar.sh` может собрать как classical (default), так
 # и PQ (`--features pq`) вариант — для phased rollout PQ Kotlin приложения
 # (поэтапный rollout без принудительного PQ для всех Android пользователей).
 #
-# Hybrid post-quantum opt-in (v1.0.0 release Release milestone , production design
+# Hybrid post-quantum opt-in (v1.1.0 release Release milestone , production design
 # Decision 7). Forwards pq to umbrella-ffi → umbrella-client → all PQ-aware
 # downstream crates. The `build-aar.sh` script can produce either the classical
 # (default) or PQ (`--features pq`) variant — supporting a phased Kotlin
