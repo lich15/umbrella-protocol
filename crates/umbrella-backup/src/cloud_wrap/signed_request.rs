@@ -91,13 +91,25 @@ impl Platform {
 
 /// Платформенный attestation прикреплённый к unwrap-запросу.
 /// Platform attestation attached to an unwrap request.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct PlatformAttestation {
     /// Платформа источника. Source platform.
     pub platform: Platform,
     /// Opaque-байты токена (формат платформо-специфичен).
     /// Opaque token bytes (platform-specific format).
     pub token: HVec<u8, MAX_ATTESTATION_TOKEN_BYTES>,
+}
+
+/// `Debug` скрывает platform attestation token.
+/// `Debug` redacts the platform attestation token.
+impl core::fmt::Debug for PlatformAttestation {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("PlatformAttestation")
+            .field("platform", &self.platform)
+            .field("token_len", &self.token.len())
+            .field("token", &"<redacted>")
+            .finish()
+    }
 }
 
 impl PlatformAttestation {
@@ -134,9 +146,20 @@ pub trait AttestationProvider {
 
 /// Testing-провайдер: детерминистический token из префикса + nonce.
 /// Testing provider: deterministic token from prefix + nonce.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TestingAttestationProvider {
     prefix: HVec<u8, 64>,
+}
+
+/// `Debug` скрывает тестовый backup attestation prefix.
+/// `Debug` redacts the testing backup attestation prefix.
+impl core::fmt::Debug for TestingAttestationProvider {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TestingAttestationProvider")
+            .field("prefix_len", &self.prefix.len())
+            .field("prefix", &"<redacted>")
+            .finish()
+    }
 }
 
 impl TestingAttestationProvider {
@@ -230,7 +253,7 @@ pub fn canonical_signing_input(
 
 /// Подписанный unwrap-запрос к Sealed Servers.
 /// Signed unwrap request to Sealed Servers.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct SignedUnwrapRequest {
     /// `R = r · G` — ephemeral public point из `WrappedKey`.
     /// `R = r · G` — ephemeral public point taken from `WrappedKey`.
@@ -253,6 +276,32 @@ pub struct SignedUnwrapRequest {
     /// Ed25519 public key того же device-key (для serverside verify).
     /// Ed25519 public key of the same device-key (for server-side verify).
     pub device_pubkey: [u8; ED25519_PUB_LEN],
+}
+
+/// `Debug` скрывает unwrap request material, пригодный для replay/correlation.
+/// `Debug` redacts unwrap request material useful for replay/correlation.
+impl core::fmt::Debug for SignedUnwrapRequest {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SignedUnwrapRequest")
+            .field("ephemeral_r_len", &self.ephemeral_r.len())
+            .field("ephemeral_r", &"<redacted>")
+            .field("chat_id_len", &self.chat_id.len())
+            .field("chat_id", &"<redacted>")
+            .field(
+                "recipient_device_pubkey_len",
+                &self.recipient_device_pubkey.len(),
+            )
+            .field("recipient_device_pubkey", &"<redacted>")
+            .field("timestamp_unix_millis", &self.timestamp_unix_millis)
+            .field("server_nonce_len", &self.server_nonce.len())
+            .field("server_nonce", &"<redacted>")
+            .field("attestation", &self.attestation)
+            .field("device_signature_len", &self.device_signature.len())
+            .field("device_signature", &"<redacted>")
+            .field("device_pubkey_len", &self.device_pubkey.len())
+            .field("device_pubkey", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Собрать подписанный запрос через signer-closure.
@@ -583,7 +632,7 @@ pub enum PlatformVerifierKind {
 
 /// Вход платформенного проверяющего.
 /// Input passed to a platform attestation verifier.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct PlatformVerificationInput<'a> {
     /// Платформа запроса. Request platform.
     pub platform: Platform,
@@ -595,6 +644,23 @@ pub struct PlatformVerificationInput<'a> {
     pub device_pubkey: &'a [u8; DEVICE_PUBKEY_LEN],
     /// Текущее серверное время. Current server time.
     pub now_unix_millis: u64,
+}
+
+/// `Debug` скрывает attestation token при серверной проверке backup unwrap.
+/// `Debug` redacts the attestation token during server-side backup unwrap verification.
+impl core::fmt::Debug for PlatformVerificationInput<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("PlatformVerificationInput")
+            .field("platform", &self.platform)
+            .field("token_len", &self.token.len())
+            .field("token", &"<redacted>")
+            .field("server_nonce_len", &self.server_nonce.len())
+            .field("server_nonce", &"<redacted>")
+            .field("device_pubkey_len", &self.device_pubkey.len())
+            .field("device_pubkey", &"<redacted>")
+            .field("now_unix_millis", &self.now_unix_millis)
+            .finish()
+    }
 }
 
 /// Платформенный проверяющий для боевого серверного пути.
@@ -807,7 +873,6 @@ impl ProductionPlatformVerifier for SharedPlatformVerifierForBackup {
 
 /// Контекст боевой проверки unwrap-запроса.
 /// Production verification context for an unwrap request.
-#[derive(Debug)]
 pub struct ProductionUnwrapVerificationContext<'a> {
     expected_server_nonce: [u8; NONCE_LEN],
     server_nonce_issued_at_unix_millis: u64,
@@ -817,6 +882,33 @@ pub struct ProductionUnwrapVerificationContext<'a> {
     envelope_timestamp_unix_millis: u64,
     platform_verifier: &'a dyn ProductionPlatformVerifier,
     nonce_replay_guard: &'a dyn ProductionNonceReplayGuard,
+}
+
+/// `Debug` скрывает expected server nonce.
+/// `Debug` redacts the expected server nonce.
+impl core::fmt::Debug for ProductionUnwrapVerificationContext<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ProductionUnwrapVerificationContext")
+            .field(
+                "expected_server_nonce_len",
+                &self.expected_server_nonce.len(),
+            )
+            .field("expected_server_nonce", &"<redacted>")
+            .field(
+                "server_nonce_issued_at_unix_millis",
+                &self.server_nonce_issued_at_unix_millis,
+            )
+            .field("now_unix_millis", &self.now_unix_millis)
+            .field("freshness", &self.freshness)
+            .field("device_state", &self.device_state)
+            .field(
+                "envelope_timestamp_unix_millis",
+                &self.envelope_timestamp_unix_millis,
+            )
+            .field("platform_verifier", &self.platform_verifier)
+            .field("nonce_replay_guard", &self.nonce_replay_guard)
+            .finish()
+    }
 }
 
 impl<'a> ProductionUnwrapVerificationContext<'a> {
@@ -1154,6 +1246,114 @@ mod tests {
         }
     }
 
+    #[test]
+    fn platform_attestation_debug_redacts_backup_token() {
+        let attestation = PlatformAttestation::new(Platform::IOs, b"ios-app-attest-token").unwrap();
+
+        let debug = format!("{attestation:?}");
+
+        assert!(
+            !debug.contains("105, 111, 115, 45, 97, 112, 112"),
+            "Debug output must not leak backup attestation token bytes: {debug}"
+        );
+        assert!(
+            debug.contains("token_len"),
+            "Debug output should keep token length metadata for diagnostics: {debug}"
+        );
+    }
+
+    #[test]
+    fn signed_unwrap_request_debug_redacts_attestation_token() {
+        let (sk, vk) = make_device_keypair();
+        let req = production_ios_unwrap_request(&sk, &vk, fresh_nonce(), 1_700_000_000_000);
+
+        let debug = format!("{req:?}");
+
+        assert!(
+            !debug.contains("105, 111, 115, 45, 97, 112, 112"),
+            "Debug output must not leak nested backup attestation token bytes: {debug}"
+        );
+    }
+
+    #[test]
+    fn testing_attestation_provider_debug_redacts_prefix() {
+        let provider = TestingAttestationProvider::new(b"secret-backup-prefix");
+
+        let debug = format!("{provider:?}");
+
+        assert!(
+            !debug.contains("prefix: ["),
+            "Debug output must not leak test backup attestation prefix bytes: {debug}"
+        );
+        assert!(
+            debug.contains("prefix_len"),
+            "Debug output should keep safe prefix length metadata: {debug}"
+        );
+    }
+
+    #[test]
+    fn signed_unwrap_request_debug_redacts_replayable_request_material() {
+        let (sk, vk) = make_device_keypair();
+        let req = production_ios_unwrap_request(&sk, &vk, fresh_nonce(), 1_700_000_000_000);
+
+        let debug = format!("{req:?}");
+
+        for forbidden in [
+            "ephemeral_r: [",
+            "chat_id: [",
+            "recipient_device_pubkey: [",
+            "server_nonce: [",
+            "device_signature: [",
+            "device_pubkey: [",
+        ] {
+            assert!(
+                !debug.contains(forbidden),
+                "Debug output must not leak backup unwrap material `{forbidden}`: {debug}"
+            );
+        }
+        assert!(
+            debug.contains("ephemeral_r_len")
+                && debug.contains("chat_id_len")
+                && debug.contains("recipient_device_pubkey_len")
+                && debug.contains("server_nonce_len")
+                && debug.contains("device_signature_len")
+                && debug.contains("device_pubkey_len"),
+            "Debug output should keep safe diagnostic lengths: {debug}"
+        );
+    }
+
+    #[test]
+    fn platform_verification_input_debug_redacts_backup_token() {
+        let nonce = fresh_nonce();
+        let device_pubkey = [7u8; DEVICE_PUBKEY_LEN];
+        let input = PlatformVerificationInput {
+            platform: Platform::IOs,
+            token: b"backup-verifier-token",
+            server_nonce: &nonce,
+            device_pubkey: &device_pubkey,
+            now_unix_millis: 1_700_000_000_000,
+        };
+
+        let debug = format!("{input:?}");
+
+        assert!(
+            !debug.contains("98, 97, 99, 107, 117, 112"),
+            "Debug output must not leak backup verifier token bytes: {debug}"
+        );
+        assert!(
+            debug.contains("token_len"),
+            "Debug output should keep token length metadata for diagnostics: {debug}"
+        );
+        assert!(
+            !debug.contains("server_nonce: [") && !debug.contains("device_pubkey: ["),
+            "Debug output must not leak backup verifier nonce or device key bytes: {debug}"
+        );
+        assert!(
+            debug.contains("server_nonce_len") && debug.contains("device_pubkey_len"),
+            "Debug output should keep safe verifier input lengths: {debug}"
+        );
+    }
+
     fn active_device_state() -> ProductionDeviceState {
         ProductionDeviceState::Active {
             authorized_since_unix_millis: 1_700_000_000_000,
@@ -1180,6 +1380,31 @@ mod tests {
             replay_guard,
         )
         .expect("context must be valid for non-test-only verifier")
+    }
+
+    #[test]
+    fn production_unwrap_context_debug_redacts_expected_nonce() {
+        let verifier = AcceptingIosVerifier;
+        let replay_guard = RecordingNonceReplayGuard::default();
+        let ctx = production_context(
+            &verifier,
+            &replay_guard,
+            [0xAA; NONCE_LEN],
+            1_700_000_000_000,
+            1_700_000_000_001,
+            active_device_state(),
+        );
+
+        let debug = format!("{ctx:?}");
+
+        assert!(
+            !debug.contains("expected_server_nonce: ["),
+            "Debug output must not leak expected backup server nonce: {debug}"
+        );
+        assert!(
+            debug.contains("expected_server_nonce_len"),
+            "Debug output should keep safe nonce length metadata: {debug}"
+        );
     }
 
     #[test]

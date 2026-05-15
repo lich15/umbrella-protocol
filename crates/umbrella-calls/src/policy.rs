@@ -90,7 +90,7 @@ impl RoutingMode {
 ///
 /// User's call policy. The crate does NOT execute routing — only computes
 /// `effective_mode` / `effective_level` per peer.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CallPolicy {
     /// Default routing для непомеченных контактов. По ADR-23 — `SingleRelay`.
     /// Default routing for unmarked contacts. Per ADR-23 — `SingleRelay`.
@@ -107,6 +107,19 @@ pub struct CallPolicy {
     /// Without `true`, `DirectP2P` in `default_routing` falls back to
     /// `SingleRelay`.
     pub allow_p2p_global: bool,
+}
+
+/// `Debug` не раскрывает список sensitive-контактов.
+/// `Debug` does not reveal the sensitive-contact list.
+impl core::fmt::Debug for CallPolicy {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("CallPolicy")
+            .field("default_routing", &self.default_routing)
+            .field("sensitive_contacts_len", &self.sensitive_contacts.len())
+            .field("sensitive_contacts", &"<redacted>")
+            .field("allow_p2p_global", &self.allow_p2p_global)
+            .finish()
+    }
 }
 
 impl Default for CallPolicy {
@@ -177,6 +190,23 @@ mod tests {
 
     fn peer(byte: u8) -> PeerId {
         PeerId([byte; 32])
+    }
+
+    #[test]
+    fn call_policy_debug_redacts_sensitive_contacts() {
+        let mut p = CallPolicy::default();
+        p.mark_sensitive(peer(0xAA));
+
+        let debug = format!("{p:?}");
+
+        assert!(
+            !debug.contains("170, 170, 170"),
+            "Debug output must not leak sensitive contact identifiers: {debug}"
+        );
+        assert!(
+            debug.contains("sensitive_contacts_len"),
+            "Debug output should keep sensitive-contact count for diagnostics: {debug}"
+        );
     }
 
     #[test]

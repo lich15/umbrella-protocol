@@ -179,10 +179,22 @@ pub trait AttestationProvider: Send + Sync {
 /// Builds the token as `prefix || server_nonce` and returns it with the given
 /// platform. Intended **only** for test infrastructure; in production Sealed
 /// Servers reject tokens carrying the `Platform::Testing` tag.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct StaticTestAttestationProvider {
     platform: Platform,
     token_prefix: Vec<u8>,
+}
+
+/// `Debug` скрывает deterministic token prefix, чтобы тестовый путь не учил логировать токены.
+/// `Debug` redacts the deterministic token prefix so the test path never normalizes token logging.
+impl core::fmt::Debug for StaticTestAttestationProvider {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("StaticTestAttestationProvider")
+            .field("platform", &self.platform)
+            .field("token_prefix_len", &self.token_prefix.len())
+            .field("token_prefix", &"<redacted>")
+            .finish()
+    }
 }
 
 impl StaticTestAttestationProvider {
@@ -287,6 +299,23 @@ mod tests {
     fn attestation_provider_trait_object_is_send_sync() {
         fn assert_bounds<T: ?Sized + Send + Sync>() {}
         assert_bounds::<dyn AttestationProvider>();
+    }
+
+    #[test]
+    fn static_test_attestation_provider_debug_redacts_token_prefix() {
+        let provider =
+            StaticTestAttestationProvider::new(Platform::Testing, b"test-token-prefix".to_vec());
+
+        let debug = format!("{provider:?}");
+
+        assert!(
+            !debug.contains("test-token-prefix"),
+            "Debug output must not leak deterministic attestation token prefix: {debug}"
+        );
+        assert!(
+            debug.contains("token_prefix_len"),
+            "Debug output should keep token prefix length metadata: {debug}"
+        );
     }
 
     #[test]

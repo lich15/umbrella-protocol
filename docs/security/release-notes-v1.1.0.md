@@ -43,6 +43,13 @@ fail-closed.
   malformed input.
 - Supply-chain checks now verify both root and fuzz lockfiles so an unused
   vulnerable optional dependency cannot hide in a secondary lockfile.
+- Production transport config rejects reserved DNS names such as `.example`,
+  `.test`, `.local`, and `example.com/net/org`.
+- Blind-postman routing records replay hashes only after rate-limit acceptance,
+  so over-limit unique messages cannot fill replay memory.
+- Sensitive protocol structs now redact `Debug` output for plaintext, media
+  frames, attestation tokens, server nonces, device keys, signatures, shares,
+  QR payloads, TURN credentials, and routing identifiers.
 - Full workspace tests and local audit scripts were rerun after merging to
   `main`.
 
@@ -108,6 +115,13 @@ These are not hidden as "done". They remain release boundaries.
   гонки и битый вход.
 - Проверки цепочки зависимостей теперь смотрят и корневой lockfile, и fuzz
   lockfile, чтобы уязвимая optional-зависимость не пряталась во втором файле.
+- Боевая настройка транспорта отвергает reserved DNS-имена вроде `.example`,
+  `.test`, `.local` и `example.com/net/org`.
+- Blind postman записывает replay hash только после прохождения rate-limit,
+  поэтому уникальные сообщения сверх лимита не заполняют replay-память.
+- Чувствительные структуры протокола теперь скрывают `Debug` для plaintext,
+  media frames, attestation token, server nonce, device key, подписей, долей,
+  QR payload, TURN password и routing identifiers.
 - Полный прогон всей рабочей области и локальные аудит-скрипты были запущены
   после слияния в `main`.
 

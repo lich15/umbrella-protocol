@@ -157,7 +157,7 @@ pub const WRAPPED_KEY_V2_LEN: usize =
 /// [1121..1218)  aead_payload      : 97 bytes (AEAD ChaCha20-Poly1305 over
 ///                                              V1 WrappedKey 81 + tag 16)
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct WrappedKeyV2 {
     /// X-Wing ciphertext (1120 bytes; sender ephemeral X25519 pub встроен per
     /// draft-connolly-cfrg-xwing-kem-10).
@@ -168,6 +168,19 @@ pub struct WrappedKeyV2 {
     /// AEAD payload = ChaCha20-Poly1305(V1 WrappedKey 81 bytes) + Poly1305 tag (16 bytes).
     /// AEAD payload = ChaCha20-Poly1305(V1 WrappedKey 81 bytes) + Poly1305 tag (16 bytes).
     pub aead_payload: [u8; WRAPPED_KEY_V2_AEAD_PAYLOAD_LEN],
+}
+
+/// `Debug` скрывает V2 envelope bytes: журналы не должны хранить wrapped-key материал.
+/// `Debug` redacts V2 envelope bytes: logs must not retain wrapped-key material.
+impl core::fmt::Debug for WrappedKeyV2 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("WrappedKeyV2")
+            .field("xwing_ciphertext_len", &self.xwing_ciphertext.len())
+            .field("xwing_ciphertext", &"<redacted>")
+            .field("aead_payload_len", &self.aead_payload.len())
+            .field("aead_payload", &"<redacted>")
+            .finish()
+    }
 }
 
 impl WrappedKeyV2 {
@@ -603,6 +616,26 @@ mod tests {
         let bytes = v2_wrapped.to_bytes();
         let parsed = WrappedKeyV2::from_bytes(&bytes).unwrap();
         assert_eq!(parsed, v2_wrapped);
+    }
+
+    #[test]
+    fn v2_debug_redacts_wrapped_key_material() {
+        let wrapped = WrappedKeyV2 {
+            xwing_ciphertext: [0xAA; XWING_CIPHERTEXT_LEN],
+            aead_payload: [0xBB; WRAPPED_KEY_V2_AEAD_PAYLOAD_LEN],
+        };
+
+        let debug = format!("{wrapped:?}");
+
+        assert!(
+            !debug.contains("170, 170, 170, 170"),
+            "Debug output must not leak X-Wing ciphertext bytes: {debug}"
+        );
+        assert!(
+            !debug.contains("187, 187, 187, 187"),
+            "Debug output must not leak V2 AEAD payload bytes: {debug}"
+        );
+        assert!(debug.contains("xwing_ciphertext_len"));
     }
 
     /// `from_bytes` отвергает empty input.

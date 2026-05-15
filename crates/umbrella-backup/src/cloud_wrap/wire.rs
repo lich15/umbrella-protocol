@@ -39,7 +39,7 @@ pub const NONCE_DERIVATION_SALT: &[u8] = b"umbrellax-cloud-wrap-nonce-v1";
 ///
 /// Binds the wrapped blob to a specific sender, recipient, chat, and message
 /// sequence. Any bit-flip in any field breaks AEAD decrypt on the recipient.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct CanonicalAad {
     /// Ed25519 public key отправителя (long-term identity).
     /// Sender's Ed25519 public key (long-term identity).
@@ -53,6 +53,28 @@ pub struct CanonicalAad {
     /// Порядковый номер сообщения в чате (monotonic per-chat).
     /// Message sequence number (monotonic per chat).
     pub msg_seq: u64,
+}
+
+/// `Debug` скрывает linkable metadata: sender, recipient и chat_id не печатаются.
+/// `Debug` redacts linkable metadata: sender, recipient, and chat_id are not printed.
+impl core::fmt::Debug for CanonicalAad {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("CanonicalAad")
+            .field(
+                "sender_identity_pubkey_len",
+                &self.sender_identity_pubkey.len(),
+            )
+            .field("sender_identity_pubkey", &"<redacted>")
+            .field(
+                "recipient_device_pubkey_len",
+                &self.recipient_device_pubkey.len(),
+            )
+            .field("recipient_device_pubkey", &"<redacted>")
+            .field("chat_id_len", &self.chat_id.len())
+            .field("chat_id", &"<redacted>")
+            .field("msg_seq", &self.msg_seq)
+            .finish()
+    }
 }
 
 impl CanonicalAad {
@@ -130,7 +152,7 @@ pub fn canonical_nonce(chat_id: &[u8; CHAT_ID_LEN], msg_seq: u64) -> [u8; NONCE_
 ///
 /// Exactly 81 bytes per message regardless of recipients — `R` is shared by
 /// protocol, wrap is done once per message AEAD-key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct WrappedKey {
     /// Версия (должна быть `PROTOCOL_VERSION`).
     /// Version (must equal `PROTOCOL_VERSION`).
@@ -141,6 +163,20 @@ pub struct WrappedKey {
     /// AEAD-blob = ciphertext ‖ Poly1305 tag (48 bytes total).
     /// AEAD blob = ciphertext ‖ Poly1305 tag (48 bytes total).
     pub aead_blob: [u8; AEAD_BLOB_LEN],
+}
+
+/// `Debug` скрывает wrapped-key bytes: они не должны оставаться в диагностике.
+/// `Debug` redacts wrapped-key bytes: they must not remain in diagnostics.
+impl core::fmt::Debug for WrappedKey {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("WrappedKey")
+            .field("version", &self.version)
+            .field("ephemeral_r_len", &self.ephemeral_r.len())
+            .field("ephemeral_r", &"<redacted>")
+            .field("aead_blob_len", &self.aead_blob.len())
+            .field("aead_blob", &"<redacted>")
+            .finish()
+    }
 }
 
 impl WrappedKey {
@@ -215,6 +251,27 @@ mod tests {
     }
 
     #[test]
+    fn canonical_aad_debug_redacts_linkable_metadata() {
+        let aad = sample_aad();
+
+        let debug = format!("{aad:?}");
+
+        assert!(
+            !debug.contains("17, 17, 17, 17"),
+            "Debug output must not leak sender pubkey bytes: {debug}"
+        );
+        assert!(
+            !debug.contains("34, 34, 34, 34"),
+            "Debug output must not leak recipient device pubkey bytes: {debug}"
+        );
+        assert!(
+            !debug.contains("51, 51, 51, 51"),
+            "Debug output must not leak chat id bytes: {debug}"
+        );
+        assert!(debug.contains("chat_id_len"));
+    }
+
+    #[test]
     fn canonical_aad_length_is_104_bytes() {
         assert_eq!(CANONICAL_AAD_LEN, 104);
     }
@@ -260,6 +317,27 @@ mod tests {
         assert_eq!(bytes.len(), WRAPPED_KEY_LEN);
         let parsed = WrappedKey::from_bytes(&bytes).unwrap();
         assert_eq!(parsed, wk);
+    }
+
+    #[test]
+    fn wrapped_key_debug_redacts_wrapped_key_material() {
+        let wk = WrappedKey {
+            version: PROTOCOL_VERSION,
+            ephemeral_r: [0xAA; POINT_LEN],
+            aead_blob: [0xBB; AEAD_BLOB_LEN],
+        };
+
+        let debug = format!("{wk:?}");
+
+        assert!(
+            !debug.contains("170, 170, 170, 170"),
+            "Debug output must not leak ephemeral R bytes: {debug}"
+        );
+        assert!(
+            !debug.contains("187, 187, 187, 187"),
+            "Debug output must not leak wrapped AEAD blob bytes: {debug}"
+        );
+        assert!(debug.contains("aead_blob_len"));
     }
 
     #[test]

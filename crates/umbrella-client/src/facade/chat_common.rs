@@ -142,7 +142,7 @@ pub const UMBRELLA_CIPHERSUITE_PQ_HYBRID: u16 = 0x004D;
 /// Расшифрованное сообщение — результат `fetch_inbox`.
 ///
 /// Decrypted message — result of `fetch_inbox`.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DecryptedMessage {
     /// Идентификатор сообщения.
     /// Message identifier.
@@ -168,6 +168,21 @@ pub struct DecryptedMessage {
     pub text: String,
 }
 
+/// `Debug` скрывает тело сообщения, но оставляет безопасную диагностику.
+/// `Debug` redacts the message body while preserving safe diagnostics.
+impl core::fmt::Debug for DecryptedMessage {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("DecryptedMessage")
+            .field("message_id", &self.message_id)
+            .field("chat_id", &self.chat_id)
+            .field("sender", &self.sender)
+            .field("timestamp", &self.timestamp)
+            .field("text_len", &self.text.len())
+            .field("text", &"<redacted>")
+            .finish()
+    }
+}
+
 /// Внутренний helper: шифрование MLS AEAD + padding. Используется обоими
 /// фасадами. Режим-специфичные шаги (Cloud-wrap / sealed-sender + blind-
 /// postman) делают сами [`CloudChat`] / [`SecretChat`].
@@ -190,4 +205,31 @@ pub(crate) async fn send_mls_text(
     _text: String,
 ) -> Result<MessageId> {
     Ok(MessageId([0u8; 16]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decrypted_message_debug_redacts_plaintext() {
+        let msg = DecryptedMessage {
+            message_id: MessageId([1u8; 16]),
+            chat_id: ChatId([2u8; 32]),
+            sender: PeerId([3u8; 32]),
+            timestamp: 1_700_000_000_000,
+            text: "private-chat-secret".to_string(),
+        };
+
+        let debug = format!("{msg:?}");
+
+        assert!(
+            !debug.contains("private-chat-secret"),
+            "Debug output must not leak decrypted chat plaintext: {debug}"
+        );
+        assert!(
+            debug.contains("text_len"),
+            "Debug output should keep text length metadata for diagnostics: {debug}"
+        );
+    }
 }

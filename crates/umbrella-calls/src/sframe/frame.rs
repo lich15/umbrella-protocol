@@ -128,7 +128,6 @@ pub fn parse_kid(kid: u64) -> (u32, u16) {
 
 /// Результат успешной расшифровки кадра.
 /// Result of a successful frame decryption.
-#[derive(Debug)]
 pub struct DecryptedFrame {
     /// Расшифрованный plaintext. Decrypted plaintext.
     pub plaintext: Vec<u8>,
@@ -141,6 +140,21 @@ pub struct DecryptedFrame {
     /// Полная эпоха (из [`SframeContext`] cache, не из обрезанного KID).
     /// Full epoch (from the [`SframeContext`] cache, not the truncated KID).
     pub epoch: u64,
+}
+
+/// `Debug` скрывает расшифрованный кадр: звонки нельзя случайно унести в журналы.
+/// `Debug` redacts decrypted frame bytes: calls must not leak into logs.
+impl core::fmt::Debug for DecryptedFrame {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("DecryptedFrame")
+            .field("plaintext_len", &self.plaintext.len())
+            .field("plaintext", &"<redacted>")
+            .field("kid", &self.kid)
+            .field("counter", &self.counter)
+            .field("sender_leaf", &self.sender_leaf)
+            .field("epoch", &self.epoch)
+            .finish()
+    }
 }
 
 /// Активный SFrame encryption context одного участника группы.
@@ -446,6 +460,28 @@ mod tests {
             epoch,
         ));
         ctx
+    }
+
+    #[test]
+    fn decrypted_frame_debug_redacts_plaintext() {
+        let frame = DecryptedFrame {
+            plaintext: b"private-sframe-media".to_vec(),
+            kid: 11,
+            counter: 12,
+            sender_leaf: 13,
+            epoch: 14,
+        };
+
+        let debug = format!("{frame:?}");
+
+        assert!(
+            !debug.contains("112, 114, 105, 118, 97, 116, 101"),
+            "Debug output must not leak decrypted SFrame plaintext bytes: {debug}"
+        );
+        assert!(
+            debug.contains("plaintext_len"),
+            "Debug output should keep plaintext length metadata for diagnostics: {debug}"
+        );
     }
 
     #[test]

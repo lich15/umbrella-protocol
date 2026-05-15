@@ -59,7 +59,7 @@ pub enum MediaCodec {
 /// Encoded media frame — готовый к SFrame/SRTP шифрованию.
 ///
 /// Encoded media frame — ready for SFrame/SRTP encryption.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MediaFrame {
     /// RTP timestamp (audio samples at 48k / video 90kHz clock).
     ///
@@ -81,6 +81,21 @@ pub struct MediaFrame {
     ///
     /// `true` if this is a video keyframe (I-frame / IDR). Ignored for audio.
     pub is_keyframe: bool,
+}
+
+/// `Debug` скрывает payload кадра: аудио/видео тоже приватные данные.
+/// `Debug` redacts frame payload: audio/video bytes are private data too.
+impl core::fmt::Debug for MediaFrame {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MediaFrame")
+            .field("timestamp_rtp", &self.timestamp_rtp)
+            .field("sequence_number", &self.sequence_number)
+            .field("codec", &self.codec)
+            .field("payload_len", &self.payload.len())
+            .field("payload", &"<redacted>")
+            .field("is_keyframe", &self.is_keyframe)
+            .finish()
+    }
 }
 
 /// `MediaSource` — native-side pulls encoded frames from capture pipeline.
@@ -181,5 +196,27 @@ mod tests {
         assert_eq!(f.codec, MediaCodec::H264);
         assert_eq!(f.payload, vec![1, 2, 3]);
         assert!(f.is_keyframe);
+    }
+
+    #[test]
+    fn media_frame_debug_redacts_encoded_payload() {
+        let frame = MediaFrame {
+            timestamp_rtp: 7,
+            sequence_number: 8,
+            codec: MediaCodec::Opus48k,
+            payload: b"secret-opus-frame".to_vec(),
+            is_keyframe: false,
+        };
+
+        let debug = format!("{frame:?}");
+
+        assert!(
+            !debug.contains("115, 101, 99, 114, 101, 116"),
+            "Debug output must not leak encoded media payload bytes: {debug}"
+        );
+        assert!(
+            debug.contains("payload_len"),
+            "Debug output should keep payload length metadata for diagnostics: {debug}"
+        );
     }
 }
