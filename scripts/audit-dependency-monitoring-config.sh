@@ -39,10 +39,10 @@ require_grep ".github/dependabot.yml" "directory: \"/crates/umbrella-fuzz/fuzz\"
 require_grep ".github/dependabot.yml" "version-update:semver-major" \
   "dependabot must avoid silent major upgrades"
 
-# RU: Ежедневный сторож должен проверять уязвимости, оба lockfile и локальные ворота.
-# EN: The daily sentinel must check advisories, both lockfiles, and local gates.
-require_grep ".github/workflows/dependency-monitor.yml" "cron:" \
-  "dependency monitor must run on a schedule"
+# RU: Шестичасовой сторож должен проверять уязвимости, оба lockfile и локальные ворота.
+# EN: The six-hour sentinel must check advisories, both lockfiles, and local gates.
+require_grep ".github/workflows/dependency-monitor.yml" "cron: '40 \\*/6 \\* \\* \\*'" \
+  "dependency monitor must run every six hours"
 require_grep ".github/workflows/dependency-monitor.yml" "cargo audit -f crates/umbrella-fuzz/fuzz/Cargo.lock" \
   "dependency monitor must audit fuzz Cargo.lock"
 require_grep ".github/workflows/dependency-monitor.yml" "scripts/audit-pq-backend-policy.sh" \

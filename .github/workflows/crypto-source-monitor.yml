@@ -1,0 +1,35 @@
+name: crypto-source-monitor
+
+# RU: Сторож официальных крипто-источников. Он не обновляет код сам.
+# EN: Official crypto-source sentinel. It does not update code by itself.
+
+on:
+  schedule:
+    # RU: Каждые 6 часов. GitHub может немного задержать cron под нагрузкой.
+    # EN: Every 6 hours. GitHub may delay cron slightly under load.
+    - cron: '20 */6 * * *'
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/security/crypto-source-watchlist.json'
+      - 'docs/security/crypto-source-watchlist.md'
+      - 'docs/security/current-status.md'
+      - 'docs/README.md'
+      - 'scripts/audit-crypto-source-watchlist.sh'
+      - '.github/workflows/crypto-source-monitor.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  official-crypto-sources:
+    name: Official crypto source watchlist
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Check official crypto sources
+        run: bash scripts/audit-crypto-source-watchlist.sh --online

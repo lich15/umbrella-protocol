@@ -16,6 +16,8 @@ verify, and test the protocol without exposing private working material.
   `security/release-notes-v1.1.0.md`.
 - Live dependency monitoring:
   `security/dependency-monitoring.md`.
+- Official crypto-source monitoring:
+  `security/crypto-source-watchlist.md`.
 - External crypto release audit:
   `audits/external-crypto-release-audit-status-2026-05-14.md`.
 - `WORKING_RULES.md` - рабочие постулаты проекта.
@@ -66,9 +68,13 @@ root and fuzz lockfiles so `RUSTSEC-2026-0124` is closed in the checked
 supply-chain graph, not ignored.
 Live dependency monitoring is documented in
 [`security/dependency-monitoring.md`](security/dependency-monitoring.md):
-Dependabot prepares dependency PRs, while the daily monitor checks root/fuzz
+Dependabot prepares dependency PRs, while the six-hour monitor checks root/fuzz
 RustSec advisories, cargo-deny policy, PQ/backend boundaries, and dry-run update
 drift without merging updates into `main`.
+Official crypto-source monitoring is documented in
+[`security/crypto-source-watchlist.md`](security/crypto-source-watchlist.md):
+the six-hour monitor watches X-Wing, MLS, OPRF, SFrame, IANA SFrame, and NIST
+PQC sources without changing code automatically.
 Local audits also include `scripts/audit-test-only-production-boundary.sh`,
 which checks that test-only and incomplete paths do not look like production
 paths.
@@ -103,6 +109,8 @@ exit code 0 for the exact command.
   `security/release-notes-v1.1.0.md`.
 - Живой мониторинг зависимостей:
   `security/dependency-monitoring.md`.
+- Мониторинг официальных крипто-источников:
+  `security/crypto-source-watchlist.md`.
 - Внешний крипто-аудит выпуска:
   `audits/external-crypto-release-audit-status-2026-05-14.md`.
 - `WORKING_RULES.md` - рабочие постулаты проекта.
@@ -156,9 +164,13 @@ HPKE из `hpke-rs`, поэтому `RUSTSEC-2026-0124` закрыт в пров
 зависимостей, а не проигнорирован.
 Живой мониторинг зависимостей описан в
 [`security/dependency-monitoring.md`](security/dependency-monitoring.md):
-Dependabot готовит PR с обновлениями, а ежедневный сторож проверяет RustSec для
+Dependabot готовит PR с обновлениями, а шестичасовой сторож проверяет RustSec для
 корневого и fuzz lockfile, cargo-deny, PQ/backend-границы и доступные обновления
 через dry-run без вливания изменений в `main`.
+Мониторинг официальных крипто-источников описан в
+[`security/crypto-source-watchlist.md`](security/crypto-source-watchlist.md):
+шестичасовой сторож следит за X-Wing, MLS, OPRF, SFrame, IANA SFrame и NIST PQC
+источниками, не меняя код автоматически.
 Локальные аудиты также включают `scripts/audit-test-only-production-boundary.sh`;
 он проверяет, что тестовые и неполные пути не выглядят боевыми.
 Локальные выпускные ворота записаны в

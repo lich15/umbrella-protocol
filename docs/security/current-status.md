@@ -51,9 +51,13 @@ Implemented and currently documented:
   checks this boundary;
 - live dependency monitoring is documented in
   `docs/security/dependency-monitoring.md`; Dependabot prepares dependency PRs,
-  and the daily dependency monitor checks root/fuzz RustSec advisories,
+  and the six-hour dependency monitor checks root/fuzz RustSec advisories,
   cargo-deny policy, PQ/backend boundaries, and dry-run update drift without
   merging updates into `main`;
+- official cryptographic source monitoring is documented in
+  `docs/security/crypto-source-watchlist.md`; the six-hour
+  `crypto-source-monitor` watches X-Wing, MLS, OPRF, SFrame, IANA SFrame, and
+  NIST PQC sources without changing code automatically;
 - external crypto attack ledger:
   `docs/security/external-crypto-attack-ledger-2026-05-14.md` and
   `docs/security/external-crypto-attack-ledger-2026-05-15.md`; they record
@@ -129,9 +133,13 @@ Umbrella Protocol 1.1.0 — набор Rust-крейтов протокола с
   `scripts/audit-pq-backend-policy.sh`;
 - живой мониторинг зависимостей описан в
   `docs/security/dependency-monitoring.md`; Dependabot готовит PR с
-  обновлениями, а ежедневный сторож проверяет RustSec для корневого и fuzz
+  обновлениями, а шестичасовой сторож проверяет RustSec для корневого и fuzz
   lockfile, cargo-deny, PQ/backend-границы и доступные обновления через dry-run,
   не вливая изменения в `main`;
+- мониторинг официальных криптографических источников описан в
+  `docs/security/crypto-source-watchlist.md`; шестичасовой
+  `crypto-source-monitor` следит за X-Wing, MLS, OPRF, SFrame, IANA SFrame и
+  NIST PQC источниками, не меняя код автоматически;
 - внешний реестр криптографических атак:
   `docs/security/external-crypto-attack-ledger-2026-05-14.md` и
   `docs/security/external-crypto-attack-ledger-2026-05-15.md`; они связывают

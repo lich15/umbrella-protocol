@@ -10,12 +10,17 @@ Added:
 
 - Dependabot configuration for the root Cargo workspace, the separate fuzz
   lockfile, and GitHub Actions.
-- Daily `dependency-monitor` workflow for root/fuzz RustSec checks,
+- Six-hour `dependency-monitor` workflow for root/fuzz RustSec checks,
   cargo-deny policy, PQ/backend boundary checks, and dry-run update reporting.
+- Six-hour `crypto-source-monitor` workflow for official X-Wing, MLS, OPRF,
+  SFrame, IANA SFrame, and NIST PQC source drift.
 - Local audit script that prevents removing the monitoring files or turning
   dependency updates into silent `main` changes.
+- Local audit script for the official crypto-source watchlist.
 - Public dependency-monitoring document that explains the review-first update
   policy.
+- Public crypto-source watchlist document that explains why crypto-source drift
+  is reviewed by a human before code changes.
 
 ### 1.1.0-security-hardening - 2026-05-15
 
@@ -125,13 +130,18 @@ Security:
 
 - Настройка Dependabot для корневой Cargo-области, отдельного fuzz lockfile и
   GitHub Actions.
-- Ежедневный `dependency-monitor` для проверки RustSec по корневому и fuzz
+- Шестичасовой `dependency-monitor` для проверки RustSec по корневому и fuzz
   lockfile, cargo-deny, PQ/backend-границ и сухого отчёта по доступным
   обновлениям.
+- Шестичасовой `crypto-source-monitor` для отслеживания официальных источников
+  X-Wing, MLS, OPRF, SFrame, IANA SFrame и NIST PQC.
 - Локальный аудит, который не даёт удалить мониторинг или превратить обновления
   зависимостей в тихие изменения `main`.
+- Локальный аудит реестра официальных крипто-источников.
 - Публичный документ по мониторингу зависимостей с правилом: сначала проверка и
   review, потом вливание.
+- Публичный документ по крипто-источникам: изменение стандарта разбирается
+  человеком до изменения кода.
 
 ### 1.1.0-security-hardening - 2026-05-15
 
