@@ -86,15 +86,28 @@ impl ReplayGuard {
     /// Проверяет hash против окна и записывает если уникальное.
     /// Checks the hash against the window and records it if unique.
     pub fn check_and_record(&mut self, hash: [u8; 32], now_unix: u64) -> ReplayDecision {
-        self.evict_expired(now_unix);
-
-        if self.active.contains(&hash) {
+        if self.is_duplicate(hash, now_unix) {
             return ReplayDecision::Duplicate;
         }
 
-        self.active.insert(hash);
-        self.queue.push_back((now_unix, hash));
+        self.record(hash, now_unix);
         ReplayDecision::Accept
+    }
+
+    /// Проверяет, есть ли hash в активном окне, но не записывает новый.
+    /// Checks whether the hash is active without recording a new one.
+    pub fn is_duplicate(&mut self, hash: [u8; 32], now_unix: u64) -> bool {
+        self.evict_expired(now_unix);
+        self.active.contains(&hash)
+    }
+
+    /// Записывает hash в окно после всех внешних разрешающих проверок.
+    /// Records the hash after all external allow checks have passed.
+    pub fn record(&mut self, hash: [u8; 32], now_unix: u64) {
+        self.evict_expired(now_unix);
+        if self.active.insert(hash) {
+            self.queue.push_back((now_unix, hash));
+        }
     }
 
     /// Удаляет из окна записи старее `now_unix - window_secs`.

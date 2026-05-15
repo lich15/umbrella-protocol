@@ -181,7 +181,7 @@ pub type Result<T, E = SealedSenderError> = core::result::Result<T, E>;
 
 /// Распакованный Sealed Sender envelope (после unseal).
 /// Unpacked Sealed Sender envelope (after unseal).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct OpenedEnvelope {
     /// Публичный identity Ed25519-ключ отправителя (аутентифицирован inner-подписью).
     /// Sender public Ed25519 identity key (authenticated by the inner signature).
@@ -189,6 +189,16 @@ pub struct OpenedEnvelope {
     /// Плейнтекст сообщения (после strip padding).
     /// Message plaintext (after strip padding).
     pub message: Vec<u8>,
+}
+
+impl core::fmt::Debug for OpenedEnvelope {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("OpenedEnvelope")
+            .field("sender_identity", &self.sender_identity)
+            .field("message_len", &self.message.len())
+            .field("message", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Запечатывает application-message так, чтобы сервер не видел отправителя.
@@ -557,6 +567,32 @@ mod tests {
         .unwrap();
         let opened = unseal(bob.as_ref(), &wire).unwrap();
         assert_eq!(opened.sender_identity, alice.identity_public());
+    }
+
+    #[test]
+    fn opened_envelope_debug_redacts_message_plaintext() {
+        let alice = fresh_keystore();
+        let bob = fresh_keystore();
+        let mut rng = OsRng;
+        let wire = seal(
+            alice.as_ref(),
+            &bob.identity_x25519_public(),
+            b"private-chat-secret",
+            &mut rng,
+        )
+        .unwrap();
+
+        let opened = unseal(bob.as_ref(), &wire).unwrap();
+        let debug = format!("{opened:?}");
+
+        assert!(
+            !debug.contains("private-chat-secret"),
+            "Debug output must not leak message plaintext"
+        );
+        assert!(
+            !debug.contains("112, 114, 105, 118, 97, 116, 101"),
+            "Debug output must not leak message bytes"
+        );
     }
 
     #[test]

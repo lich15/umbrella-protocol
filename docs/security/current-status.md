@@ -54,6 +54,10 @@ Implemented and currently documented:
   and the daily dependency monitor checks root/fuzz RustSec advisories,
   cargo-deny policy, PQ/backend boundaries, and dry-run update drift without
   merging updates into `main`;
+- the 2026-05-15 security-hardening audit closed local debug/log leakage in
+  sensitive protocol structs, rejected reserved DNS names in production
+  transport config, and fixed the blind-postman replay-window growth path where
+  unique over-limit messages could consume replay memory;
 - external crypto attack ledger:
   `docs/security/external-crypto-attack-ledger-2026-05-14.md` and
   `docs/security/external-crypto-attack-ledger-2026-05-15.md`; they record
@@ -132,6 +136,10 @@ Umbrella Protocol 1.1.0 — набор Rust-крейтов протокола с
   обновлениями, а ежедневный сторож проверяет RustSec для корневого и fuzz
   lockfile, cargo-deny, PQ/backend-границы и доступные обновления через dry-run,
   не вливая изменения в `main`;
+- аудит усиления от 2026-05-15 закрыл локальные утечки через `Debug`/журналы в
+  чувствительных структурах протокола, запретил reserved DNS-имена в боевой
+  настройке транспорта и исправил рост replay-памяти blind postman, когда
+  уникальные сообщения сверх лимита могли занимать replay-окно;
 - внешний реестр криптографических атак:
   `docs/security/external-crypto-attack-ledger-2026-05-14.md` и
   `docs/security/external-crypto-attack-ledger-2026-05-15.md`; они связывают

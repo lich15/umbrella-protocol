@@ -295,7 +295,7 @@ impl SqliteMetadataStore {
 /// Одно расшифрованное сообщение, возвращается из `fetch_messages`.
 ///
 /// One decrypted message returned from `fetch_messages`.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct StoredMessage {
     /// 16-байтовый opaque message identifier.
     /// 16-byte opaque message identifier.
@@ -309,6 +309,20 @@ pub struct StoredMessage {
     /// Plaintext (УТФ-8) сообщения после AEAD decrypt.
     /// Plaintext (UTF-8) message after AEAD decrypt.
     pub text: String,
+}
+
+/// `Debug` не печатает plaintext из локального хранилища.
+/// `Debug` never prints plaintext loaded from local storage.
+impl core::fmt::Debug for StoredMessage {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("StoredMessage")
+            .field("message_id", &self.message_id)
+            .field("timestamp_ms", &self.timestamp_ms)
+            .field("sender", &self.sender)
+            .field("text_len", &self.text.len())
+            .field("text", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Вспомогательное преобразование `Vec<u8>` → `[u8; N]` с ошибкой если
@@ -328,4 +342,30 @@ fn fixed_array<const N: usize>(src: &[u8], name: &str) -> Result<[u8; N], Client
         ))
     })?;
     Ok(arr)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stored_message_debug_redacts_plaintext() {
+        let msg = StoredMessage {
+            message_id: [1u8; 16],
+            timestamp_ms: 1_700_000_000_000,
+            sender: [2u8; 32],
+            text: "private-sqlite-secret".to_string(),
+        };
+
+        let debug = format!("{msg:?}");
+
+        assert!(
+            !debug.contains("private-sqlite-secret"),
+            "Debug output must not leak decrypted stored message text: {debug}"
+        );
+        assert!(
+            debug.contains("text_len"),
+            "Debug output should keep text length metadata for diagnostics: {debug}"
+        );
+    }
 }

@@ -50,7 +50,7 @@ pub enum EnvelopeKind {
 
 /// Результат парсинга MLSMessage для серверной маршрутизации.
 /// Result of parsing an MLSMessage for server-side routing.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ParsedEnvelope {
     /// Тип body. Body kind.
     pub kind: EnvelopeKind,
@@ -67,6 +67,22 @@ pub struct ParsedEnvelope {
     /// SHA-256 от оригинальных байт — используется для anti-replay.
     /// SHA-256 of the original bytes — used for anti-replay.
     pub message_hash: [u8; 32],
+}
+
+/// `Debug` скрывает routing identifiers и replay hash.
+/// `Debug` redacts routing identifiers and replay hash.
+impl core::fmt::Debug for ParsedEnvelope {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ParsedEnvelope")
+            .field("kind", &self.kind)
+            .field("group_id_len", &self.group_id.as_ref().map(Vec::len))
+            .field("group_id", &"<redacted>")
+            .field("epoch", &self.epoch)
+            .field("wire_len", &self.wire_len)
+            .field("message_hash_len", &self.message_hash.len())
+            .field("message_hash", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Ошибки парсинга wire-format. Wire-format parsing errors.
@@ -262,6 +278,32 @@ mod tests {
             0x78, 0x52, 0xb8, 0x55,
         ];
         assert_eq!(h, expected);
+    }
+
+    #[test]
+    fn parsed_envelope_debug_redacts_routing_identifiers() {
+        let parsed = ParsedEnvelope {
+            kind: EnvelopeKind::PrivateMessage,
+            group_id: Some(vec![0xAA, 0xBB, 0xCC, 0xDD]),
+            epoch: Some(7),
+            wire_len: 1024,
+            message_hash: [0xEE; 32],
+        };
+
+        let debug = format!("{parsed:?}");
+
+        assert!(
+            !debug.contains("group_id: Some(["),
+            "Debug output must not leak group routing bytes: {debug}"
+        );
+        assert!(
+            !debug.contains("message_hash: ["),
+            "Debug output must not leak replay/correlation hash bytes: {debug}"
+        );
+        assert!(
+            debug.contains("group_id_len") && debug.contains("message_hash_len"),
+            "Debug output should keep safe diagnostic lengths: {debug}"
+        );
     }
 
     #[test]

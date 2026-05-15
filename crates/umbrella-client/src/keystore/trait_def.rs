@@ -38,13 +38,13 @@ use async_trait::async_trait;
 use thiserror::Error;
 
 /// Результат `bootstrap_identity`. Содержит публичные identity/device
-/// материалы — все поля безопасно логируются / сериализуются. Private keys
-/// остаются внутри Secure Enclave / StrongBox.
+/// ключи и платформенный attestation. Private keys остаются внутри Secure
+/// Enclave / StrongBox; attestation bytes не печатаются в `Debug`.
 ///
-/// Result of `bootstrap_identity`. Holds public identity/device material —
-/// all fields are safe to log / serialize. Private keys remain inside
-/// Secure Enclave / StrongBox.
-#[derive(Debug, Clone)]
+/// Result of `bootstrap_identity`. Holds public identity/device keys and
+/// platform attestation. Private keys remain inside Secure Enclave /
+/// StrongBox; attestation bytes are not printed by `Debug`.
+#[derive(Clone)]
 pub struct BootstrappedIdentity {
     /// Ed25519 identity pubkey (32 байта) — корень доверия пользователя,
     /// публикуется в Key Transparency log как `IdentityAnnounce`.
@@ -75,6 +75,23 @@ pub struct BootstrappedIdentity {
     /// Google Play Integrity wire bytes). Servers verify this to confirm the
     /// device was genuinely created inside a TEE.
     pub primary_device_attestation: Vec<u8>,
+}
+
+/// `Debug` скрывает platform attestation: token-like bytes могут быть replay/forensics риском.
+/// `Debug` redacts platform attestation: token-like bytes can be replay/forensics risk.
+impl core::fmt::Debug for BootstrappedIdentity {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("BootstrappedIdentity")
+            .field("identity_pubkey", &self.identity_pubkey)
+            .field("identity_x25519_pubkey", &self.identity_x25519_pubkey)
+            .field("primary_device_pubkey", &self.primary_device_pubkey)
+            .field(
+                "primary_device_attestation_len",
+                &self.primary_device_attestation.len(),
+            )
+            .field("primary_device_attestation", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Ошибки KeyStore. Отдельный enum на уровне trait — реализация native
@@ -265,4 +282,30 @@ pub trait PersistentKeyStore: Send + Sync {
     /// PRK = HKDF-SHA512(identity_seed, info = b"umbrellax-sqlite-master-v1").
     /// Version `v1` — future-proof master-key rotation.
     async fn derive_storage_master_key(&self) -> Result<[u8; 32], KeyStoreError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bootstrapped_identity_debug_redacts_platform_attestation() {
+        let identity = BootstrappedIdentity {
+            identity_pubkey: [1u8; 32],
+            identity_x25519_pubkey: [2u8; 32],
+            primary_device_pubkey: [3u8; 32],
+            primary_device_attestation: b"device-attestation-token".to_vec(),
+        };
+
+        let debug = format!("{identity:?}");
+
+        assert!(
+            !debug.contains("device-attestation-token"),
+            "Debug output must not leak platform attestation bytes: {debug}"
+        );
+        assert!(
+            debug.contains("primary_device_attestation_len"),
+            "Debug output should keep attestation length metadata: {debug}"
+        );
+    }
 }

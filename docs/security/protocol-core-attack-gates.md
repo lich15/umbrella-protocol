@@ -18,6 +18,7 @@
 | Устройства | WebAuthn-ключ в контексте не совпадает с зарегистрированным | закрыто тестом | `webauthn_rejects_context_device_key_not_registered_key` |
 | Клиентский запуск | `ClientCore::new_with_http2` выглядит боевым, но не несёт SPKI pins и оставляет часть транспортов заглушками | закрыто отказом | `new_with_http2_fails_closed_until_full_production_transport_is_wired` |
 | Транспорт | `http://`, локальные, частные, link-local, CGNAT, IPv6-local и документационные адреса в боевой настройке | закрыто тестом | `production_transport_rejects_http_url`, `production_transport_rejects_test_hosts`, `production_transport_rejects_ip_literal_hosts`, `production_transport_rejects_link_local_and_cgnat_hosts`, `production_transport_rejects_ipv6_local_hosts` |
+| Транспорт | reserved DNS-имена `.example`, `.test`, `.local` и `example.com/net/org` выглядят как боевые адреса | закрыто тестом | `production_transport_rejects_reserved_dns_test_names` |
 | Транспорт | IPv4-mapped IPv6 ведёт на локальный, частный, CGNAT или документационный адрес | закрыто тестом | `production_transport_rejects_ipv4_mapped_ipv6_forbidden_hosts` |
 | Транспорт | неверный SPKI pin | закрыто тестом | `wrong_key_for_same_server_is_rejected_after_inner_accepts` |
 | Транспорт | pin не должен обходить обычную проверку сертификата | закрыто тестом | `matching_pin_does_not_bypass_inner_certificate_failure` |
@@ -42,11 +43,13 @@
 | Sealed Sender | подделанная внутренняя подпись V2 после успешного расшифрования | закрыто тестом | `forged_inner_signature_rejected_after_successful_v2_decrypt` |
 | Sealed Sender | повтор к другому получателю | закрыто тестом | `real_attack_replay_envelope_to_different_recipient_aad_blocks` |
 | Sealed Sender | V1 как V2 и V2 как V1 | закрыто тестом | `real_attack_cross_version_replay_v1_to_v2_blocked` |
+| Blind postman | unique flood сверх `rate-limit` раздувает replay-память | закрыто тестом | `rate_limited_unique_messages_do_not_fill_replay_window`: hash записывается в replay-окно только после разрешения rate-limit |
 | Зависимости | опасная зависимость или cargo-deny policy обходятся локально | закрыто воротами | `scripts/audit-dependency-policy.sh` |
 | Нагрузка | тысячи локальных KT-листьев с proof и witness-порогом | закрыто локальным тестом | `local_load_many_kt_leaves_keep_valid_inclusion_and_witness_roots` |
 | Гонки | одновременный replay одного hash | закрыто локальным тестом | `concurrent_replay_guard_accepts_one_duplicate_hash_and_rejects_the_rest` |
 | Гонки | параллельная проверка witness-эпох | закрыто локальным тестом | `concurrent_witness_verification_has_no_shared_state_corruption` |
-| Секреты | отладочный вывод и недоделанные пути | закрыто локальным аудитом | `scripts/audit-local-release-hardening.sh` |
+| Секреты | `Debug` и отладочные журналы раскрывают plaintext, token, server nonce, подписи, QR payload, TURN password или routing identifiers | закрыто тестами и локальным аудитом | redaction-тесты в `umbrella-backup`, `umbrella-oprf`, `umbrella-client`, `umbrella-ffi`, `umbrella-mls`, `umbrella-calls`, `umbrella-platform-verifier`, `umbrella-sealed-sender`, `umbrella-padding`, `umbrella-server-blind-postman`; `scripts/audit-local-release-hardening.sh` |
+| Недоделанное | отладочный вывод и недоделанные пути выглядят боевыми | закрыто локальным аудитом | `scripts/audit-local-release-hardening.sh`, `scripts/audit-test-only-production-boundary.sh` |
 
 ## Внешний реестр
 

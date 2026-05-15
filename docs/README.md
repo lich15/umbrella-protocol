@@ -16,6 +16,8 @@ verify, and test the protocol without exposing private working material.
   `security/release-notes-v1.1.0.md`.
 - Live dependency monitoring:
   `security/dependency-monitoring.md`.
+- 2026-05-15 security-hardening audit:
+  `audits/security-hardening-audit-2026-05-15.md`.
 - External crypto release audit:
   `audits/external-crypto-release-audit-status-2026-05-14.md`.
 - `WORKING_RULES.md` - рабочие постулаты проекта.
@@ -69,6 +71,11 @@ Live dependency monitoring is documented in
 Dependabot prepares dependency PRs, while the daily monitor checks root/fuzz
 RustSec advisories, cargo-deny policy, PQ/backend boundaries, and dry-run update
 drift without merging updates into `main`.
+The 2026-05-15 local security-hardening audit is recorded in
+[`audits/security-hardening-audit-2026-05-15.md`](audits/security-hardening-audit-2026-05-15.md).
+It covers reserved production DNS rejection, blind-postman replay-memory
+hardening, and broad `Debug` redaction for plaintext, tokens, nonces, keys,
+shares, QR payloads, TURN credentials, and routing identifiers.
 Local audits also include `scripts/audit-test-only-production-boundary.sh`,
 which checks that test-only and incomplete paths do not look like production
 paths.
@@ -103,6 +110,8 @@ exit code 0 for the exact command.
   `security/release-notes-v1.1.0.md`.
 - Живой мониторинг зависимостей:
   `security/dependency-monitoring.md`.
+- Аудит усиления безопасности от 2026-05-15:
+  `audits/security-hardening-audit-2026-05-15.md`.
 - Внешний крипто-аудит выпуска:
   `audits/external-crypto-release-audit-status-2026-05-14.md`.
 - `WORKING_RULES.md` - рабочие постулаты проекта.
@@ -159,6 +168,11 @@ HPKE из `hpke-rs`, поэтому `RUSTSEC-2026-0124` закрыт в пров
 Dependabot готовит PR с обновлениями, а ежедневный сторож проверяет RustSec для
 корневого и fuzz lockfile, cargo-deny, PQ/backend-границы и доступные обновления
 через dry-run без вливания изменений в `main`.
+Локальный аудит усиления от 2026-05-15 записан в
+[`audits/security-hardening-audit-2026-05-15.md`](audits/security-hardening-audit-2026-05-15.md).
+Он покрывает запрет reserved DNS-имён в боевой настройке, защиту replay-памяти
+blind postman и широкое скрытие `Debug` для plaintext, token, server nonce,
+ключей, долей, QR payload, TURN password и routing identifiers.
 Локальные аудиты также включают `scripts/audit-test-only-production-boundary.sh`;
 он проверяет, что тестовые и неполные пути не выглядят боевыми.
 Локальные выпускные ворота записаны в

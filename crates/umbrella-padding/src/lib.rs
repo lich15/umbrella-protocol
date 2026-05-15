@@ -230,8 +230,18 @@ pub fn strip_padding_zeroizing(padded: &[u8]) -> Result<ZeroizingPayload> {
 
 /// Обёртка `Vec<u8>` которая zeroизирует содержимое при drop.
 /// `Vec<u8>` wrapper that zeroises the contents on drop.
-#[derive(Debug)]
 pub struct ZeroizingPayload(Vec<u8>);
+
+/// `Debug` скрывает payload: после снятия padding это уже исходное сообщение/секрет.
+/// `Debug` redacts the payload: after unpadding this is the original message/secret.
+impl core::fmt::Debug for ZeroizingPayload {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ZeroizingPayload")
+            .field("len", &self.0.len())
+            .field("bytes", &"<redacted>")
+            .finish()
+    }
+}
 
 impl ZeroizingPayload {
     /// Доступ к payload как срез.
@@ -505,6 +515,22 @@ mod tests {
         let z = strip_padding_zeroizing(&padded).unwrap();
         assert_eq!(z.len(), 0);
         assert!(z.is_empty());
+    }
+
+    #[test]
+    fn zeroizing_payload_debug_redacts_bytes() {
+        let payload = ZeroizingPayload(b"secret-message-after-unpadding".to_vec());
+
+        let debug = format!("{payload:?}");
+
+        assert!(
+            !debug.contains("115, 101, 99, 114, 101, 116"),
+            "Debug output must not leak stripped payload bytes: {debug}"
+        );
+        assert!(
+            debug.contains("len"),
+            "Debug output should keep payload length metadata: {debug}"
+        );
     }
 
     // === Property-based ===

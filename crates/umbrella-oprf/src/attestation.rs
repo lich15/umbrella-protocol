@@ -106,13 +106,25 @@ impl Platform {
 
 /// Платформенный attestation (token от App Attest / Play Integrity / WebAuthn).
 /// Platform attestation (App Attest / Play Integrity / WebAuthn token).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct PlatformAttestation {
     /// Платформа источника. Source platform.
     pub platform: Platform,
     /// Opaque-байты токена (формат платформо-специфичен).
     /// Opaque token bytes (platform-specific format).
     pub token: HVec<u8, MAX_ATTESTATION_TOKEN_BYTES>,
+}
+
+/// `Debug` скрывает platform attestation token.
+/// `Debug` redacts the platform attestation token.
+impl core::fmt::Debug for PlatformAttestation {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("PlatformAttestation")
+            .field("platform", &self.platform)
+            .field("token_len", &self.token.len())
+            .field("token", &"<redacted>")
+            .finish()
+    }
 }
 
 impl PlatformAttestation {
@@ -161,9 +173,20 @@ pub trait AttestationProvider {
 ///
 /// Testing `AttestationProvider` returning a deterministic token from a
 /// fixed prefix plus the nonce. NOT for production.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TestingAttestationProvider {
     prefix: HVec<u8, 64>,
+}
+
+/// `Debug` скрывает тестовый attestation prefix.
+/// `Debug` redacts the testing attestation prefix.
+impl core::fmt::Debug for TestingAttestationProvider {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TestingAttestationProvider")
+            .field("prefix_len", &self.prefix.len())
+            .field("prefix", &"<redacted>")
+            .finish()
+    }
 }
 
 impl TestingAttestationProvider {
@@ -252,7 +275,7 @@ pub fn canonical_signing_input(
 /// Создаётся функцией [`seal_request`], верифицируется функцией
 /// [`verify_signed_request`]. Структура предназначена для передачи по
 /// сети (все поля публичные, wire-format канонический).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SignedOprfRequest {
     /// Ослеплённый OPRF-запрос. Blinded OPRF request.
     pub blinded: BlindedRequest,
@@ -269,6 +292,24 @@ pub struct SignedOprfRequest {
     /// сопоставить identity с KT-записью. Не раскрывает секретного
     /// материала: public-key открыт по дизайну.
     pub device_pubkey: [u8; DEVICE_PUBKEY_LEN],
+}
+
+/// `Debug` скрывает request material, пригодный для replay/correlation.
+/// `Debug` redacts request material useful for replay/correlation.
+impl core::fmt::Debug for SignedOprfRequest {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SignedOprfRequest")
+            .field("blinded_len", &self.blinded.as_bytes().len())
+            .field("blinded", &"<redacted>")
+            .field("attestation", &self.attestation)
+            .field("nonce_len", &self.nonce.len())
+            .field("nonce", &"<redacted>")
+            .field("device_signature_len", &self.device_signature.len())
+            .field("device_signature", &"<redacted>")
+            .field("device_pubkey_len", &self.device_pubkey.len())
+            .field("device_pubkey", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Собрать подписанный запрос: получить attestation-token, вычислить
@@ -395,7 +436,7 @@ pub enum PlatformVerifierKind {
 
 /// Вход платформенного проверяющего.
 /// Input passed to a platform attestation verifier.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct PlatformVerificationInput<'a> {
     /// Платформа запроса. Request platform.
     pub platform: Platform,
@@ -407,6 +448,23 @@ pub struct PlatformVerificationInput<'a> {
     pub device_pubkey: &'a [u8; DEVICE_PUBKEY_LEN],
     /// Текущее серверное время. Current server time.
     pub now_unix_millis: u64,
+}
+
+/// `Debug` скрывает attestation token при серверной проверке OPRF.
+/// `Debug` redacts the attestation token during server-side OPRF verification.
+impl core::fmt::Debug for PlatformVerificationInput<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("PlatformVerificationInput")
+            .field("platform", &self.platform)
+            .field("token_len", &self.token.len())
+            .field("token", &"<redacted>")
+            .field("server_nonce_len", &self.server_nonce.len())
+            .field("server_nonce", &"<redacted>")
+            .field("device_pubkey_len", &self.device_pubkey.len())
+            .field("device_pubkey", &"<redacted>")
+            .field("now_unix_millis", &self.now_unix_millis)
+            .finish()
+    }
 }
 
 /// Платформенный проверяющий для боевого серверного пути.
@@ -623,7 +681,6 @@ impl ProductionPlatformVerifier for SharedPlatformVerifierForOprf {
 
 /// Контекст боевой проверки OPRF-запроса.
 /// Production verification context for an OPRF request.
-#[derive(Debug)]
 pub struct ProductionOprfVerificationContext<'a> {
     expected_server_nonce: [u8; NONCE_LEN],
     server_nonce_issued_at_unix_millis: u64,
@@ -632,6 +689,29 @@ pub struct ProductionOprfVerificationContext<'a> {
     device_state: ProductionDeviceState,
     platform_verifier: &'a dyn ProductionPlatformVerifier,
     nonce_replay_guard: &'a dyn ProductionNonceReplayGuard,
+}
+
+/// `Debug` скрывает expected server nonce.
+/// `Debug` redacts the expected server nonce.
+impl core::fmt::Debug for ProductionOprfVerificationContext<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ProductionOprfVerificationContext")
+            .field(
+                "expected_server_nonce_len",
+                &self.expected_server_nonce.len(),
+            )
+            .field("expected_server_nonce", &"<redacted>")
+            .field(
+                "server_nonce_issued_at_unix_millis",
+                &self.server_nonce_issued_at_unix_millis,
+            )
+            .field("now_unix_millis", &self.now_unix_millis)
+            .field("freshness", &self.freshness)
+            .field("device_state", &self.device_state)
+            .field("platform_verifier", &self.platform_verifier)
+            .field("nonce_replay_guard", &self.nonce_replay_guard)
+            .finish()
+    }
 }
 
 impl<'a> ProductionOprfVerificationContext<'a> {
@@ -919,6 +999,111 @@ mod tests {
         }
     }
 
+    #[test]
+    fn platform_attestation_debug_redacts_oprf_token() {
+        let attestation =
+            PlatformAttestation::new(Platform::Android, b"play-integrity-token").unwrap();
+
+        let debug = format!("{attestation:?}");
+
+        assert!(
+            !debug.contains("112, 108, 97, 121, 45, 105, 110"),
+            "Debug output must not leak OPRF attestation token bytes: {debug}"
+        );
+        assert!(
+            debug.contains("token_len"),
+            "Debug output should keep token length metadata for diagnostics: {debug}"
+        );
+    }
+
+    #[test]
+    fn signed_oprf_request_debug_redacts_attestation_token() {
+        let (sk, vk) = make_device_keypair();
+        let req = production_android_oprf_request(&sk, &vk, fresh_nonce());
+
+        let debug = format!("{req:?}");
+
+        assert!(
+            !debug.contains("112, 108, 97, 121, 45, 105, 110"),
+            "Debug output must not leak nested OPRF attestation token bytes: {debug}"
+        );
+    }
+
+    #[test]
+    fn testing_attestation_provider_debug_redacts_prefix() {
+        let provider = TestingAttestationProvider::new(b"secret-test-prefix");
+
+        let debug = format!("{provider:?}");
+
+        assert!(
+            !debug.contains("prefix: ["),
+            "Debug output must not leak test attestation prefix bytes: {debug}"
+        );
+        assert!(
+            debug.contains("prefix_len"),
+            "Debug output should keep safe prefix length metadata: {debug}"
+        );
+    }
+
+    #[test]
+    fn signed_oprf_request_debug_redacts_replayable_request_material() {
+        let (sk, vk) = make_device_keypair();
+        let req = production_android_oprf_request(&sk, &vk, fresh_nonce());
+
+        let debug = format!("{req:?}");
+
+        for forbidden in [
+            "blinded: BlindedRequest(",
+            "nonce: [",
+            "device_signature: [",
+            "device_pubkey: [",
+        ] {
+            assert!(
+                !debug.contains(forbidden),
+                "Debug output must not leak OPRF request material `{forbidden}`: {debug}"
+            );
+        }
+        assert!(
+            debug.contains("blinded_len")
+                && debug.contains("nonce_len")
+                && debug.contains("device_signature_len")
+                && debug.contains("device_pubkey_len"),
+            "Debug output should keep safe diagnostic lengths: {debug}"
+        );
+    }
+
+    #[test]
+    fn platform_verification_input_debug_redacts_oprf_token() {
+        let nonce = fresh_nonce();
+        let device_pubkey = [7u8; DEVICE_PUBKEY_LEN];
+        let input = PlatformVerificationInput {
+            platform: Platform::Android,
+            token: b"oprf-verifier-token",
+            server_nonce: &nonce,
+            device_pubkey: &device_pubkey,
+            now_unix_millis: 1_700_000_000_000,
+        };
+
+        let debug = format!("{input:?}");
+
+        assert!(
+            !debug.contains("111, 112, 114, 102"),
+            "Debug output must not leak OPRF verifier token bytes: {debug}"
+        );
+        assert!(
+            debug.contains("token_len"),
+            "Debug output should keep token length metadata for diagnostics: {debug}"
+        );
+        assert!(
+            !debug.contains("server_nonce: [") && !debug.contains("device_pubkey: ["),
+            "Debug output must not leak OPRF verifier nonce or device key bytes: {debug}"
+        );
+        assert!(
+            debug.contains("server_nonce_len") && debug.contains("device_pubkey_len"),
+            "Debug output should keep safe verifier input lengths: {debug}"
+        );
+    }
+
     fn active_device_state() -> ProductionDeviceState {
         ProductionDeviceState::Active {
             authorized_since_unix_millis: 1_700_000_000_000,
@@ -943,6 +1128,31 @@ mod tests {
             replay_guard,
         )
         .expect("context must be valid for non-test-only verifier")
+    }
+
+    #[test]
+    fn production_oprf_context_debug_redacts_expected_nonce() {
+        let verifier = AcceptingAndroidVerifier;
+        let replay_guard = RecordingNonceReplayGuard::default();
+        let ctx = production_context(
+            &verifier,
+            &replay_guard,
+            [0xAA; NONCE_LEN],
+            1_700_000_000_000,
+            1_700_000_000_001,
+            active_device_state(),
+        );
+
+        let debug = format!("{ctx:?}");
+
+        assert!(
+            !debug.contains("expected_server_nonce: ["),
+            "Debug output must not leak expected OPRF server nonce: {debug}"
+        );
+        assert!(
+            debug.contains("expected_server_nonce_len"),
+            "Debug output should keep safe nonce length metadata: {debug}"
+        );
     }
 
     #[test]

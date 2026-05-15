@@ -17,19 +17,48 @@ use crate::types::{
 #[derive(Debug, Clone, Copy, Default)]
 pub struct WebAuthnVerifier;
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct WebAuthnToken {
     client_data_json: String,
     authenticator_data: String,
     signature: String,
 }
 
-#[derive(Debug, Deserialize)]
+/// `Debug` скрывает WebAuthn assertion material.
+/// `Debug` redacts WebAuthn assertion material.
+impl core::fmt::Debug for WebAuthnToken {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("WebAuthnToken")
+            .field("client_data_json_len", &self.client_data_json.len())
+            .field("client_data_json", &"<redacted>")
+            .field("authenticator_data_len", &self.authenticator_data.len())
+            .field("authenticator_data", &"<redacted>")
+            .field("signature_len", &self.signature.len())
+            .field("signature", &"<redacted>")
+            .finish()
+    }
+}
+
+#[derive(Deserialize)]
 struct ClientData {
     #[serde(rename = "type")]
     kind: String,
     challenge: String,
     origin: String,
+}
+
+/// `Debug` скрывает challenge и origin из client data.
+/// `Debug` redacts challenge and origin from client data.
+impl core::fmt::Debug for ClientData {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ClientData")
+            .field("kind", &self.kind)
+            .field("challenge_len", &self.challenge.len())
+            .field("challenge", &"<redacted>")
+            .field("origin_len", &self.origin.len())
+            .field("origin", &"<redacted>")
+            .finish()
+    }
 }
 
 impl PlatformVerifier for WebAuthnVerifier {
@@ -211,6 +240,44 @@ mod tests {
             now_unix_millis: 1_700_000_000_000,
             registered_key: Some(registered_key),
         }
+    }
+
+    #[test]
+    fn webauthn_debug_redacts_assertion_material() {
+        let token = WebAuthnToken {
+            client_data_json: "client-data-secret".into(),
+            authenticator_data: "authenticator-data-secret".into(),
+            signature: "signature-secret".into(),
+        };
+        let client = ClientData {
+            kind: "webauthn.get".into(),
+            challenge: "challenge-secret".into(),
+            origin: "https://app.umbrella.example".into(),
+        };
+
+        let token_debug = format!("{token:?}");
+        let client_debug = format!("{client:?}");
+
+        for forbidden in [
+            "client-data-secret",
+            "authenticator-data-secret",
+            "signature-secret",
+            "challenge-secret",
+            "app.umbrella.example",
+        ] {
+            assert!(
+                !token_debug.contains(forbidden) && !client_debug.contains(forbidden),
+                "Debug output must not leak WebAuthn assertion material `{forbidden}`: token={token_debug} client={client_debug}"
+            );
+        }
+        assert!(
+            token_debug.contains("client_data_json_len")
+                && token_debug.contains("authenticator_data_len")
+                && token_debug.contains("signature_len")
+                && client_debug.contains("challenge_len")
+                && client_debug.contains("origin_len"),
+            "Debug output should keep safe diagnostic lengths: token={token_debug} client={client_debug}"
+        );
     }
 
     #[test]

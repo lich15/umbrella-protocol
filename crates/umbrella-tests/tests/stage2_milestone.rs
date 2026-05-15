@@ -281,6 +281,50 @@ fn server_rejects_rate_limited_sender() {
     );
 }
 
+#[test]
+fn rate_limited_unique_messages_do_not_fill_replay_window() {
+    let (alice, _bob, mut alice_g, _bob_g) = dyadic_pair();
+    let mut router = Router::new(ReplayGuard::with_default_window(), FixedWindow::new(60, 3));
+
+    for i in 0..3 {
+        let payload = format!("allowed-{i}");
+        let ct = alice_g
+            .encrypt_application(
+                &alice.provider,
+                alice.ks.as_ref() as &dyn KeyStore,
+                payload.as_bytes(),
+            )
+            .unwrap();
+        match router.dispatch(&ct, b"alice", T0 + 10) {
+            RoutingDecision::Accept(_) => {}
+            other => panic!("allowed msg {i} expected Accept: {other:?}"),
+        }
+    }
+    assert_eq!(router.replay_active_entries(), 3);
+
+    for i in 0..10 {
+        let payload = format!("blocked-{i}");
+        let ct = alice_g
+            .encrypt_application(
+                &alice.provider,
+                alice.ks.as_ref() as &dyn KeyStore,
+                payload.as_bytes(),
+            )
+            .unwrap();
+        assert_eq!(
+            router.dispatch(&ct, b"alice", T0 + 10),
+            RoutingDecision::RejectRateLimit,
+            "rate-limited message {i} must be rejected"
+        );
+    }
+
+    assert_eq!(
+        router.replay_active_entries(),
+        3,
+        "messages rejected by rate limit must not grow replay memory"
+    );
+}
+
 // =========================================================================================
 // Server отвергает Welcome на messages-endpoint (default).
 // Server rejects Welcome on a messages endpoint (default).
