@@ -12,6 +12,8 @@ verify, and test the protocol without exposing private working material.
 
 - `audits/` - retained verification notes and tool-policy documents.
 - `security/` - release manifest, SBOM, and security operation notes.
+- External crypto release audit:
+  `audits/external-crypto-release-audit-status-2026-05-14.md`.
 - `WORKING_RULES.md` - рабочие постулаты проекта.
 - `superpowers/specs/` - утверждённые рабочие планы крупных изменений.
 - root-level `UmbrellaX_protocol_public_en.pdf` and
@@ -81,6 +83,8 @@ exit code 0 for the exact command.
 
 - `audits/` - сохранённые заметки по проверкам и политики инструментов.
 - `security/` - манифест выпуска, SBOM и заметки по безопасности.
+- Внешний крипто-аудит выпуска:
+  `audits/external-crypto-release-audit-status-2026-05-14.md`.
 - `WORKING_RULES.md` - рабочие постулаты проекта.
 - `superpowers/specs/` - утверждённые рабочие планы крупных изменений.
 - корневые `UmbrellaX_protocol_public_en.pdf` и

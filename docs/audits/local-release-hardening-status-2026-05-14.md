@@ -32,6 +32,12 @@
 
 ## Последний локальный результат
 
+- Внешний крипто-аудит 2026-05-14 записан в
+  `docs/audits/external-crypto-release-audit-status-2026-05-14.md`.
+  Evidence лежит в `target/audit-evidence/external-crypto-release/20260514/`,
+  полный fuzz всех 27 целей лежит в
+  `target/fuzz-overnight/20260514-191349/summary.txt` и завершился с итогом
+  `Failed: 0 / 27`.
 - По отдельному запросу 2026-05-14 запущены сфокусированный Miri-скрипт и
   полный fuzz всех 27 целей. Miri прошёл, fuzz завершился с итогом
   `Failed: 0 / 27`. Подробная запись:

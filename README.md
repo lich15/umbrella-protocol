@@ -27,6 +27,8 @@ SPKI pins and real postman, KT, and call relay transports. See
 [`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
 Core protocol attack gates are recorded in
 [`docs/security/protocol-core-attack-gates.md`](docs/security/protocol-core-attack-gates.md).
+External crypto release audit:
+[`docs/audits/external-crypto-release-audit-status-2026-05-14.md`](docs/audits/external-crypto-release-audit-status-2026-05-14.md).
 
 This repository is public for transparency, reproducible builds, non-commercial
 security testing, cryptographic testing, and responsible vulnerability reports.
@@ -429,6 +431,8 @@ Play Integrity всё ещё закрыто отказывают, пока не 
 [`docs/security/production-readiness-boundaries.md`](docs/security/production-readiness-boundaries.md).
 Боевые атакующие ворота ядра протокола записаны в
 [`docs/security/protocol-core-attack-gates.md`](docs/security/protocol-core-attack-gates.md).
+Внешний крипто-аудит выпуска:
+[`docs/audits/external-crypto-release-audit-status-2026-05-14.md`](docs/audits/external-crypto-release-audit-status-2026-05-14.md).
 
 Репозиторий открыт для прозрачности, воспроизводимых сборок, некоммерческих
 проверок безопасности, криптографических испытаний и ответственных сообщений об
