@@ -51,7 +51,38 @@ _Список cargo/script команд с результатами._
 
 ## Tier 1 progress
 
-_Заполняется по ходу обхода Tier 1 крейтов._
+- `umbrella-identity` (2026-05-16): пройдены 20 классов §3 spec. Подтверждённых
+  закрытых-тестом находок: 0. Рассмотренные кандидаты:
+  - **Stack-residual HMAC intermediates в `MasterKey::from_seed` и
+    `derive_child`** (классы 16 — zeroize, и 9 — частично).
+    `let i = mac.finalize().into_bytes()` и копия `full = [0u8; 64]` в
+    `derive_child` содержат частичный ключевой материал
+    (`ExtendedSecret`/`ChainCode`) на стеке и не зануляются. Сами owning-типы
+    (`MasterKey`, `ExtendedSecret`, `ChainCode`) — `ZeroizeOnDrop` ✓, но
+    промежуточные стековые буферы — нет. Severity: **Low** по §7а
+    (hygiene defense-in-depth без поведенческого импакта; реализуемый
+    эксплойт требует уже скомпрометированной памяти процесса, что выходит
+    за пределы D-level threat model данного раунда). Решение этого раунда:
+    зафиксировать наблюдение, не закрывать сейчас, кандидат для
+    follow-up уборочного PR (Pattern: явная `Zeroize` на промежуточный
+    `[u8; 64]` копию HMAC-SHA512 output до выхода из функции).
+  - Прочее: все sensitive типы имеют `ZeroizeOnDrop` и ручной `Debug` с
+    redaction; `IdentityError` варианты не утекают байты ключей; HKDF
+    labels (`umbrellax-device-attestation-v1`, `umbrellax-identity-rotation-v1`,
+    `umbrellax-cloud-wrap-recovery-xwing-v1`, `umbrellax-slh-dsa-backup-v1`,
+    `umbrellax-slh-dsa-backup-rotation-v1`, `umbrellax-hybrid-identity-mldsa-v1`,
+    `umbrellax-hybrid-device-mldsa-v1`) попарно различны и
+    version-суффиксированы; источники RNG — `OsRng` или
+    `ChaCha20Rng::from_seed(HKDF(secret))` (детерминистичный derive для PQ);
+    `derive_rotated_identity_material` сравнивает старый identity_pubkey
+    через `ct_eq`; `PartialEq` присутствует только на публичных типах;
+    `from_bytes` для всех wire-форматов проверяет точную длину; BIP-39
+    парсинг проверяет word count и checksum до allocation.
+  - Категории 1/7/13: применимы частично — identity не пересекает FFI
+    напрямую, не имеет V1/V2 wire-формата (single attestation version),
+    cross-crate state в основном через `KeyStore` trait с `Mutex`-защитой.
+  - Категории 18/19/20: n/a (нет рекурсивных парсеров, нет
+    allocator-зависимых hot paths, нет floating-point).
 
 ## Tier 2 progress
 
