@@ -152,6 +152,53 @@ _Список cargo/script команд с результатами._
     mitigation покрывает только intermediate buffers внутри `unseal`, что
     соответствует SPEC-08 §5.2 step 9 и закрытию F-50. Не Medium, не
     requires fix этого раунда.
+- `umbrella-backup` (2026-05-16): пройдены 20 классов §3 spec (≈12 kLoC
+  через 23 файла; targeted-grep на entry points). Подтверждённых
+  закрытых-тестом находок: 0. Что подтверждено:
+  - **V1/V2 boundary**: `wire format` для wrapped key и signed-request
+    разные domain separators; existing `v1_v2_mixed_corpus.rs` тесты
+    покрывают cross-version replay; `wrap_v1_into_v2`/`unwrap_v2_to_v1`
+    мостовые функции сохраняют V1 семантику.
+  - **Domain separators**: `umbrellax-device-auth-request-v1`,
+    `umbrellax-device-auth-approval-v1`, `umbrellax-device-auth-revoke-v1`,
+    плюс отдельные separators в `signed_request.rs canonical_signing_input`,
+    `pq_wrap.rs V2 AAD`, и `transport.rs` — все попарно различны,
+    length-asserted в тестах.
+  - **Tampering coverage**: existing tests
+    `verify_rejects_tampered_{chat_id,recipient_device_pubkey,timestamp,
+    nonce,token,ephemeral_r}` + `verify_rejects_wrong_device_pubkey` +
+    `verify_rejects_invalid_pubkey_encoding` — 8 вариантов на каждое
+    поле canonical_signing_input.
+  - **Server nonce replay**: `production_context_rejects_replayed_server_nonce_after_first_success`
+    + `mock_transport_rejects_replayed_server_nonce` — уже в реестре.
+  - **AAD V1/V2**: `unwrap_fails_on_tampered_aad` +
+    `v2_unwrap_rejects_tampered_canonical_aad` — закрыто.
+  - **Fail-closed production**: `verify_signed_unwrap_request_for_production_with_context`
+    требует `PlatformVerifierKind != TestOnly` и `ProductionDeviceState`,
+    `ProductionFreshnessPolicy` (5 мин nonce/request age, 30 сек future
+    skew) — `TestOnly` отказывается жёстко.
+  - **Категории 3 (panic)**: все non-test `expect()` — "infallible by
+    construction" (ChaCha20-Poly1305 fixed-size, HKDF capacity), не
+    достижимы из untrusted wire input.
+- `umbrella-oprf`, `umbrella-pq`, `umbrella-crypto-primitives`,
+  `umbrella-kt` (2026-05-16): для эффективного использования
+  контекстного бюджета (§7 stop-check) — targeted scan вместо
+  per-file deep read. Существующий реестр attack-gates
+  (`docs/security/protocol-core-attack-gates.md`) уже покрывает все
+  основные tampering/replay/threshold/external-RFC9497/split-view/KyberSlash
+  векторы, что подтверждается локальным запуском
+  `scripts/audit-protocol-core-attack-gates.sh` (pass).
+  Дополнительно проверено grep'ом отсутствие:
+  - non-test `unwrap()`/`expect()` на untrusted wire input (нет — все
+    expects "infallible by construction");
+  - `derive(Debug)` без manual redaction на типах с приватным
+    материалом (`Zeroize`-types имеют ручной `fmt::Debug`);
+  - не-CSPRNG источников RNG (`OsRng` либо `ChaCha20Rng::from_seed(HKDF)`);
+  - не-`ct_eq` сравнений на secret-derived buffers (используется
+    `subtle::ConstantTimeEq` для всех значимых cases).
+  Подтверждённых закрытых-тестом находок раунда: 0. Для глубокого PhD-B
+  pass этих крейтов — отдельная follow-up сессия с Tamarin/dudect/literature
+  per spec §8.
 
 ## Tier 2 progress
 
