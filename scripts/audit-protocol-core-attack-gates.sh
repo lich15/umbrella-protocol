@@ -43,7 +43,12 @@ require_pattern "crates/umbrella-sealed-sender/tests/phd_real_attacks_sealed_sen
 require_pattern "crates/umbrella-sealed-sender/tests/phd_real_attacks_sealed_sender.rs" "real_attack_replay_envelope_to_different_recipient_aad_blocks"
 require_pattern "docs/security/protocol-core-attack-gates.md" "повтор серверного вызова"
 require_pattern "docs/security/protocol-core-attack-gates.md" "split-view"
-require_pattern "crates/umbrella-kt/tests/split_view_exchange.rs" "threshold_signed_split_views_verify_locally_but_client_exchange_detects_divergence"
+require_pattern "crates/umbrella-kt/src/observation.rs" "EquivocationEvidence"
+require_pattern "crates/umbrella-kt/src/observation.rs" "KtObservationHistory"
+require_pattern "crates/umbrella-kt/src/witness_state.rs" "witness equivocation attempt"
+require_pattern "crates/umbrella-kt/tests/split_view_exchange.rs" "production_api_detects_divergence"
+require_pattern "crates/umbrella-kt/tests/split_view_exchange.rs" "public_observation_encoding_round_trips_without_private_account_data"
+require_pattern "crates/umbrella-kt/tests/split_view_exchange.rs" "observation_history_rejects_epoch_regression_and_broken_chain"
 require_pattern "crates/umbrella-tests/tests/local_load_and_race.rs" "local_load_many_kt_leaves_keep_valid_inclusion_and_witness_roots"
 require_pattern "crates/umbrella-tests/tests/local_load_and_race.rs" "concurrent_replay_guard_accepts_one_duplicate_hash_and_rejects_the_rest"
 require_pattern "crates/umbrella-tests/tests/local_load_and_race.rs" "concurrent_witness_verification_has_no_shared_state_corruption"
@@ -52,6 +57,7 @@ require_pattern "docs/audits/local-release-hardening-status-2026-05-14.md" "spli
 require_pattern "docs/security/external-crypto-attack-ledger-2026-05-14.md" "RFC 9497"
 require_pattern "docs/security/external-crypto-attack-ledger-2026-05-14.md" "KyberSlash"
 require_pattern "docs/security/external-crypto-attack-ledger-2026-05-14.md" "граница выпуска"
+require_pattern "docs/security/external-crypto-attack-ledger-2026-05-15.md" "split-view"
 bash scripts/audit-external-crypto-attack-ledger.sh
 
 if [[ "$failed" -ne 0 ]]; then

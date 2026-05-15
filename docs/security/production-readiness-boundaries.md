@@ -1,6 +1,6 @@
 # Production Readiness Boundaries
 
-Дата: 2026-05-14
+Дата: 2026-05-15
 
 Summary status: [`current-status.md`](current-status.md).
 
@@ -52,8 +52,10 @@ Closed gates:
 - Server integration: mock server behavior does not count as production
   deployment readiness.
 - Live KT gossip/self-monitoring deployment remains a production boundary:
-  local tests can detect divergent observations after clients exchange them,
-  but cannot prove that a live network always performs that exchange.
+  local Rust code now has verifiable equivocation evidence, strict observation
+  history, and witness non-equivocation memory. Full live assurance still
+  requires real independent witnesses, a public observation channel, and client
+  observation exchange.
 
 ### Calls and SFrame
 
@@ -109,8 +111,10 @@ boundaries.
 - Серверная интеграция: поведение mock-сервера не считается готовностью
   боевого развёртывания.
 - Живая KT gossip/self-monitoring связка остаётся границей выпуска: локальные
-  тесты обнаруживают разные наблюдения после обмена клиентов, но не доказывают,
-  что живая сеть всегда выполнит такой обмен.
+  проверки теперь имеют библиотечное доказательство раздвоения, строгую историю
+  наблюдений и память свидетеля. Полная живая гарантия всё ещё требует
+  настоящих независимых свидетелей, публичного канала наблюдений и обмена
+  наблюдениями между клиентами.
 
 ### Звонки и SFrame
 

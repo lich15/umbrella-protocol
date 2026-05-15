@@ -54,7 +54,9 @@ reject_prod_todo_unimplemented() {
 }
 
 require_pattern "crates/umbrella-identity/src/seed.rs" "debug_does_not_leak_seed"
-require_pattern "crates/umbrella-kt/tests/split_view_exchange.rs" "threshold_signed_split_views_verify_locally_but_client_exchange_detects_divergence"
+require_pattern "crates/umbrella-kt/src/observation.rs" "does not store account id"
+require_pattern "crates/umbrella-kt/tests/split_view_exchange.rs" "public_observation_encoding_round_trips_without_private_account_data"
+require_pattern "crates/umbrella-kt/tests/split_view_exchange.rs" "witness_signing_ledger_rejects_second_different_root_for_same_epoch"
 require_pattern "crates/umbrella-tests/tests/local_load_and_race.rs" "local_load_many_kt_leaves_keep_valid_inclusion_and_witness_roots"
 require_pattern "crates/umbrella-tests/tests/local_load_and_race.rs" "concurrent_replay_guard_accepts_one_duplicate_hash_and_rejects_the_rest"
 require_pattern "crates/umbrella-tests/tests/local_load_and_race.rs" "concurrent_witness_verification_has_no_shared_state_corruption"

@@ -1,6 +1,6 @@
 # Боевые атакующие ворота ядра протокола
 
-Дата: 2026-05-14
+Дата: 2026-05-15
 
 ## Русский
 
@@ -25,8 +25,11 @@
 | KT | подмена root, epoch или подписи | закрыто тестом | `tampered_root_all_signatures_invalid`, `tampered_epoch_all_signatures_invalid`, `tampered_signature_bit_flip_invalid` |
 | KT | подмена размера журнала или времени подписи свидетеля | закрыто тестом | `attack_canonical_sign_payload_binds_log_size_post_fix_f_phd_s68_1` |
 | KT | повтор старой подписанной эпохи | закрыто тестом | `attack_replay_old_signed_epoch_blocked_by_monotonic_epoch_check` |
-| KT | split-view при трёх злых свидетелях | честная граница | `threshold_compromised_views_can_verify_but_safety_numbers_diverge`: локально обе версии могут пройти, поэтому нужны сверка наблюдений и самопроверка |
-| KT | split-view обнаруживается при обмене наблюдениями клиентов | локально закрыто обнаружение | `threshold_signed_split_views_verify_locally_but_client_exchange_detects_divergence` |
+| KT | split-view при трёх злых свидетелях | честная граница одиночного клиента | `threshold_compromised_views_can_verify_but_safety_numbers_diverge`: одна валидная голова не доказывает, что другой голове не дали другой root |
+| KT | split-view обнаруживается при обмене наблюдениями | закрыто библиотечным тестом | `threshold_signed_split_views_verify_locally_but_production_api_detects_divergence`: `EquivocationEvidence` создаётся только из двух валидно подписанных конфликтующих наблюдений |
+| KT | публичное наблюдение раскрывает личные данные | закрыто тестом | `public_observation_encoding_round_trips_without_private_account_data`: wire-формат содержит только log_id, roots, epoch, log_size, timestamp и подписи |
+| KT | свидетель подписывает второй другой root для той же эпохи | закрыто локальной моделью | `witness_signing_ledger_rejects_second_different_root_for_same_epoch` |
+| KT | откат или разрыв цепочки эпох | закрыто тестом | `observation_history_rejects_epoch_regression_and_broken_chain` |
 | OPRF | подмена blinded, token, nonce или device key | закрыто тестом | `verify_rejects_tampered_blinded`, `verify_rejects_tampered_token`, `verify_rejects_tampered_nonce`, `verify_rejects_wrong_device_pubkey` |
 | OPRF | RFC 9497 wrong length, bad Ristretto point, empty/oversize input | закрыто тестом | `external_rfc9497_attacks.rs` |
 | OPRF | повтор серверного вызова | закрыто тестом | `production_context_rejects_replayed_server_nonce_after_first_success` |
@@ -48,18 +51,21 @@
 ## Внешний реестр
 
 Внешние источники и классы атак теперь зафиксированы в
-`docs/security/external-crypto-attack-ledger-2026-05-14.md`. Общий выпускной
-аудит требует этот файл и проверяет, что в нём есть OPRF/RFC 9497, KyberSlash и
-честная `граница выпуска` для мест, которые нельзя закрыть без серверов,
-живых устройств или боевых свидетелей.
+`docs/security/external-crypto-attack-ledger-2026-05-14.md` и
+`docs/security/external-crypto-attack-ledger-2026-05-15.md`. Общий выпускной
+аудит требует эти файлы и проверяет, что в них есть OPRF/RFC 9497, KyberSlash,
+split-view и честная `граница выпуска` для мест, которые нельзя закрыть без
+серверов, живых устройств или боевых свидетелей.
 
 Оставшиеся границы выпуска:
 
 - публичный FFI-запуск клиента остаётся закрыт;
 - Apple App Attest и Android Play Integrity закрыто отказывают без внешних
   корней доверия, разбора токенов и серверной связки;
-- боевые свидетели KT должны быть развёрнуты отдельно, потому что локальный код
-  не может сам доказать отсутствие split-view при захвате трёх свидетелей;
+- боевые свидетели KT и публичный канал наблюдений должны быть развёрнуты
+  отдельно: локальный код теперь создаёт доказательство раздвоения и проверяет
+  цепочку, но не может сам доказать, что живая сеть всегда обменялась
+  наблюдениями;
 - интеграция с настоящими серверами ещё не считается готовой.
 
 ## English

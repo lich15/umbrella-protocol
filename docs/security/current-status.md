@@ -1,6 +1,6 @@
 # Current Status
 
-Дата: 2026-05-14
+Дата: 2026-05-15
 
 [English](#english) | [Русский](#русский)
 
@@ -32,6 +32,10 @@ Implemented and currently documented:
   connected;
 - protocol-core attack gate matrix:
   `docs/security/protocol-core-attack-gates.md`;
+- local KT split-view hardening: `umbrella-kt` has public epoch observations,
+  verifiable equivocation evidence, strict observation history, witness
+  non-equivocation memory, and a public observation encoding that excludes
+  account ids, device lists, contacts, and chats;
 - local release hardening status:
   `docs/audits/local-release-hardening-status-2026-05-14.md`. It covers local
   formal, fuzz, load, race, KT split-view exchange, secret-leak, and fail-closed
@@ -41,7 +45,8 @@ Implemented and currently documented:
 - local dependency release gate runs `cargo deny check` and rejects missing
   `cargo-deny` as a gate failure;
 - external crypto attack ledger:
-  `docs/security/external-crypto-attack-ledger-2026-05-14.md`; it records
+  `docs/security/external-crypto-attack-ledger-2026-05-14.md` and
+  `docs/security/external-crypto-attack-ledger-2026-05-15.md`; they record
   external standards/advisories and the local tests or release boundaries that
   answer them;
 - formal and local lint gate status recorded in
@@ -58,6 +63,7 @@ Not production-ready yet:
   server relay deployment are still release boundaries;
 - public device-certification matrix;
 - full production witness deployment for key transparency.
+- live KT observation exchange and public witness channels.
 
 The release rule is simple: if a path is not fully wired, it must fail closed or
 be documented as a test harness. A test-only path must not look like a
@@ -93,6 +99,10 @@ Umbrella Protocol 1.0.0 — набор Rust-крейтов протокола с
   связка;
 - матрица боевых атакующих ворот ядра протокола:
   `docs/security/protocol-core-attack-gates.md`;
+- локальное усиление KT против split-view: `umbrella-kt` имеет публичные
+  наблюдения эпох, проверяемое доказательство раздвоения, строгую историю
+  наблюдений, память свидетеля и публичный формат наблюдения без account_id,
+  списка устройств, контактов и чатов;
 - статус локальных выпускных ворот:
   `docs/audits/local-release-hardening-status-2026-05-14.md`. Там описаны
   местные формальные проверки, fuzz, нагрузка, гонки, KT split-view сверка,
@@ -103,7 +113,8 @@ Umbrella Protocol 1.0.0 — набор Rust-крейтов протокола с
 - локальные ворота зависимостей запускают `cargo deny check`; отсутствие
   `cargo-deny` считается отказом ворот, а не успехом;
 - внешний реестр криптографических атак:
-  `docs/security/external-crypto-attack-ledger-2026-05-14.md`; он связывает
+  `docs/security/external-crypto-attack-ledger-2026-05-14.md` и
+  `docs/security/external-crypto-attack-ledger-2026-05-15.md`; они связывают
   внешние стандарты и advisory с локальными тестами или честными границами
   выпуска;
 - статус формальных проверок и местных правил в
@@ -120,6 +131,7 @@ Umbrella Protocol 1.0.0 — набор Rust-крейтов протокола с
   серверное реле всё ещё остаются границами выпуска;
 - публичная матрица сертификации устройств;
 - полное боевое развёртывание свидетелей прозрачности ключей.
+- живой обмен KT-наблюдениями и публичные каналы свидетелей.
 
 Правило выпуска простое: если путь не связан до конца, он должен закрыто
 отказывать или быть явно описан как проверочный стенд. Тестовый путь не должен

@@ -35,6 +35,12 @@ it intentionally contains example values that the script rejects.
 
 - Each witness publishes signed epoch-root observations to an append-only public
   channel.
+- Every witness must keep local memory of `log + epoch -> root + size`.
+  Repeating the same head is allowed, but a second different root for the same
+  epoch must be rejected as an equivocation attempt.
+- Public observations contain only technical epoch heads: log_id, previous
+  root, current root, size, timestamp, and signatures. They do not contain
+  phone number, account_id, device list, contacts, or chats.
 - Clients or monitoring services compare epoch roots for the same epoch.
 - A mismatch for the same epoch is treated as a critical incident.
 - User-visible safety-number comparison remains the last-resort detection
@@ -84,6 +90,12 @@ scripts/audit-kt-witness-deployment.sh docs/security/kt-witness-deployment.csv
 
 - Каждый свидетель публикует подписанные наблюдения корня эпохи в публичный
   канал, где старые записи нельзя незаметно переписать.
+- Каждый свидетель обязан хранить локальную память `журнал + эпоха -> root + размер`.
+  Повтор той же головы разрешён, но второй другой root для той же эпохи должен
+  отвергаться как попытка раздвоения.
+- Публичные наблюдения содержат только технические головы эпох: log_id,
+  предыдущий root, текущий root, размер, время и подписи. Они не содержат
+  телефон, account_id, список устройств, контакты или чаты.
 - Клиенты или службы наблюдения сравнивают корни для одной эпохи.
 - Несовпадение для одной эпохи считается критическим инцидентом.
 - Видимое пользователю сравнение номера безопасности остаётся последним
