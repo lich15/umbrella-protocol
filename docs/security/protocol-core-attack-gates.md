@@ -36,10 +36,12 @@
 | OPRF | повтор серверного вызова | закрыто тестом | `production_context_rejects_replayed_server_nonce_after_first_success` |
 | OPRF | повтор witness index или подмена доли | закрыто тестом | `threshold_combine_rejects_duplicate_index`, `threshold_tampered_share_breaks_combine` |
 | Ключи | временные значения BIP-39 и SLIP-0010 остаются в памяти после вывода ключей | закрыто тестом | `bip39_derivation_temporaries_are_zeroizing`, `slip10_derivation_temporaries_are_zeroized` |
+| Ключи | временные значения 12 слов восстановления, смеси 24+12 слов и промежуточного HKDF остаются в памяти после ротации identity | закрыто тестом | `code_recovery_temporaries_are_zeroizing` |
 | Backup | подмена chat_id, recipient, timestamp, token, nonce или device key | закрыто тестом | `verify_rejects_tampered_chat_id`, `verify_rejects_tampered_recipient_device_pubkey`, `verify_rejects_tampered_timestamp`, `verify_rejects_tampered_token`, `verify_rejects_tampered_nonce`, `verify_rejects_wrong_device_pubkey` |
 | Backup | повтор серверного вызова | закрыто тестом | `production_context_rejects_replayed_server_nonce_after_first_success` и `mock_transport_rejects_replayed_server_nonce` |
 | Backup | неверный AAD в V1/V2 развёртке | закрыто тестом | `unwrap_fails_on_tampered_aad`, `v2_unwrap_rejects_tampered_canonical_aad` |
 | Backup | V1/V2 смешение форматов и тихий fallback | закрыто тестом | `v1_wire_rejected_by_v2_parser`, `v2_wire_rejected_by_v1_parser`, `v1_byte_prefix_v2_length_buffer_rejected_by_both`, `v2_byte_prefix_v1_length_buffer_rejected_by_both` |
+| Backup | внутренний V1 wrapped key после V2-распаковки остаётся обычным временным буфером | закрыто тестом | `v2_inner_wrapped_key_plaintext_is_zeroizing` |
 | Sealed Sender | подмена ciphertext, ключа получателя, версии или подписи | закрыто тестом | `phd_real_attacks_sealed_sender.rs`, `v1_v2_mixed_corpus.rs`, `v2_envelope_roundtrip.rs` |
 | Sealed Sender | подделанная внутренняя подпись V2 после успешного расшифрования | закрыто тестом | `forged_inner_signature_rejected_after_successful_v2_decrypt` |
 | Sealed Sender | повтор к другому получателю | закрыто тестом | `real_attack_replay_envelope_to_different_recipient_aad_blocks` |
@@ -51,6 +53,7 @@
 | Гонки | одновременный replay одного hash | закрыто локальным тестом | `concurrent_replay_guard_accepts_one_duplicate_hash_and_rejects_the_rest` |
 | Гонки | параллельная проверка witness-эпох | закрыто локальным тестом | `concurrent_witness_verification_has_no_shared_state_corruption` |
 | Повторы | случайная задержка повторов использует не общий системный генератор | закрыто тестом | `retry_jitter_uses_system_rng_not_thread_rng` |
+| Локальная база | временная копия открытого текста строки живёт дольше нужного при шифровании или расшифровании | закрыто тестом | `decrypt_row_zeroizing_returns_zeroizing_plaintext`, `row_cipher_sensitive_temporaries_are_zeroizing` |
 | Секреты | `Debug` и отладочные журналы раскрывают plaintext, token, server nonce, подписи, QR payload, TURN password или routing identifiers | закрыто тестами и локальным аудитом | redaction-тесты в `umbrella-backup`, `umbrella-oprf`, `umbrella-client`, `umbrella-ffi`, `umbrella-mls`, `umbrella-calls`, `umbrella-platform-verifier`, `umbrella-sealed-sender`, `umbrella-padding`, `umbrella-server-blind-postman`; `scripts/audit-local-release-hardening.sh` |
 | Недоделанное | отладочный вывод и недоделанные пути выглядят боевыми | закрыто локальным аудитом | `scripts/audit-local-release-hardening.sh`, `scripts/audit-test-only-production-boundary.sh` |
 

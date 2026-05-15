@@ -124,9 +124,11 @@ These are not hidden as "done". They remain release boundaries.
 - Чувствительные структуры протокола теперь скрывают `Debug` для plaintext,
   media frames, attestation token, server nonce, device key, подписей, долей,
   QR payload, TURN password и routing identifiers.
-- Гигиена памяти теперь покрывает временные значения вывода BIP-39 и
-  SLIP-0010, раскрытый plaintext Sealed Sender через `OpenedMessage` и
-  системный генератор для задержки повторов.
+- Гигиена памяти теперь покрывает временные значения вывода BIP-39,
+  SLIP-0010, 12 слов восстановления, внутренний ключ резервной копии после
+  V2-распаковки, очищаемый путь расшифрования строки SQLite, раскрытый
+  plaintext Sealed Sender через `OpenedMessage` и системный генератор для
+  задержки повторов.
 - Полный прогон всей рабочей области и локальные аудит-скрипты были запущены
   после слияния в `main`.
 

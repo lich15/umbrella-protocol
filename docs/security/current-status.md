@@ -58,8 +58,9 @@ Implemented and currently documented:
   sensitive protocol structs, rejected reserved DNS names in production
   transport config, and fixed the blind-postman replay-window growth path where
   unique over-limit messages could consume replay memory;
-- the 2026-05-16 memory-hygiene pass zeroizes BIP-39 and SLIP-0010 derivation
-  temporaries, returns Sealed Sender plaintext through the zeroizing
+- the 2026-05-16 memory-hygiene pass zeroizes BIP-39, SLIP-0010, 12-word
+  recovery-code and backup unwrap temporaries, adds a zeroizing SQLite row
+  plaintext path, returns Sealed Sender plaintext through the zeroizing
   `OpenedMessage` wrapper, and uses the system RNG for retry jitter;
 - external crypto attack ledger:
   `docs/security/external-crypto-attack-ledger-2026-05-14.md` and

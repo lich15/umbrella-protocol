@@ -61,6 +61,10 @@
 - Дополнительная гигиена памяти 2026-05-16 закрыта тестами
   `bip39_derivation_temporaries_are_zeroizing`,
   `slip10_derivation_temporaries_are_zeroized`,
+  `code_recovery_temporaries_are_zeroizing`,
+  `v2_inner_wrapped_key_plaintext_is_zeroizing`,
+  `decrypt_row_zeroizing_returns_zeroizing_plaintext`,
+  `row_cipher_sensitive_temporaries_are_zeroizing`,
   `opened_envelope_message_is_zeroizing_wrapper` и
   `retry_jitter_uses_system_rng_not_thread_rng`; подробности:
   `docs/audits/security-hardening-audit-2026-05-16.md`.

@@ -106,7 +106,7 @@ use hkdf::Hkdf;
 use rand_core::{CryptoRng, RngCore};
 use secrecy::ExposeSecret;
 use sha2::Sha256;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use umbrella_pq::{
     xwing_decaps, xwing_encaps, XWingPublicKey, XWingSecretSeed, XWING_CIPHERTEXT_LEN,
@@ -398,16 +398,12 @@ pub fn unwrap_v2_to_v1(
     // 4. AEAD decrypt aead_payload → V1 WrappedKey bytes (81).
     // 4. AEAD decrypt aead_payload → V1 WrappedKey bytes (81).
     let cipher = ChaCha20Poly1305::new(AeadKey::from_slice(&aead_key_bytes));
-    let nonce = AeadNonce::from_slice(&aead_nonce_bytes);
-    let plain = cipher
-        .decrypt(
-            nonce,
-            Payload {
-                msg: &wire.aead_payload,
-                aad: &aad_bytes,
-            },
-        )
-        .map_err(|_| BackupError::AeadDecryptFailed)?;
+    let plain = decrypt_v2_inner_wrapped_key_bytes(
+        &cipher,
+        &aead_nonce_bytes,
+        &wire.aead_payload,
+        &aad_bytes,
+    )?;
 
     // Zeroize derived AEAD key.
     // Zeroize derived AEAD key.
@@ -422,6 +418,24 @@ pub fn unwrap_v2_to_v1(
     // 5. Parse inner V1 WrappedKey (validates version + length).
     // 5. Parse inner V1 WrappedKey (validates version + length).
     WrappedKey::from_bytes(&plain)
+}
+
+/// Расшифровывает внутренний V1 wrapped-key в очищаемый временный Vec.
+/// Decrypts the inner V1 wrapped-key into a zeroizing temporary Vec.
+fn decrypt_v2_inner_wrapped_key_bytes(
+    cipher: &ChaCha20Poly1305,
+    nonce_bytes: &[u8; NONCE_LEN],
+    payload: &[u8],
+    aad: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, BackupError> {
+    Ok(Zeroizing::new(
+        cipher
+            .decrypt(
+                AeadNonce::from_slice(nonce_bytes),
+                Payload { msg: payload, aad },
+            )
+            .map_err(|_| BackupError::AeadDecryptFailed)?,
+    ))
 }
 
 /// HKDF-SHA256 derive 32-byte AEAD key + 12-byte AEAD nonce из X-Wing shared secret.
@@ -533,6 +547,43 @@ mod tests {
         assert_eq!(V2_AEAD_KEY_LEN, 32);
         assert_eq!(V2_DOMAIN_SEP, b"umbrellax-cloud-wrap-v2");
         assert_eq!(V2_HKDF_SALT, V2_DOMAIN_SEP);
+    }
+
+    #[test]
+    fn v2_inner_wrapped_key_plaintext_is_zeroizing() {
+        fn assert_zeroizing_vec(_: &zeroize::Zeroizing<Vec<u8>>) {}
+
+        let cipher = ChaCha20Poly1305::new(AeadKey::from_slice(&[0x42u8; V2_AEAD_KEY_LEN]));
+        let nonce = [0x24u8; NONCE_LEN];
+        let aad = b"typed-zeroizing-v2-inner";
+        let payload = cipher
+            .encrypt(
+                AeadNonce::from_slice(&nonce),
+                Payload {
+                    msg: &[0x11u8; WRAPPED_KEY_LEN],
+                    aad,
+                },
+            )
+            .expect("test AEAD encrypt");
+        let plain = decrypt_v2_inner_wrapped_key_bytes(&cipher, &nonce, &payload, aad)
+            .expect("test AEAD decrypt");
+        assert_zeroizing_vec(&plain);
+        assert_eq!(plain.len(), WRAPPED_KEY_LEN);
+
+        let source = include_str!("pq_wrap.rs");
+        let plain_zeroizing = [
+            "fn decrypt_v2_inner_wrapped_key_bytes",
+            "Result<Zeroizing<Vec<u8>>, BackupError>",
+        ];
+
+        assert!(
+            source.contains(plain_zeroizing[0]) && source.contains(plain_zeroizing[1]),
+            "V2 unwrap must zeroize the decrypted inner V1 wrapped-key bytes"
+        );
+        assert!(
+            source.contains("cipher.decrypt("),
+            "V2 unwrap must still decrypt the AEAD payload before parsing the inner V1 key"
+        );
     }
 
     /// Базовый roundtrip: wrap V1 → wrap V2 → unwrap V2 → unwrap V1 → message_key.

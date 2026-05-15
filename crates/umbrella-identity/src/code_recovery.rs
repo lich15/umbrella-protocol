@@ -54,11 +54,11 @@
 //! pastes another account's pubkey).
 
 use bip39::{Language, Mnemonic};
-use hkdf::Hkdf;
+use hmac::{Hmac, KeyInit, Mac};
 use rand_core::{CryptoRng, RngCore};
 use sha2::Sha512;
 use subtle::ConstantTimeEq;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::error::{IdentityError, Result};
 use crate::identity_key::{IdentityKey, IdentityKeyPublic};
@@ -98,19 +98,18 @@ impl CodeRecoveryMnemonic {
     /// Генерирует новую 12-словную фразу из CSPRNG.
     /// Generates a new 12-word phrase from a CSPRNG.
     pub fn generate<R: CryptoRng + RngCore>(rng: &mut R, language: MnemonicLanguage) -> Self {
-        let mut entropy = [0u8; CODE_RECOVERY_ENTROPY_LEN];
-        rng.fill_bytes(&mut entropy);
+        let entropy = generate_code_recovery_entropy(rng);
         let bip39_lang = Self::bip39_language(language);
         #[allow(
             unknown_lints,
             no_unwrap_in_lib,
             reason = "infallible: 16-byte entropy is always valid BIP-39 input"
         )]
-        let mnemonic = Mnemonic::from_entropy_in(bip39_lang, &entropy)
+        let mnemonic = Mnemonic::from_entropy_in(bip39_lang, &entropy[..])
             .expect("16-byte entropy is always valid for BIP-39");
         Self {
             phrase: mnemonic.to_string(),
-            entropy,
+            entropy: *entropy,
             language,
         }
     }
@@ -129,18 +128,18 @@ impl CodeRecoveryMnemonic {
         let bip39_lang = Self::bip39_language(language);
         let mnemonic = Mnemonic::parse_in_normalized(bip39_lang, trimmed)
             .map_err(|_| IdentityError::InvalidCodeRecoveryMnemonic)?;
-        let entropy_vec = mnemonic.to_entropy();
+        let entropy_vec = mnemonic_entropy_zeroizing(&mnemonic);
         if entropy_vec.len() != CODE_RECOVERY_ENTROPY_LEN {
             return Err(IdentityError::InvalidCodeRecoveryWordCount {
                 expected: CODE_RECOVERY_WORD_COUNT,
                 got: word_count,
             });
         }
-        let mut entropy = [0u8; CODE_RECOVERY_ENTROPY_LEN];
+        let mut entropy = Zeroizing::new([0u8; CODE_RECOVERY_ENTROPY_LEN]);
         entropy.copy_from_slice(&entropy_vec);
         Ok(Self {
             phrase: mnemonic.to_string(),
-            entropy,
+            entropy: *entropy,
             language,
         })
     }
@@ -170,6 +169,22 @@ impl CodeRecoveryMnemonic {
             MnemonicLanguage::English => Language::English,
         }
     }
+}
+
+/// Генерирует entropy кода восстановления в очищаемой временной обёртке.
+/// Generates code-recovery entropy in a zeroizing temporary wrapper.
+fn generate_code_recovery_entropy<R: CryptoRng + RngCore>(
+    rng: &mut R,
+) -> Zeroizing<[u8; CODE_RECOVERY_ENTROPY_LEN]> {
+    let mut entropy = Zeroizing::new([0u8; CODE_RECOVERY_ENTROPY_LEN]);
+    rng.fill_bytes(&mut entropy[..]);
+    entropy
+}
+
+/// Возвращает entropy из BIP-39 mnemonic в очищаемом временном Vec.
+/// Returns entropy from a BIP-39 mnemonic in a zeroizing temporary Vec.
+fn mnemonic_entropy_zeroizing(mnemonic: &Mnemonic) -> Zeroizing<Vec<u8>> {
+    Zeroizing::new(mnemonic.to_entropy())
 }
 
 impl core::fmt::Debug for CodeRecoveryMnemonic {
@@ -267,25 +282,64 @@ pub fn derive_rotated_identity_material(
     //    ikm = identity_seed.seed (64 B) || code.entropy (16 B) — 80 B total.
     //    salt = ROTATION_DOMAIN_SEPARATOR (30 B, constant).
     //    info = old_identity_pubkey bytes (32 B) — binds derivation to a specific old identity.
-    let mut ikm = [0u8; SEED_LEN + CODE_RECOVERY_ENTROPY_LEN];
+    let mut ikm = compose_rotation_ikm(identity_seed, code);
+
+    let rotated_seed = derive_rotation_seed_zeroizing(&ikm[..], &supplied_bytes);
+
+    // Обнуляем промежуточный ikm сразу после использования, не только при Drop.
+    // Zeroize the intermediate ikm immediately, not only on Drop.
+    ikm.zeroize();
+
+    Ok(RotatedIdentityMaterial {
+        seed: *rotated_seed,
+    })
+}
+
+/// Собирает вход ротации identity в очищаемом временном буфере.
+/// Builds identity-rotation input in a zeroizing temporary buffer.
+fn compose_rotation_ikm(
+    identity_seed: &IdentitySeed,
+    code: &CodeRecoveryMnemonic,
+) -> Zeroizing<[u8; SEED_LEN + CODE_RECOVERY_ENTROPY_LEN]> {
+    let mut ikm = Zeroizing::new([0u8; SEED_LEN + CODE_RECOVERY_ENTROPY_LEN]);
     ikm[..SEED_LEN].copy_from_slice(identity_seed.seed());
     ikm[SEED_LEN..].copy_from_slice(code.entropy());
+    ikm
+}
 
-    let hk = Hkdf::<Sha512>::new(Some(ROTATION_DOMAIN_SEPARATOR), &ikm);
-    let mut rotated_seed = [0u8; SEED_LEN];
+/// HKDF-SHA512 extract+expand для ротации identity с явным затиранием PRK/OKM.
+/// HKDF-SHA512 extract+expand for identity rotation with explicit PRK/OKM wiping.
+fn derive_rotation_seed_zeroizing(ikm: &[u8], info: &[u8]) -> Zeroizing<[u8; SEED_LEN]> {
+    // Этот вывод даёт ровно один блок SHA-512: SEED_LEN == 64.
+    // This derivation needs exactly one SHA-512 block: SEED_LEN == 64.
     #[allow(
         unknown_lints,
         no_unwrap_in_lib,
-        reason = "infallible: SEED_LEN (64) << HKDF-SHA512 max output (16320)"
+        reason = "infallible: HMAC accepts any key length per RFC 2104"
     )]
-    hk.expand(&supplied_bytes, &mut rotated_seed)
-        .expect("SEED_LEN (64) is well under HKDF-SHA512 max output 255 * 64 = 16320 bytes");
+    let mut extract_mac =
+        Hmac::<Sha512>::new_from_slice(ROTATION_DOMAIN_SEPARATOR).expect("HMAC accepts any key");
+    extract_mac.update(ikm);
+    let mut extract_output = extract_mac.finalize().into_bytes();
 
-    // Обнуляем промежуточный ikm сразу после использования.
-    // Zeroize the intermediate ikm right after use.
-    ikm.zeroize();
+    let mut prk = Zeroizing::new([0u8; 64]);
+    prk.copy_from_slice(extract_output.as_slice());
+    extract_output.zeroize();
 
-    Ok(RotatedIdentityMaterial { seed: rotated_seed })
+    #[allow(
+        unknown_lints,
+        no_unwrap_in_lib,
+        reason = "infallible: HMAC accepts any key length per RFC 2104"
+    )]
+    let mut expand_mac = Hmac::<Sha512>::new_from_slice(&prk[..]).expect("HMAC accepts any key");
+    expand_mac.update(info);
+    expand_mac.update(&[1]);
+    let mut expand_output = expand_mac.finalize().into_bytes();
+
+    let mut rotated_seed = Zeroizing::new([0u8; SEED_LEN]);
+    rotated_seed.copy_from_slice(&expand_output[..SEED_LEN]);
+    expand_output.zeroize();
+    rotated_seed
 }
 
 #[cfg(test)]
@@ -339,6 +393,66 @@ mod tests {
         assert_eq!(
             code.as_str().split_whitespace().count(),
             CODE_RECOVERY_WORD_COUNT
+        );
+    }
+
+    #[test]
+    fn code_recovery_temporaries_are_zeroizing() {
+        fn assert_zeroizing_array<const N: usize>(_: &zeroize::Zeroizing<[u8; N]>) {}
+        fn assert_zeroizing_vec(_: &zeroize::Zeroizing<Vec<u8>>) {}
+
+        let mut rng = OsRng;
+        let generated = generate_code_recovery_entropy(&mut rng);
+        assert_zeroizing_array(&generated);
+
+        let mnemonic = Mnemonic::from_entropy_in(Language::English, &[0u8; 16]).unwrap();
+        let parsed = mnemonic_entropy_zeroizing(&mnemonic);
+        assert_zeroizing_vec(&parsed);
+
+        let identity_seed = fresh_seed();
+        let code = fresh_code();
+        let rotation_ikm_typed = compose_rotation_ikm(&identity_seed, &code);
+        assert_zeroizing_array(&rotation_ikm_typed);
+
+        let rotation_seed_typed =
+            derive_rotation_seed_zeroizing(&rotation_ikm_typed[..], &[0xA5u8; 32]);
+        assert_zeroizing_array(&rotation_seed_typed);
+
+        let source = include_str!("code_recovery.rs");
+        let generated_entropy = ["Zeroizing::new(", "[0u8; CODE_RECOVERY_ENTROPY_LEN])"].concat();
+        let parsed_entropy = ["Zeroizing::new(", "mnemonic.to_entropy())"].concat();
+        let rotation_ikm = [
+            "Zeroizing::new(",
+            "[0u8; SEED_LEN + CODE_RECOVERY_ENTROPY_LEN])",
+        ]
+        .concat();
+        let rotation_seed = ["Zeroizing::new(", "[0u8; SEED_LEN])"].concat();
+        let extract_zeroize = ["extract_output.", "zeroize()"].concat();
+        let expand_zeroize = ["expand_output.", "zeroize()"].concat();
+
+        assert!(
+            source.contains(&generated_entropy),
+            "generated 12-word recovery entropy must be zeroized"
+        );
+        assert!(
+            source.contains(&parsed_entropy),
+            "parsed 12-word recovery entropy Vec must be zeroized"
+        );
+        assert!(
+            source.contains(&rotation_ikm),
+            "identity+recovery-code HKDF input mix must be zeroized"
+        );
+        assert!(
+            source.contains(&rotation_seed),
+            "rotated seed temporary must be zeroized after copying into owner"
+        );
+        assert!(
+            source.contains(&extract_zeroize),
+            "HKDF extract output must be explicitly zeroized"
+        );
+        assert!(
+            source.contains(&expand_zeroize),
+            "HKDF expand output must be explicitly zeroized"
         );
     }
 

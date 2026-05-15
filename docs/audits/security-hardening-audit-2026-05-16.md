@@ -21,16 +21,20 @@ Android/iOS-устройства, внешний формальный прого
 
 ## Что было найдено и исправлено
 
-Первичный recon-breadth pass не выявил Critical/High обходов. После отдельной
-гигиенической итерации 2026-05-16 закрыты **3 defense-in-depth замечания**:
-временные значения вывода ключей, возвращаемый plaintext Sealed Sender и
-источник случайности retry-jitter. Ни одно из них не давало прочитать чужие
-сообщения без уже скомпрометированной памяти процесса, но теперь эти места
-закрыты кодом и проверками.
+Первичный recon-breadth pass не выявил Critical/High обходов. После отдельных
+гигиенических итераций 2026-05-16 закрыты **6 defense-in-depth замечаний**:
+временные значения вывода ключей, 12 слов восстановления, внутренний ключ
+резервной копии после V2-распаковки, временная копия строки SQLite,
+возвращаемый plaintext Sealed Sender и источник случайности retry-jitter. Ни
+одно из них не давало прочитать чужие сообщения без уже скомпрометированной
+памяти процесса, но теперь эти места закрыты кодом и проверками.
 
 | Область | Класс §3 | Серьёзность §7а | Что наблюдалось | Решение раунда |
 |---|---|---|---|---|
 | `umbrella-identity` BIP-39 / SLIP-0010 derivation | 16 (zeroize) + частично 9 | **Low** | Временные entropy/PBKDF2/HMAC/full/secret/chain-code буферы могли жить до перезаписи stack/heap. Owning-типы (`IdentitySeed`, `MasterKey`, `ExtendedSecret`, `ChainCode`) уже были `ZeroizeOnDrop`. | Закрыто: временные буферы обёрнуты в `Zeroizing`, HMAC output явно затирается. Проверки: `bip39_derivation_temporaries_are_zeroizing`, `slip10_derivation_temporaries_are_zeroized`. |
+| `umbrella-identity` code recovery | 16 (zeroize) + частично 9 | **Low** | Временная entropy 12 слов, смесь 24+12 слов, HKDF extract/expand output и временный rotated seed могли жить до перезаписи памяти. | Закрыто: эти значения обёрнуты в `Zeroizing`, промежуточные HKDF-выходы явно затираются. Проверка: `code_recovery_temporaries_are_zeroizing`. |
+| `umbrella-backup` V2 cloud unwrap | 16 (zeroize) | **Low** | Внутренний V1 `WrappedKey` после V2-распаковки был обычным временным `Vec<u8>` до разбора. | Закрыто: расшифрованный внутренний ключ живёт в `Zeroizing<Vec<u8>>`. Проверка: `v2_inner_wrapped_key_plaintext_is_zeroizing`. |
+| `umbrella-client` SQLite row cipher | 16 (zeroize) | **Low** | При ошибке шифрования временная копия открытого текста строки могла дропнуться как обычный `Vec<u8>`; расшифрованные байты не имели очищаемого внутреннего пути. | Закрыто: шифрование держит копию в `Zeroizing`, добавлен `decrypt_row_zeroizing`, а SQLite store использует его перед созданием конечной строки. Проверки: `decrypt_row_zeroizing_returns_zeroizing_plaintext`, `row_cipher_sensitive_temporaries_are_zeroizing`. |
 | `umbrella-sealed-sender` `OpenedEnvelope.message` | 16 (zeroize) | **Low** | Plaintext message возвращался как обычный `Vec<u8>` и не затирал память при Drop. Промежуточные буферы внутри `unseal` уже были `Zeroizing`. | Закрыто: введён `OpenedMessage`, очищаемая обёртка над plaintext. Проверка: `opened_envelope_message_is_zeroizing_wrapper`. |
 | `umbrella-client` `transport/retry.rs` jitter | 14 (RNG hygiene) | **Hygiene** | `rand::thread_rng()` использовался для backoff jitter. Это не security-sensitive, но отличалось от консервативного стиля протокола. | Закрыто: retry-jitter использует системный `OsRng`. Проверка: `retry_jitter_uses_system_rng_not_thread_rng`. |
 
@@ -44,6 +48,10 @@ Android/iOS-устройства, внешний формальный прого
 
 - `bip39_derivation_temporaries_are_zeroizing`;
 - `slip10_derivation_temporaries_are_zeroized`;
+- `code_recovery_temporaries_are_zeroizing`;
+- `v2_inner_wrapped_key_plaintext_is_zeroizing`;
+- `decrypt_row_zeroizing_returns_zeroizing_plaintext`;
+- `row_cipher_sensitive_temporaries_are_zeroizing`;
 - `opened_envelope_message_is_zeroizing_wrapper`;
 - `retry_jitter_uses_system_rng_not_thread_rng`.
 
@@ -57,6 +65,9 @@ Existing `attack_*` / `real_attack_*` / `verify_rejects_tampered_*` /
 
 - `cargo test -p umbrella-identity bip39_derivation_temporaries_are_zeroizing --all-features --locked` → ok.
 - `cargo test -p umbrella-identity slip10_derivation_temporaries_are_zeroized --all-features --locked` → сначала падал, после исправления ok.
+- `cargo test -p umbrella-identity code_recovery_temporaries_are_zeroizing --all-features --locked` → сначала падал, после исправления ok.
+- `cargo test -p umbrella-backup v2_inner_wrapped_key_plaintext_is_zeroizing --all-features --locked` → сначала падал, после исправления ok.
+- `cargo test -p umbrella-client row_cipher --all-features --locked` → сначала не компилировался без `decrypt_row_zeroizing`, после исправления ok.
 - `cargo test -p umbrella-client retry_jitter_uses_system_rng_not_thread_rng --all-features --locked` → сначала падал, после исправления ok.
 - `cargo test -p umbrella-sealed-sender opened_envelope_message_is_zeroizing_wrapper --all-features --locked` → сначала не компилировался без `OpenedMessage`, после исправления ok.
 - `cargo test -p umbrella-identity -p umbrella-client -p umbrella-sealed-sender --all-features --locked` → ok, включая реальные Sealed Sender fuzz-проверки V1/V2 на 100k мусорных входов.
@@ -80,13 +91,17 @@ Existing `attack_*` / `real_attack_*` / `verify_rejects_tampered_*` /
 ## Tier 1 progress
 
 - `umbrella-identity` (2026-05-16): пройдены 20 классов §3 spec. Подтверждённых
-  закрытых-тестом находок: 1 Low hygiene.
+  закрытых-тестом находок: 2 Low hygiene.
   - **Stack-residual BIP-39/SLIP-0010 intermediates** (классы 16 — zeroize,
     и 9 — частично). Временные entropy/PBKDF2/HMAC/full/secret/chain-code
     буферы теперь обёрнуты в `Zeroizing`, а HMAC output явно затирается через
     `i.zeroize()`. Проверки:
     `bip39_derivation_temporaries_are_zeroizing`,
     `slip10_derivation_temporaries_are_zeroized`.
+  - **Code recovery temporaries** (классы 16 — zeroize, и 9 — частично).
+    12-словная entropy, смесь 24+12 слов, HKDF extract/expand output и
+    временный rotated seed теперь затираются. Проверка:
+    `code_recovery_temporaries_are_zeroizing`.
   - Прочее: все sensitive типы имеют `ZeroizeOnDrop` и ручной `Debug` с
     redaction; `IdentityError` варианты не утекают байты ключей; HKDF
     labels (`umbrellax-device-attestation-v1`, `umbrellax-identity-rotation-v1`,
@@ -172,7 +187,7 @@ Existing `attack_*` / `real_attack_*` / `verify_rejects_tampered_*` /
     `opened_envelope_message_is_zeroizing_wrapper`.
 - `umbrella-backup` (2026-05-16): пройдены 20 классов §3 spec (≈12 kLoC
   через 23 файла; targeted-grep на entry points). Подтверждённых
-  закрытых-тестом находок: 0. Что подтверждено:
+  закрытых-тестом находок: 1 Low hygiene. Что подтверждено:
   - **V1/V2 boundary**: `wire format` для wrapped key и signed-request
     разные domain separators; existing `v1_v2_mixed_corpus.rs` тесты
     покрывают cross-version replay; `wrap_v1_into_v2`/`unwrap_v2_to_v1`
@@ -191,6 +206,9 @@ Existing `attack_*` / `real_attack_*` / `verify_rejects_tampered_*` /
     + `mock_transport_rejects_replayed_server_nonce` — уже в реестре.
   - **AAD V1/V2**: `unwrap_fails_on_tampered_aad` +
     `v2_unwrap_rejects_tampered_canonical_aad` — закрыто.
+  - **V2 unwrap memory hygiene**: внутренний V1 `WrappedKey` после
+    V2-распаковки теперь живёт в `Zeroizing<Vec<u8>>` до разбора.
+    Проверка: `v2_inner_wrapped_key_plaintext_is_zeroizing`.
   - **Fail-closed production**: `verify_signed_unwrap_request_for_production_with_context`
     требует `PlatformVerifierKind != TestOnly` и `ProductionDeviceState`,
     `ProductionFreshnessPolicy` (5 мин nonce/request age, 30 сек future
@@ -221,10 +239,15 @@ Existing `attack_*` / `real_attack_*` / `verify_rejects_tampered_*` /
 ## Tier 2 progress
 
 - `umbrella-client` (7.7 kLoC, 2026-05-16): пройдены классы 1-6, 8, 14, 17
-  по §3 spec. Подтверждённых закрытых-тестом находок: 1 hygiene.
+  по §3 spec. Подтверждённых закрытых-тестом находок: 2 hygiene.
   - **RNG**: `transport/retry.rs` больше не использует `rand::thread_rng()`;
     decorrelated exponential backoff jitter берёт случайность из системного
     `OsRng`. Проверка: `retry_jitter_uses_system_rng_not_thread_rng`.
+  - **SQLite row plaintext hygiene**: шифрование строки держит временную
+    копию открытого текста в `Zeroizing`, а для внутренних читателей добавлен
+    `decrypt_row_zeroizing`. Проверки:
+    `decrypt_row_zeroizing_returns_zeroizing_plaintext`,
+    `row_cipher_sensitive_temporaries_are_zeroizing`.
   - **Domain separators**: `umbrellax-sqlite-master-v1`,
     `umbrellax-sqlite-row-nonce-v1` для шифрованного local storage —
     отдельны от protocol-layer separators.
@@ -320,15 +343,20 @@ Round spec:
 
 ### What was found and fixed
 
-The primary recon-breadth pass found no Critical/High bypasses. A follow-up
-memory-hygiene iteration on 2026-05-16 closed **3 defense-in-depth findings**:
-key-derivation temporaries, returned Sealed Sender plaintext, and retry-jitter
-RNG consistency. None of these allowed reading another user's messages without
-already-compromised process memory, but they are now closed by code and tests.
+The primary recon-breadth pass found no Critical/High bypasses. Follow-up
+memory-hygiene iterations on 2026-05-16 closed **6 defense-in-depth findings**:
+key-derivation temporaries, recovery-code temporaries, backup unwrap
+temporaries, SQLite row plaintext temporaries, returned Sealed Sender
+plaintext, and retry-jitter RNG consistency. None of these allowed reading
+another user's messages without already-compromised process memory, but they
+are now closed by code and tests.
 
 | Area | Category §3 | Severity §7a | Observation | Round decision |
 |---|---|---|---|---|
 | `umbrella-identity` BIP-39 / SLIP-0010 derivation | 16 + partially 9 | **Low** | Temporary entropy/PBKDF2/HMAC/full/secret/chain-code buffers could live until stack/heap reuse. Owning types (`IdentitySeed`, `MasterKey`, `ExtendedSecret`, `ChainCode`) were already `ZeroizeOnDrop`. | Closed: temporaries are wrapped in `Zeroizing`, and HMAC output is explicitly wiped. Tests: `bip39_derivation_temporaries_are_zeroizing`, `slip10_derivation_temporaries_are_zeroized`. |
+| `umbrella-identity` code recovery | 16 + partially 9 | **Low** | Temporary 12-word entropy, 24+12-word input mix, HKDF extract/expand output, and rotated seed temporary could live until memory reuse. | Closed: these values are wrapped in `Zeroizing`, and HKDF intermediate outputs are explicitly wiped. Test: `code_recovery_temporaries_are_zeroizing`. |
+| `umbrella-backup` V2 cloud unwrap | 16 | **Low** | The inner V1 `WrappedKey` after V2 unwrap was a plain temporary `Vec<u8>` before parsing. | Closed: decrypted inner key bytes live in `Zeroizing<Vec<u8>>`. Test: `v2_inner_wrapped_key_plaintext_is_zeroizing`. |
+| `umbrella-client` SQLite row cipher | 16 | **Low** | On encryption error, the plaintext copy could drop as a normal `Vec<u8>`; decrypted bytes had no zeroizing internal path. | Closed: encryption uses a `Zeroizing` buffer, `decrypt_row_zeroizing` was added, and the SQLite store uses it before creating the final string. Tests: `decrypt_row_zeroizing_returns_zeroizing_plaintext`, `row_cipher_sensitive_temporaries_are_zeroizing`. |
 | `umbrella-sealed-sender` `OpenedEnvelope.message` | 16 | **Low** | Plaintext message was returned as a plain `Vec<u8>` and was not explicitly zeroized on Drop. Intermediate buffers inside `unseal` were already `Zeroizing`. | Closed: `OpenedMessage` is now a zeroizing plaintext wrapper. Test: `opened_envelope_message_is_zeroizing_wrapper`. |
 | `umbrella-client` `transport/retry.rs` jitter | 14 (RNG hygiene) | **Hygiene** | `rand::thread_rng()` was used for backoff jitter. This was not security-sensitive, but it differed from the protocol's conservative RNG style. | Closed: retry jitter uses system `OsRng`. Test: `retry_jitter_uses_system_rng_not_thread_rng`. |
 
@@ -342,6 +370,10 @@ This hygiene iteration added these regression checks:
 
 - `bip39_derivation_temporaries_are_zeroizing`;
 - `slip10_derivation_temporaries_are_zeroized`;
+- `code_recovery_temporaries_are_zeroizing`;
+- `v2_inner_wrapped_key_plaintext_is_zeroizing`;
+- `decrypt_row_zeroizing_returns_zeroizing_plaintext`;
+- `row_cipher_sensitive_temporaries_are_zeroizing`;
 - `opened_envelope_message_is_zeroizing_wrapper`;
 - `retry_jitter_uses_system_rng_not_thread_rng`.
 
@@ -355,6 +387,9 @@ gates listed in `docs/security/protocol-core-attack-gates.md` and
 
 - `cargo test -p umbrella-identity bip39_derivation_temporaries_are_zeroizing --all-features --locked` → ok.
 - `cargo test -p umbrella-identity slip10_derivation_temporaries_are_zeroized --all-features --locked` → failed first, then passed after the fix.
+- `cargo test -p umbrella-identity code_recovery_temporaries_are_zeroizing --all-features --locked` → failed first, then passed after the fix.
+- `cargo test -p umbrella-backup v2_inner_wrapped_key_plaintext_is_zeroizing --all-features --locked` → failed first, then passed after the fix.
+- `cargo test -p umbrella-client row_cipher --all-features --locked` → failed to compile before `decrypt_row_zeroizing`, then passed after the fix.
 - `cargo test -p umbrella-client retry_jitter_uses_system_rng_not_thread_rng --all-features --locked` → failed first, then passed after the fix.
 - `cargo test -p umbrella-sealed-sender opened_envelope_message_is_zeroizing_wrapper --all-features --locked` → failed to compile before `OpenedMessage`, then passed after the fix.
 - `cargo test -p umbrella-identity -p umbrella-client -p umbrella-sealed-sender --all-features --locked` → passed, including real Sealed Sender V1/V2 100k-random-input fuzz checks.

@@ -80,8 +80,9 @@ hardening, and broad `Debug` redaction for plaintext, tokens, nonces, keys,
 shares, QR payloads, TURN credentials, and routing identifiers.
 The 2026-05-16 memory-hygiene pass is recorded in
 [`audits/security-hardening-audit-2026-05-16.md`](audits/security-hardening-audit-2026-05-16.md).
-It covers key-derivation temporary zeroization, zeroizing Sealed Sender opened
-plaintext, and system-RNG retry jitter.
+It covers key-derivation, recovery-code, backup unwrap, and SQLite row
+temporary zeroization, zeroizing Sealed Sender opened plaintext, and
+system-RNG retry jitter.
 Local audits also include `scripts/audit-test-only-production-boundary.sh`,
 which checks that test-only and incomplete paths do not look like production
 paths.
@@ -183,8 +184,10 @@ blind postman и широкое скрытие `Debug` для plaintext, token, 
 ключей, долей, QR payload, TURN password и routing identifiers.
 Проход гигиены памяти от 2026-05-16 записан в
 [`audits/security-hardening-audit-2026-05-16.md`](audits/security-hardening-audit-2026-05-16.md).
-Он покрывает затирание временных значений вывода ключей, очищаемый plaintext
-после раскрытия Sealed Sender и системный генератор для задержки повторов.
+Он покрывает затирание временных значений вывода ключей, 12 слов
+восстановления, внутреннего ключа резервной копии, временных строк SQLite,
+очищаемый plaintext после раскрытия Sealed Sender и системный генератор для
+задержки повторов.
 Локальные аудиты также включают `scripts/audit-test-only-production-boundary.sh`;
 он проверяет, что тестовые и неполные пути не выглядят боевыми.
 Локальные выпускные ворота записаны в
