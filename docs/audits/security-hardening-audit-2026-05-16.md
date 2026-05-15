@@ -83,6 +83,45 @@ _Список cargo/script команд с результатами._
     cross-crate state в основном через `KeyStore` trait с `Mutex`-защитой.
   - Категории 18/19/20: n/a (нет рекурсивных парсеров, нет
     allocator-зависимых hot paths, нет floating-point).
+- `umbrella-mls` (2026-05-16): пройдены 20 классов §3 spec.
+  Подтверждённых закрытых-тестом находок: 0. Что подтверждено:
+  - **Тип-уровневый whitelist ciphersuites** (`UmbrellaCiphersuite` enum
+    без ECDSA-вариантов) полностью митигирует ETK split-brain атаку
+    (Cremers et al CISPA eprint 2025/229) на signature malleability в
+    P-256/P-384/P-521. Конструирование ECDSA-варианта невозможно даже
+    через `from_bytes` / `from_raw_id` — конверсия из
+    `openmls_traits::Ciphersuite` валидирует и отказывает.
+  - **Парсеры `parse_mls_message_safe` и `parse_key_package_safe`** уже
+    закрывают F-37 (panic в `tls_codec-0.4.2/src/quic_vec.rs:53`)
+    через bounds-check + `std::panic::catch_unwind(AssertUnwindSafe)` →
+    explicit `MlsError::ParserPanic` (не silent fallback).
+  - **External operations** (External Commits / External Proposals) для
+    `GroupPolicy::Private` отвергаются на двух уровнях: openmls
+    `ProcessMessageError::UnauthorizedExternalApplicationMessage`/`Commit`
+    маппится в `MlsError::ExternalOperationForbidden`; `join_from_welcome`
+    дополнительно cross-проверяет `expected_policy` против observed
+    `ExternalPub` extension в GroupInfo. Default `GroupPolicy::default() ==
+    Private`. Для `PublicBroadcast` PSK обязателен (`requires_psk_for_external_join`).
+  - **KeyPackage и group lifetime** (28 дней / 24 часа) принудительно
+    короче чем дефолт openmls (90 дней) — окно использования утёкшего
+    KeyPackage сокращено, регулярный rekey на любой период.
+  - **Credential binding**: device credential = `identity_pubkey || device_index_BE`,
+    signature_key = device_pubkey; identity credential = identity_pubkey,
+    signature_key = identity_pubkey. Получатель cross-проверяет через KT
+    `DeviceAttestation` (Sesame pattern).
+  - **Domain separation**: openmls сам обеспечивает domain separation
+    через MLS RFC 9420 transcript labels; Umbrella superlayers (KT, Sealed
+    Sender, attestation) добавляют свои `umbrellax-*-v1` labels на верх.
+  - **Категории 14/16/17**: openmls сам управляет zeroize и serde-границами
+    через `OpenMlsProvider` trait и `tls_codec`; whitelist не пускает не-Ed
+    signers; `parse_*_safe` отвергает > `usize::MAX / 2` через `tls_codec`
+    нативно (transport-layer limits applied separately at postman).
+  - **Категории 1/2/8/13**: applicable, но рассмотрены через group.rs (1735
+    LoC) с targeted-grep — все `Err`-арки в `process_incoming` маппятся в
+    rejection, fall-through arms возвращают `ExternalOperationForbidden`,
+    `u64` epoch и lifetime арифметика через `saturating_add` либо явные
+    проверки; cross-version confusion отсутствует (один формат, версия
+    enforced через openmls policy).
 
 ## Tier 2 progress
 
