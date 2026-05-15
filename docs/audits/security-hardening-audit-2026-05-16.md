@@ -122,6 +122,36 @@ _Список cargo/script команд с результатами._
     `u64` epoch и lifetime арифметика через `saturating_add` либо явные
     проверки; cross-version confusion отсутствует (один формат, версия
     enforced через openmls policy).
+- `umbrella-sealed-sender` (2026-05-16): пройдены 20 классов §3 spec.
+  Подтверждённых закрытых-тестом находок: 0. Что подтверждено:
+  - **Strict version dispatch**: `SealedSenderVersion::try_from` exhaustive
+    rejection для всех 256 byte values; `unseal` напрямую проверяет
+    `wire[0] != VERSION` и возвращает `UnsupportedVersion`. Полный
+    тест-перебор уже существует.
+  - **Cross-version replay V1↔V2 closed**: разные domain separators
+    (`umbrellax-sealed-sender-v1` vs `umbrellax-sealed-sender-v2`) в KDF,
+    AAD и inner-signature payload — V1 envelope, parsed как V2, провалит
+    AEAD decrypt; и наоборот. Existing test
+    `real_attack_cross_version_replay_v1_to_v2_blocked` фиксирует
+    рекомендуемую boundary.
+  - **AAD binding**: `aead_ad = version || eph_pub || recipient_pubkey`.
+    Любое подменное поле ломает AEAD. Аналогично V2 (с X-Wing ct в роли
+    eph_pub). Inner Ed25519 подпись покрывает `DOMAIN_SEP || eph_pub ||
+    message` — анти-replay к разным получателям.
+  - **Zeroize**: `inner` и `padded` буфера обёрнуты в
+    `Zeroizing<Vec<u8>>` (F-50 closed); ephemeral X25519 private secret
+    обнуляется через `X25519Ephemeral` Drop.
+  - **Debug redaction**: `OpenedEnvelope` имеет ручной `Debug` с
+    `message: <redacted>`, `message_len` — info-leak закрыт (2026-05-15).
+  - **Категории 17/18/19/20**: minimum/maximum wire-bounds enforced
+    (`MIN_WIRE_LEN`, `MAX_PAYLOAD`), нет рекурсивных парсеров, нет
+    allocator-зависимых hot paths, нет floating-point.
+  - **Наблюдение (не finding)**: `OpenedEnvelope.message: Vec<u8>` — это
+    plaintext, который существует в heap до момента `Drop` без `Zeroize`.
+    Это API contract — caller отвечает за дальнейшую очистку. Cold-boot
+    mitigation покрывает только intermediate buffers внутри `unseal`, что
+    соответствует SPEC-08 §5.2 step 9 и закрытию F-50. Не Medium, не
+    requires fix этого раунда.
 
 ## Tier 2 progress
 
