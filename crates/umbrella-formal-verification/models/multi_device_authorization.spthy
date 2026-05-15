@@ -71,6 +71,37 @@
        через approval flow.
 
    ----------------------------------------------------------------------------
+   New lemmas (PhD-deep session 2026-05-17 inline F-PHD-RETRO-3 fix):
+
+   - unwrap_requires_signed_request
+       UnwrapGranted event обязательно сопровождается явной валидной
+       Ed25519-подписью устройства поверх (chat_id, identity_pk).
+       Закрывает abstraction gap где старая модель имела
+       `In(unwrap_request)` без signature verification — model был
+       слабее реального кода (`signed_request.rs verify_signed_unwrap_request`).
+
+   - unwrap_binds_chat_id_to_identity
+       UnwrapBoundToChat event требует prior DeviceActivated для
+       того же device_pk. Cross-account replay defence: adversary с
+       corrupted device_X из identity_A не может проигрывать
+       SignedUnwrapRequest, выпущенный для chat_A, против sealed-server
+       endpoint identity_B's chat_B (chat_id и identity_pk оба входят
+       в `unwrap_msg` подписи).
+
+   - twentyfour_words_leak_alone_strengthened
+       Усиление существующей `twentyfour_words_leak_alone_insufficient`:
+       даже при leaked identity_sk, UnwrapGranted всё ещё требует
+       device-sk signature поверх (chat_id, identity_pk). Это явно
+       формализует claim что 24-words leak alone не позволяет
+       Sealed Server-выдачу даже для existing active device.
+
+   - unauthorized_device_rejected_by_sealed_servers (strengthened)
+       До усиления доказывала только prior-activation (тавтологично
+       относительно rule structure). Теперь объединяет prior-activation
+       AND signed-request requirements в одно утверждение, отражая обе
+       проверки реального кода.
+
+   ----------------------------------------------------------------------------
    Axioms / abstractions:
 
    - Ed25519 SUF-CMA modelled через Tamarin `signing` builtin (sign/2,
@@ -249,18 +280,39 @@ rule revoke_device:
    Rule: sealed_server_unwrap
 
    Sealed Server processes SignedUnwrapRequest from device. Fires
-   ONLY если device entry в active state (no pending, no revoked).
-   Action label `UnwrapGranted` фиксирует successful authorization.
+   ONLY если device entry в active state (no pending, no revoked)
+   AND `unwrap_request` is a valid Ed25519 signature от соответствующего
+   `device_sk` под (chat_id, identity_pk) tuple.
 
    Per SPEC-12 §A.5.1 Sealed Server enforcement after ADR-008 §6:
    - KT inclusion-proof lookup для device_pubkey
    - entry-flag check: только active proceeds
+   - signed_request.rs `verify_signed_unwrap_request` Ed25519 verify
+     над `canonical_signing_input` (ephemeral_r || chat_id ||
+     recipient_device_pubkey || timestamp || server_nonce || attestation)
+
+   PhD-deep session 2026-05-17 inline F-PHD-RETRO-3 fix: rule теперь явно требует
+   валидную подпись устройства на unwrap_request и связывает chat_id
+   с identity_pk. До исправления `In(unwrap_request)` принимал любые
+   adversary-controlled байты, и `UnwrapGranted` мог fire без
+   аутентификации запроса — model был слабее реального кода. Новые
+   action labels `UnwrapRequestSignedByDevice` и `UnwrapBoundToChat`
+   делают этот шаг явным и доказуемым.
 */
 rule sealed_server_unwrap:
+    let
+        unwrap_msg = <'dom_unwrap', chat_id, identity_pk>
+        req_sig    = sign(unwrap_msg, device_sk)
+    in
     [ !KtActive(device_pk, identity_pk),
-      In(unwrap_request) ]
-  --[ UnwrapGranted(device_pk, identity_pk, unwrap_request) ]->
-    [ Out(<'unwrap_share', device_pk, unwrap_request>) ]
+      !DeviceSk($D, device_sk),
+      In(chat_id) ]
+  --[ Eq(device_pk, pk(device_sk)),
+      Eq(verify(req_sig, unwrap_msg, device_pk), true),
+      UnwrapRequestSignedByDevice(device_pk, chat_id, req_sig),
+      UnwrapBoundToChat(device_pk, identity_pk, chat_id),
+      UnwrapGranted(device_pk, identity_pk, <chat_id, req_sig>) ]->
+    [ Out(<'unwrap_share', device_pk, chat_id, req_sig>) ]
 
 /*
    Rule: rotate_identity_atomic
@@ -361,17 +413,25 @@ lemma active_device_signs_authorization:
 
 /*
    Lemma: unauthorized_device_rejected_by_sealed_servers
+   (PhD-deep session 2026-05-17 inline F-PHD-RETRO-3 strengthened)
 
    Sealed Server выдаёт unwrap share только для device в active state.
-   Любой UnwrapGranted event требует prior DeviceActivated event для
-   same device_pk (no unwrap для pending или revoked).
+   Strengthened: lemma теперь объединяет prior-activation AND
+   signed-request requirements в одно утверждение, отражая обе
+   проверки реального кода (`!KtActive` lookup + `verify_signed_unwrap_request`).
+
+   До усиления session #68 lemma доказывала только prior-activation
+   (тавтологична относительно rule structure). После добавления
+   `UnwrapRequestSignedByDevice` action label, lemma явно требует
+   обе проверки в трассе.
 */
 lemma unauthorized_device_rejected_by_sealed_servers:
-    "All device_pk identity_pk req #i.
-        UnwrapGranted(device_pk, identity_pk, req) @ #i
+    "All device_pk identity_pk chat_id sig #i.
+        UnwrapGranted(device_pk, identity_pk, <chat_id, sig>) @ #i
         ==>
-        Ex Approver #j. DeviceActivated(Approver, device_pk) @ #j
-        & #j < #i"
+        (Ex Approver #j. DeviceActivated(Approver, device_pk) @ #j
+                       & #j < #i)
+        & (UnwrapRequestSignedByDevice(device_pk, chat_id, sig) @ #i)"
 
 /*
    Lemma: twentyfour_words_leak_alone_insufficient
@@ -436,16 +496,73 @@ lemma revocation_terminal_state:
             DeviceActivated(Approver, target_pk) @ #a & #r < #a)"
 
 /*
+   Lemma: unwrap_requires_signed_request
+   (PhD-deep session 2026-05-17 inline F-PHD-RETRO-3 NEW)
+
+   Любой UnwrapGranted event предваряется явной валидной Ed25519-подписью
+   от device_sk соответствующего этому device_pk. Adversary без device_sk
+   не может trigger Sealed Server release of unwrap share для этого
+   устройства, даже если KT entry для устройства активна.
+
+   Это закрывает разрыв между моделью и реальным кодом, где
+   `verify_signed_unwrap_request` обязателен (signed_request.rs §verify).
+*/
+lemma unwrap_requires_signed_request:
+    "All device_pk identity_pk chat_id sig #i.
+        UnwrapGranted(device_pk, identity_pk, <chat_id, sig>) @ #i
+        ==>
+        Ex #s. UnwrapRequestSignedByDevice(device_pk, chat_id, sig) @ #s
+        & #s = #i"
+
+/*
+   Lemma: unwrap_binds_chat_id_to_identity
+   (PhD-deep session 2026-05-17 inline F-PHD-RETRO-3 NEW)
+
+   Любой UnwrapGranted event связан с конкретной парой (device_pk, identity_pk)
+   и chat_id входит в signed_request, поэтому одна и та же подпись не может
+   быть переиспользована для другого chat_id либо другого identity_pk.
+
+   Cross-account replay defence: adversary с corrupted device_X из identity_A
+   не может проигрывать SignedUnwrapRequest, выпущенный для chat_A, против
+   sealed-server endpoint identity_B's chat_B — chat_id и identity_pk оба
+   входят в `unwrap_msg` подписи, поэтому verify провалится либо canonical
+   bytes не совпадут.
+*/
+lemma unwrap_binds_chat_id_to_identity:
+    "All device_pk identity_pk chat_id #i.
+        UnwrapBoundToChat(device_pk, identity_pk, chat_id) @ #i
+        ==>
+        (Ex Approver #a.
+            DeviceActivated(Approver, device_pk) @ #a & #a < #i)"
+
+/*
+   Lemma: twentyfour_words_leak_alone_strengthened
+   (PhD-deep session 2026-05-17 inline F-PHD-RETRO-3 NEW — усиление через F-PHD-RETRO-3 fix)
+
+   Strengthened статус по сравнению с `twentyfour_words_leak_alone_insufficient`:
+   теперь модель явно доказывает что adversary с leaked identity_sk не может
+   trigger UnwrapGranted ни для какого device, не имея device_sk этого
+   устройства. Усиление возможно благодаря добавлению `!DeviceSk($D, device_sk)`
+   premise в `sealed_server_unwrap`.
+*/
+lemma twentyfour_words_leak_alone_strengthened:
+    "All A device_pk identity_pk chat_id sig #i #r.
+        UnwrapGranted(device_pk, identity_pk, <chat_id, sig>) @ #i
+        & Reveal24Words(A, identity_pk) @ #r
+        ==>
+        UnwrapRequestSignedByDevice(device_pk, chat_id, sig) @ #i"
+
+/*
    Lemma: honest_setup_executable (exists-trace)
 
    Sanity: honest bootstrap + add second device via approval flow + Sealed
    Server unwrap для second device может выполниться без adversarial events.
 */
 lemma honest_setup_executable: exists-trace
-    "Ex A sk1 sk2 device2_pk identity_pk req #i #j #k.
+    "Ex A sk1 sk2 device2_pk identity_pk chat_id sig #i #j #k.
         BootstrapIdentity(A, sk1, sk2) @ #i
         & DeviceActivated(A, device2_pk) @ #j
-        & UnwrapGranted(device2_pk, identity_pk, req) @ #k
+        & UnwrapGranted(device2_pk, identity_pk, <chat_id, sig>) @ #k
         & i < j & j < k
         & (not Ex B id_sk #r. Reveal24Words(B, id_sk) @ #r)"
 
