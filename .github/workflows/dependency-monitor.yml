@@ -7,9 +7,9 @@ name: dependency-monitor
 
 on:
   schedule:
-    # RU: Каждый день 03:40 UTC, после Dependabot-сканирования Cargo.
-    # EN: Every day at 03:40 UTC, after the Cargo Dependabot scans.
-    - cron: '40 3 * * *'
+    # RU: Каждые 6 часов. GitHub может немного задержать cron под нагрузкой.
+    # EN: Every 6 hours. GitHub may delay cron slightly under load.
+    - cron: '40 */6 * * *'
   workflow_dispatch:
   pull_request:
     branches: [main]

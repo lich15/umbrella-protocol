@@ -14,7 +14,7 @@ What runs:
 - Dependabot checks the root Rust workspace every day.
 - Dependabot checks the separate fuzz `Cargo.lock` every day.
 - Dependabot checks GitHub Actions weekly.
-- `.github/workflows/dependency-monitor.yml` runs every day and on relevant
+- `.github/workflows/dependency-monitor.yml` runs every six hours and on relevant
   pull requests.
 - The monitor runs `cargo audit` for the root lockfile and for
   `crates/umbrella-fuzz/fuzz/Cargo.lock`.
@@ -48,7 +48,7 @@ Umbrella Protocol теперь использует живой монитори�
 - Dependabot каждый день проверяет корневые Rust-зависимости.
 - Dependabot каждый день проверяет отдельный fuzz `Cargo.lock`.
 - Dependabot раз в неделю проверяет GitHub Actions.
-- `.github/workflows/dependency-monitor.yml` запускается каждый день и на
+- `.github/workflows/dependency-monitor.yml` запускается каждые шесть часов и на
   важных pull request.
 - Сторож запускает `cargo audit` для корневого lockfile и для
   `crates/umbrella-fuzz/fuzz/Cargo.lock`.
