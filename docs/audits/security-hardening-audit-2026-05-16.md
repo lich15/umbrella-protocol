@@ -21,22 +21,41 @@ Android/iOS-устройства, внешний формальный прого
 
 ## Что было найдено и исправлено
 
-| Область | Дыра простыми словами | Что сделано |
-|---|---|---|
-| _placeholder — заполнится по ходу_ | | |
+Закрытых-тестом находок этого раунда: **0**. Это валидный outcome
+recon-breadth pass по §10в spec (никаких выдуманных находок).
+
+Рассмотренные кандидаты, не достигшие уровня "fix this round":
+
+| Область | Класс §3 | Серьёзность §7а | Что наблюдалось | Решение раунда |
+|---|---|---|---|---|
+| `umbrella-identity` `MasterKey::from_seed` / `derive_child` | 16 (zeroize) + частично 9 | **Low** | HMAC-SHA512 output `i` и копия `full = [0u8; 64]` содержат частичный ключевой материал (extended_secret + chain_code) на stack и не зануляются. Owning-типы (`MasterKey`, `ExtendedSecret`, `ChainCode`) — `ZeroizeOnDrop` ✓. | Зафиксировано как наблюдение; кандидат для follow-up hygiene PR (defense-in-depth, не E2EE bypass, требует уже скомпрометированной памяти процесса для эксплуатации, что выходит за D-level threat model). |
+| `umbrella-sealed-sender` `OpenedEnvelope.message: Vec<u8>` | 16 (zeroize) | **Низкое наблюдение** | Plaintext message живёт в heap до Drop без явного zeroize. Внутри `unseal` промежуточные buffers `Zeroizing` ✓; выходной Vec — API contract caller'а. | Не finding; API design choice. Cold-boot mitigation SPEC-08 §5.2 step 9 уже выполнен. |
+| `umbrella-client` `transport/retry.rs` jitter | 14 (RNG hygiene) | **Hygiene** | `rand::thread_rng()` используется для decorrelated backoff jitter (AWS pattern). Inconsistent с rest-of-codebase `OsRng`, но `thread_rng` сам — CSPRNG; jitter — не security-sensitive. | Не finding; легитимный pattern. Можно оставить или сменить на `OsRng` для consistency, не критично. |
 
 ## Critical findings
 
-_Раздел заполняется при появлении Critical-серьёзности по §7а спецификации.
-Если в раунде Critical-находок нет, секция остаётся пустой с явной пометкой._
+В раунде Critical-серьёзности по §7а **не выявлено**.
 
 ## Новые реальные проверки
 
-_Список новых attack-тестов с краткими описаниями._
+Новых `attack_*` атакующих тестов в коде **не добавлено** этим раундом
+— нет подтверждённых-тестом находок, требующих fix. Existing `attack_*` /
+`real_attack_*` / `verify_rejects_tampered_*` / `external_rfc9497_attacks`
+наборы остаются полным набором закрытых атакующих гейтов, перечисленных
+в `docs/security/protocol-core-attack-gates.md` и
+`docs/security/external-crypto-attack-ledger-2026-05-14.md` /
+`-2026-05-15.md`.
 
 ## Что прошло локально
 
-_Список cargo/script команд с результатами._
+- `git branch --show-current` → `codex/phd-security-audit`.
+- `git status` → clean tree между блоками.
+- `bash scripts/audit-protocol-core-attack-gates.sh` →
+  `external crypto attack ledger OK` + `protocol core attack gates OK`.
+- `cargo test -p umbrella-identity --all-features --locked --no-run` →
+  компиляция успешна (4.89s).
+- `cargo test -p umbrella-mls --all-features --locked --no-run` →
+  компиляция успешна.
 
 ## Что не закрыто этой итерацией
 
@@ -202,15 +221,82 @@ _Список cargo/script команд с результатами._
 
 ## Tier 2 progress
 
-_Заполняется по ходу обхода Tier 2 крейтов._
+- `umbrella-client` (7.7 kLoC, 2026-05-16): пройдены классы 1-6, 8, 14, 17
+  по §3 spec. Подтверждённых закрытых-тестом находок: 0.
+  - **RNG**: `rand::thread_rng()` используется только в
+    `transport/retry.rs` для decorrelated exponential backoff jitter
+    (AWS pattern). Не security-sensitive (jitter, не key material).
+    Все security-критичные пути используют `OsRng`. Не finding (Low
+    inconsistency, но это standard pattern и `thread_rng` сам — CSPRNG).
+  - **Domain separators**: `umbrellax-sqlite-master-v1`,
+    `umbrellax-sqlite-row-nonce-v1` для шифрованного local storage —
+    отдельны от protocol-layer separators.
+  - **Категории 5/17 (deserialize DoS)**: client использует
+    `parse_mls_message_safe`/`parse_key_package_safe` из umbrella-mls
+    что уже закрывает F-37 panic-DoS на untrusted wire input.
+  - **Категория 8 (fail-open)**: `ClientCore::new_with_http2` fail-closes
+    при отсутствии SPKI pins (existing test
+    `new_with_http2_fails_closed_until_full_production_transport_is_wired`).
+- `umbrella-server-blind-postman` (1.0 kLoC, 2026-05-16): пройдены классы
+  1-6, 8, 14, 17. Findings: 0.
+  - Replay-window vs rate-limit ordering уже исправлено 2026-05-15
+    (existing test `rate_limited_unique_messages_do_not_fill_replay_window`).
+  - Routing wire-format использует canonical bincode с size cap; envelope
+    parser fail-closes на oversize либо неполный input.
+- `umbrella-padding` (0.6 kLoC, 2026-05-16): findings 0.
+  - `pad_to_bucket` / `strip_padding` / `strip_padding_zeroizing` —
+    constant-time bucket size selection, length-leak resistant.
+  - `ZeroizingPayload` уже redacts Debug (existing test
+    `zeroizing_payload_debug_redacts_bytes`).
+- `umbrella-calls` (3.8 kLoC, 2026-05-16): findings 0.
+  - Domain separators: `umbrellax-dtls-identity-v1`,
+    `umbrellax-dtls-mutual-v1` — unique vs MLS и Sealed Sender.
+  - MLS-SFrame integration через openmls exporter с явным domain label
+    (existing `umbrella-calls` SFrame tests).
+- `umbrella-platform-verifier` (1.0 kLoC, 2026-05-16): findings 0.
+  - WebAuthn assertion verification — fail-closed на parse error либо
+    counter rollback (existing tests `webauthn_rejects_counter_rollback`,
+    `webauthn_rejects_context_device_key_not_registered_key`).
+  - Apple App Attest / Android Play Integrity — fail-closed boundary,
+    `PlatformVerifierKind::TestOnly` явно отказывается в production
+    context.
 
 ## Tier 3 progress
 
-_Заполняется по ходу обхода Tier 3 крейтов._
+- `umbrella-ffi` (1.4 kLoC, 2026-05-16): пройдены классы 2, 3, 7, 8, 17.
+  Findings: 0.
+  - **Полностью построено на `uniffi 0.28+` proc-macro подходе**
+    (`#[derive(uniffi::Record)]`, `#[derive(uniffi::Object)]`,
+    `#[uniffi::export(async_runtime = "tokio")]`). НЕТ ручных
+    `extern "C" fn`, НЕТ `unsafe` блоков, НЕТ ручных pointer+length
+    интерфейсов. ABI-stable через uniffi scaffolding.
+  - **Категория 7 (FFI memory safety)**: uniffi сам обеспечивает
+    lifecycle, type mapping, error propagation, thread safety через
+    generated Swift/Kotlin bindings — finding-surface существенно
+    меньше чем у hand-written FFI.
+  - **Категория 4 (error info leak)**: `UmbrellaError` flat-error
+    enum уже ABI-stable и не несёт sensitive material.
+  - **Категория 10 (Debug)**: `MessageFfi`, `CallPolicyFfi` уже redact
+    plaintext (existing tests `message_ffi_debug_redacts_plaintext`).
+- `umbrella-ffi-swift` (49 LoC lib.rs, 2026-05-16): findings 0.
+  Тонкая обёртка-генератор Swift XCFramework через `uniffi-bindgen swift`;
+  source minimal, ABI-stable.
+- `umbrella-ffi-kotlin` (53 LoC lib.rs, 2026-05-16): findings 0.
+  Тонкая обёртка-генератор Android AAR через `uniffi-bindgen kotlin`.
+- `umbrella-core` (153 LoC, 2026-05-16): findings 0.
+  `forbid(unsafe_code)` ✓; shared core types, без I/O и крипто-логики.
+- `umbrella-tests` (516 LoC, 2026-05-16): findings 0.
+  `forbid(unsafe_code)` ✓; integration test harness, не production
+  data path.
 
 ## Tier 4 sanity
 
-_Заполняется по ходу обхода Tier 4 крейтов._
+- `umbrella-fuzz`, `umbrella-formal-verification`, `umbrella-vectors`,
+  `umbrella-lints` (2026-05-16): все `publish = false` в `Cargo.toml`,
+  то есть исключены из production binary distribution. Не имеют
+  production data-path роли. Vectors содержит только deterministic test
+  material (grep RFC9497 KAT-like patterns) — нет приватных ключей в
+  чистом виде. Sanity confirmed.
 
 ## English mirror
 
@@ -237,20 +323,42 @@ Round spec:
 
 ### What was found and fixed
 
-_To be filled per finding._
+Closed-by-test findings this round: **0**. This is a valid recon-breadth
+outcome per spec §10c (no fabricated findings).
+
+Considered candidates that did not reach "fix this round":
+
+| Area | Category §3 | Severity §7a | Observation | Round decision |
+|---|---|---|---|---|
+| `umbrella-identity` `MasterKey::from_seed` / `derive_child` | 16 + partially 9 | **Low** | The HMAC-SHA512 output `i` and the copy `full = [0u8; 64]` carry partial key material (extended_secret + chain_code) on the stack and are not zeroized. The owning types (`MasterKey`, `ExtendedSecret`, `ChainCode`) are `ZeroizeOnDrop` ✓. | Recorded as observation; candidate for a follow-up hygiene PR (defense-in-depth, not an E2EE bypass; exploitation requires an already-compromised process memory, which is outside the D-level threat model). |
+| `umbrella-sealed-sender` `OpenedEnvelope.message: Vec<u8>` | 16 | **Low observation** | Plaintext message lives in heap until Drop without explicit zeroize. Intermediate buffers inside `unseal` are `Zeroizing` ✓; the output Vec is the caller's API contract. | Not a finding; API design choice. The SPEC-08 §5.2 step 9 cold-boot mitigation is already applied where applicable. |
+| `umbrella-client` `transport/retry.rs` jitter | 14 (RNG hygiene) | **Hygiene** | `rand::thread_rng()` is used for decorrelated backoff jitter (AWS pattern). Inconsistent with the codebase-wide `OsRng`, but `thread_rng` is itself a CSPRNG and jitter is not security-sensitive. | Not a finding; legitimate pattern. Could be switched to `OsRng` for consistency, not critical. |
 
 ### Critical findings
 
-_Filled if any Critical-severity finding per §7a appears. Otherwise marked
-explicitly empty._
+No Critical severity (per §7a) findings emerged in this round.
 
 ### New real checks
 
-_List of new attack tests with short descriptions._
+No new `attack_*` adversarial tests were added in code this round — there
+are no confirmed-by-test findings that require a fix. The existing
+`attack_*` / `real_attack_*` / `verify_rejects_tampered_*` /
+`external_rfc9497_attacks` test bodies remain the complete set of closed
+attack gates listed in `docs/security/protocol-core-attack-gates.md` and
+`docs/security/external-crypto-attack-ledger-2026-05-14.md` /
+`-2026-05-15.md`.
 
 ### What passed locally
 
-_List of cargo / script commands with results._
+- `git branch --show-current` → `codex/phd-security-audit`.
+- `git status` → clean tree between blocks.
+- `bash scripts/audit-protocol-core-attack-gates.sh` →
+  `external crypto attack ledger OK` and
+  `protocol core attack gates OK`.
+- `cargo test -p umbrella-identity --all-features --locked --no-run` →
+  compiles (4.89s).
+- `cargo test -p umbrella-mls --all-features --locked --no-run` →
+  compiles.
 
 ### What is not closed by this round
 
