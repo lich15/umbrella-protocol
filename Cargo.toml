@@ -240,6 +240,13 @@ codegen-units = 1
 opt-level = 3
 debug = true
 
+# R6 reality-pass profile: release-style codegen but symbols/debug preserved
+# so lldb can scan post-keygen memory at named function breakpoints.
+[profile.r6-release]
+inherits = "release"
+strip = "none"
+debug = "full"
+
 [patch.crates-io]
 # Umbrella v1.1.0 release gate:
 # `openmls_rust_crypto 0.5.1` uses `hpke-rs` with the RustCrypto HPKE backend,
