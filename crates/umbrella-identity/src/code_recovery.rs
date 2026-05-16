@@ -165,43 +165,38 @@ impl CodeRecoveryMnemonic {
     }
 
     /// Вычисляет 32-байтовый публичный отпечаток 12-словной энтропии для
-    /// привязки к identity. Закрытие F-PHD-RETRO-3-E: предотвращает
-    /// захват аккаунта через утечку 24 слов в одиночку.
+    /// данного account. Закрытие F-PHD-RETRO-3-E: предотвращает захват
+    /// аккаунта через утечку 24 слов в одиночку.
     ///
-    /// Computes a 32-byte public proof of the 12-word entropy bound to
-    /// an identity. F-PHD-RETRO-3-E mitigation: prevents account hijack
-    /// via a 24-words leak alone.
+    /// Computes a 32-byte public proof of the 12-word entropy for the
+    /// given account. F-PHD-RETRO-3-E mitigation: prevents account
+    /// hijack via a 24-words leak alone.
     ///
     /// Формула: HKDF-SHA512(
     ///   salt = "umbrellax-12words-public-half-v1",
     ///   ikm  = entropy,
-    ///   info = identity_pubkey || account_index_be,
+    ///   info = account_index_be,
     ///   L    = 32 bytes
     /// )
     ///
     /// Свойства:
     /// - Односторонняя функция: восстановить entropy из public_half_proof
     ///   математически невозможно (preimage resistance HKDF-SHA512).
-    /// - Привязана к identity: одна и та же 12-словная фраза для разных
-    ///   identity_pubkey даёт разные отпечатки.
-    /// - Детерминированная: одни и те же входы дают тот же результат
-    ///   (для воспроизводимости после catastrophic recovery).
+    /// - Stable across identity rotations: одни и те же 12 слов дают
+    ///   тот же отпечаток до и после ротации main key.
+    /// - Привязана к account: разные accounts дают разные отпечатки.
+    /// - Детерминированная: одни и те же входы дают тот же результат.
     ///
-    /// Этот отпечаток публикуется в KT при создании учётной записи.
-    /// При смене identity-key (rotation) клиент должен предоставить тот же
+    /// Этот отпечаток публикуется в KT при создании учётной записи и
+    /// **не меняется при rotation** (только при смене 12 слов). При
+    /// смене identity-key клиент должен предоставить тот же
     /// public_half_proof в записи смены — сервер сравнивает с хранимым,
     /// и без знания 12 слов adversary не может его пересчитать.
     #[must_use]
-    pub fn public_half_proof(
-        &self,
-        identity_pubkey: &[u8; 32],
-        account: u32,
-    ) -> [u8; 32] {
+    pub fn public_half_proof(&self, account: u32) -> [u8; 32] {
         use hkdf::Hkdf;
 
-        let mut info = Vec::with_capacity(32 + 4);
-        info.extend_from_slice(identity_pubkey);
-        info.extend_from_slice(&account.to_be_bytes());
+        let info = account.to_be_bytes();
 
         let hk = Hkdf::<Sha512>::new(Some(PUBLIC_HALF_HKDF_SALT), &self.entropy);
         let mut okm = [0u8; 32];
@@ -470,32 +465,30 @@ mod tests {
     #[test]
     fn public_half_proof_is_deterministic() {
         let code = fresh_code();
-        let identity_pubkey = [0xAAu8; 32];
         let account = 0u32;
-        let a = code.public_half_proof(&identity_pubkey, account);
-        let b = code.public_half_proof(&identity_pubkey, account);
+        let a = code.public_half_proof(account);
+        let b = code.public_half_proof(account);
         assert_eq!(a, b, "public_half_proof must be deterministic");
     }
 
     #[test]
-    fn public_half_proof_differs_per_identity() {
+    fn public_half_proof_stable_across_rotation() {
+        // F-PHD-RETRO-3-E: proof не зависит от identity_pubkey, поэтому
+        // он стабилен через rotation main key (одни 12 слов → один proof).
         let code = fresh_code();
-        let id1 = [0x11u8; 32];
-        let id2 = [0x22u8; 32];
-        let p1 = code.public_half_proof(&id1, 0);
-        let p2 = code.public_half_proof(&id2, 0);
-        assert_ne!(
-            p1, p2,
-            "public_half_proof must bind to identity_pubkey via HKDF info"
+        let p_account_0 = code.public_half_proof(0);
+        let p_account_0_again = code.public_half_proof(0);
+        assert_eq!(
+            p_account_0, p_account_0_again,
+            "proof stable across calls (no identity_pubkey dependency)"
         );
     }
 
     #[test]
     fn public_half_proof_differs_per_account() {
         let code = fresh_code();
-        let identity_pubkey = [0x55u8; 32];
-        let p_a = code.public_half_proof(&identity_pubkey, 0);
-        let p_b = code.public_half_proof(&identity_pubkey, 1);
+        let p_a = code.public_half_proof(0);
+        let p_b = code.public_half_proof(1);
         assert_ne!(
             p_a, p_b,
             "public_half_proof must bind to account index via HKDF info"
@@ -506,9 +499,8 @@ mod tests {
     fn public_half_proof_differs_per_code() {
         let code_a = fresh_code();
         let code_b = fresh_code();
-        let identity_pubkey = [0x77u8; 32];
-        let p_a = code_a.public_half_proof(&identity_pubkey, 0);
-        let p_b = code_b.public_half_proof(&identity_pubkey, 0);
+        let p_a = code_a.public_half_proof(0);
+        let p_b = code_b.public_half_proof(0);
         // Probability of accidental match с другими 12 словами ≈ 2^-256, negligible.
         assert_ne!(p_a, p_b, "different 12-words must yield different proofs");
     }
@@ -548,16 +540,11 @@ mod tests {
             MnemonicLanguage::English,
         )
         .expect("BIP-39 official vector parses");
-        let identity_pubkey = [0u8; 32];
-        let proof = code.public_half_proof(&identity_pubkey, 0);
-        // Just confirm the output is non-zero и stable — точные байты записываем
-        // как regression-guard.
+        let proof = code.public_half_proof(0);
         assert_ne!(
             proof, [0u8; 32],
             "HKDF output should be non-zero for non-trivial entropy"
         );
-        // Конкретные байты вычислены однократно при добавлении теста; любое
-        // изменение HKDF construction (salt, info encoding) сломает их.
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
