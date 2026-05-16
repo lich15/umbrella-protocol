@@ -77,8 +77,8 @@ use tls_codec::SecretVLBytes;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use umbrella_pq::{
-    xwing_decaps_raw, xwing_encaps, xwing_keygen_from_seed, XWingPublicKey, XWING_CIPHERTEXT_LEN,
-    XWING_KEYGEN_SEED_LEN, XWING_PUBLIC_KEY_LEN,
+    xwing_decaps_raw, xwing_encaps_hedged, xwing_keygen_from_seed, HedgedWitness, XWingPublicKey,
+    XWING_CIPHERTEXT_LEN, XWING_KEYGEN_SEED_LEN, XWING_PUBLIC_KEY_LEN,
 };
 
 // ============================================================================
@@ -321,15 +321,41 @@ impl HpkeContext {
 
 /// `SetupBaseS(pkR, info)` для X-Wing: encaps под pkR + key_schedule(mode_base).
 /// Возвращает (`enc`, `context`) где `enc` — X-Wing ciphertext (1120 bytes).
+///
+/// **Hedged encaps (round-3 closure 2026-05-19, Bellare-Hoang-Keelveedhi 2015):**
+/// если provider'у задан `hedged_witness` через
+/// `UmbrellaXWingProvider::with_hedged_witness`, encaps использует
+/// `xwing_encaps_hedged` с transcript = HPKE info bytes. Это даёт
+/// defense-in-depth: compromised CSPRNG не ломает HPKE base mode encaps
+/// если witness uncompromised. Если provider — `new()` без witness
+/// (нет identity context — например в KAT tests), encaps использует
+/// zero-byte witness как fallback. Production callers (через KeyStore)
+/// ОБЯЗАНЫ использовать `with_hedged_witness`.
+///
 /// `SetupBaseS(pkR, info)` for X-Wing: encaps under pkR + key_schedule(mode_base).
 /// Returns (`enc`, `context`) where `enc` is the X-Wing ciphertext (1120 bytes).
-fn setup_base_sender(pk_r: &[u8], info: &[u8]) -> Result<(Vec<u8>, HpkeContext), CryptoError> {
+///
+/// **Hedged encaps (round-3 closure 2026-05-19, Bellare-Hoang-Keelveedhi 2015):**
+/// if the provider has a `hedged_witness` (set via
+/// `UmbrellaXWingProvider::with_hedged_witness`), encaps uses
+/// `xwing_encaps_hedged` with transcript = HPKE info bytes. This gives
+/// defense-in-depth: a compromised CSPRNG does not break HPKE base mode
+/// encaps if the witness is uncompromised. If the provider was created
+/// via `new()` without a witness (no identity context — e.g. in KAT
+/// tests), encaps uses a zero-byte witness as fallback. Production
+/// callers (via KeyStore) MUST use `with_hedged_witness`.
+fn setup_base_sender(
+    pk_r: &[u8],
+    info: &[u8],
+    witness: &HedgedWitness,
+) -> Result<(Vec<u8>, HpkeContext), CryptoError> {
     if pk_r.len() != XWING_PUBLIC_KEY_LEN {
         return Err(CryptoError::InvalidPublicKey);
     }
     let pk = XWingPublicKey::from_bytes(pk_r).map_err(|_| CryptoError::InvalidPublicKey)?;
     let mut rng = OsRng;
-    let (ct, ss) = xwing_encaps(&mut rng, &pk).map_err(|_| CryptoError::HpkeEncryptionError)?;
+    let (ct, ss) = xwing_encaps_hedged(&mut rng, &pk, witness, info)
+        .map_err(|_| CryptoError::HpkeEncryptionError)?;
     let ctx = key_schedule_base(ss.expose_secret(), info)?;
     Ok((ct.to_vec(), ctx))
 }
@@ -409,16 +435,69 @@ fn derive_keypair(ikm: &[u8]) -> Result<HpkeKeyPair, CryptoError> {
 /// For `HpkeKemType::XWingKemDraft6` it implements HPKE base mode RFC 9180
 /// §5.1 atop `umbrella_pq::xwing_*` (`libcrux-kem 0.0.8`
 /// API name `Algorithm::XWingKemDraft06`, output checked by draft-10 KAT).
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct UmbrellaXWingProvider {
     inner: OpenMlsRustCrypto,
+    /// Hedged-encaps witness — long-term identity-derived secret для
+    /// defense-in-depth против compromised CSPRNG (round-3 closure
+    /// 2026-05-19, Bellare-Hoang-Keelveedhi 2015). Если provider создан
+    /// без witness (через `new()` — для KAT tests или transition path),
+    /// заполняется zero-byte witness (НЕ безопасно для production!).
+    /// Production callers ДОЛЖНЫ использовать
+    /// [`UmbrellaXWingProvider::with_hedged_witness`].
+    ///
+    /// Hedged-encaps witness — long-term identity-derived secret for
+    /// defense-in-depth against a compromised CSPRNG (round-3 closure
+    /// 2026-05-19, Bellare-Hoang-Keelveedhi 2015). If the provider is
+    /// created without a witness (via `new()` — for KAT tests or a
+    /// transition path), it falls back to a zero-byte witness (NOT
+    /// production-safe!). Production callers MUST use
+    /// [`UmbrellaXWingProvider::with_hedged_witness`].
+    hedged_witness: HedgedWitness,
+}
+
+impl Default for UmbrellaXWingProvider {
+    fn default() -> Self {
+        Self {
+            inner: OpenMlsRustCrypto::default(),
+            // Default = zero-byte witness; sound только для KAT/test пути,
+            // где RNG honest. Production должен ставить witness через
+            // `with_hedged_witness`.
+            //
+            // Default = zero-byte witness; sound only for the KAT/test
+            // path where the RNG is honest. Production must set the
+            // witness via `with_hedged_witness`.
+            hedged_witness: HedgedWitness::zeroed_for_tests_only(),
+        }
+    }
 }
 
 impl UmbrellaXWingProvider {
     /// Конструирует новый provider c свежим in-memory storage и CSPRNG.
+    /// Hedged witness = zero (test-only fallback; production должен
+    /// использовать [`Self::with_hedged_witness`]).
+    ///
     /// Constructs a new provider with fresh in-memory storage and CSPRNG.
+    /// Hedged witness = zero (test-only fallback; production must use
+    /// [`Self::with_hedged_witness`]).
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Конструирует новый provider с указанным `hedged_witness` для
+    /// production-safe HPKE base mode X-Wing encaps. Witness получается
+    /// от `KeyStore::hedged_encaps_witness()` либо аналогичного
+    /// long-term source.
+    ///
+    /// Constructs a new provider with the given `hedged_witness` for
+    /// production-safe HPKE base mode X-Wing encaps. The witness should
+    /// come from `KeyStore::hedged_encaps_witness()` or an equivalent
+    /// long-term source.
+    pub fn with_hedged_witness(witness: HedgedWitness) -> Self {
+        Self {
+            inner: OpenMlsRustCrypto::default(),
+            hedged_witness: witness,
+        }
     }
 }
 
@@ -530,7 +609,7 @@ impl OpenMlsCrypto for UmbrellaXWingProvider {
     ) -> Result<HpkeCiphertext, CryptoError> {
         if config.0 == HpkeKemType::XWingKemDraft6 {
             // X-Wing single-shot HPKE Seal: SetupBaseS + Context.Seal.
-            let (enc, ctx) = setup_base_sender(pk_r, info)?;
+            let (enc, ctx) = setup_base_sender(pk_r, info, &self.hedged_witness)?;
             let ct = ctx.aead_seal(aad, ptxt)?;
             return Ok(HpkeCiphertext {
                 kem_output: enc.into(),
@@ -567,7 +646,7 @@ impl OpenMlsCrypto for UmbrellaXWingProvider {
         exporter_length: usize,
     ) -> Result<(KemOutput, ExporterSecret), CryptoError> {
         if config.0 == HpkeKemType::XWingKemDraft6 {
-            let (enc, ctx) = setup_base_sender(pk_r, info)?;
+            let (enc, ctx) = setup_base_sender(pk_r, info, &self.hedged_witness)?;
             let exported = ctx.export(exporter_context, exporter_length)?;
             return Ok((enc, ExporterSecret::from(exported)));
         }

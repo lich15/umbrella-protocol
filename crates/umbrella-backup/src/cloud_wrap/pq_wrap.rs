@@ -109,8 +109,8 @@ use sha2::Sha256;
 use zeroize::{Zeroize, Zeroizing};
 
 use umbrella_pq::{
-    xwing_decaps, xwing_encaps, XWingPublicKey, XWingSecretSeed, XWING_CIPHERTEXT_LEN,
-    XWING_PUBLIC_KEY_LEN, XWING_SHARED_SECRET_LEN,
+    xwing_decaps, xwing_encaps_hedged, HedgedWitness, XWingPublicKey, XWingSecretSeed,
+    XWING_CIPHERTEXT_LEN, XWING_PUBLIC_KEY_LEN, XWING_SHARED_SECRET_LEN,
 };
 
 use crate::error::BackupError;
@@ -283,15 +283,26 @@ pub fn wrap_v1_into_v2<R>(
     recipient_xwing_pubkey: &XWingPublicKey,
     v1_wrapped_key: &WrappedKey,
     aad: &CanonicalAad,
+    hedged_witness: &HedgedWitness,
     rng: &mut R,
 ) -> Result<WrappedKeyV2, BackupError>
 where
     R: RngCore + CryptoRng,
 {
-    // 1. X-Wing encaps под recipient recovery X-Wing pubkey.
-    // 1. X-Wing encaps under recipient's recovery X-Wing pubkey.
+    // 1. X-Wing **hedged** encaps под recipient recovery X-Wing pubkey
+    // (round-3 hedged-encaps closure 2026-05-19,
+    // Bellare-Hoang-Keelveedhi 2015). Transcript = canonical AAD bytes
+    // (104 bytes: sender_ident || recipient_device || chat_id || seq);
+    // multi-session domain separation внутри HKDF info.
+    // 1. X-Wing **hedged** encaps under recipient's recovery X-Wing
+    // pubkey (round-3 hedged-encaps closure 2026-05-19,
+    // Bellare-Hoang-Keelveedhi 2015). Transcript = canonical AAD bytes
+    // (104 bytes: sender_ident || recipient_device || chat_id || seq);
+    // multi-session domain separation inside the HKDF info.
+    let transcript = aad.canonical_bytes();
     let (xwing_ct, shared_secret) =
-        xwing_encaps(rng, recipient_xwing_pubkey).map_err(|_| BackupError::XWingEncapsFailed)?;
+        xwing_encaps_hedged(rng, recipient_xwing_pubkey, hedged_witness, &transcript)
+            .map_err(|_| BackupError::XWingEncapsFailed)?;
 
     // 2. Derive AEAD key + nonce из shared_secret через HKDF-SHA256.
     // 2. Derive AEAD key + nonce from shared_secret via HKDF-SHA256.

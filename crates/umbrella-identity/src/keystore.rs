@@ -60,7 +60,8 @@ use crate::slh_dsa_backup::{SlhDsaBackupKey, SlhDsaBackupKeyPublic};
 use secrecy::SecretBox;
 #[cfg(feature = "pq")]
 use umbrella_pq::{
-    HybridSignature, SlhDsa128fSignature, XWING_CIPHERTEXT_LEN, XWING_SHARED_SECRET_LEN,
+    HedgedWitness, HybridSignature, SlhDsa128fSignature, XWING_CIPHERTEXT_LEN,
+    XWING_SHARED_SECRET_LEN,
 };
 
 /// Источник wall-clock времени для проверки expiration в attestation.
@@ -264,6 +265,29 @@ pub trait KeyStore: Send + Sync {
         &self,
         ct: &[u8; XWING_CIPHERTEXT_LEN],
     ) -> Result<SecretBox<[u8; XWING_SHARED_SECRET_LEN]>>;
+
+    /// Возвращает `HedgedWitness` — 32-байтный secret-derivative identity_seed,
+    /// используемый sender-side `xwing_encaps_hedged` для defense-in-depth
+    /// против compromised CSPRNG (Bellare-Hoang-Keelveedhi 2015).
+    ///
+    /// Derivation: HKDF-SHA256(identity_seed_bytes, salt=
+    /// `HEDGED_WITNESS_HKDF_SALT`, info=account.to_be_bytes()) → 32 bytes.
+    /// Deterministic — переживает restart, не нужно персиста beyond BIP-39
+    /// mnemonic. Identity rotation генерирует свежий witness потому что
+    /// меняется seed.
+    ///
+    /// Returns the `HedgedWitness` — a 32-byte secret derivative of
+    /// identity_seed used by sender-side `xwing_encaps_hedged` for
+    /// defense-in-depth against a compromised CSPRNG
+    /// (Bellare-Hoang-Keelveedhi 2015).
+    ///
+    /// Derivation: HKDF-SHA256(identity_seed_bytes,
+    /// salt=`HEDGED_WITNESS_HKDF_SALT`, info=account.to_be_bytes()) → 32 bytes.
+    /// Deterministic — survives restart, no persistence required beyond
+    /// the BIP-39 mnemonic. Identity rotation produces a fresh witness
+    /// because the seed changes.
+    #[cfg(feature = "pq")]
+    fn hedged_encaps_witness(&self) -> &HedgedWitness;
 }
 
 /// Внутренняя запись о зарегистрированном устройстве в InMemoryKeyStore.
@@ -306,6 +330,20 @@ pub struct InMemoryKeyStore {
     hybrid_devices: Mutex<BTreeMap<u32, HybridDeviceKey>>,
     #[cfg(feature = "pq")]
     cloud_wrap_recovery: CloudWrapRecoveryKey,
+
+    // Hedged-encaps witness (round-3 hedged-encaps closure 2026-05-19,
+    // Bellare-Hoang-Keelveedhi 2015). Derive'ится из IdentitySeed.seed()
+    // через HKDF-SHA256 once at open(); zeroize-on-drop через
+    // `HedgedWitness` SecretBox. Не сериализуется — детерминистически
+    // воссоздается из той же mnemonic при следующем open().
+    //
+    // Hedged-encaps witness (round-3 hedged-encaps closure 2026-05-19,
+    // Bellare-Hoang-Keelveedhi 2015). Derived from `IdentitySeed.seed()`
+    // via HKDF-SHA256 once at `open()`; zeroize-on-drop via `HedgedWitness`
+    // SecretBox. Not serialized — deterministically re-derived from the
+    // same mnemonic on the next `open()`.
+    #[cfg(feature = "pq")]
+    hedged_witness: HedgedWitness,
 }
 
 impl InMemoryKeyStore {
@@ -326,6 +364,17 @@ impl InMemoryKeyStore {
         let slh_dsa_backup = SlhDsaBackupKey::derive(&seed, account)?;
         #[cfg(feature = "pq")]
         let cloud_wrap_recovery = CloudWrapRecoveryKey::derive(&seed, account)?;
+        // Hedged-encaps witness: deterministic HKDF-SHA256 derivative из
+        // 64-byte BIP-39 PBKDF2 seed + account index. Same source как
+        // CloudWrapRecoveryKey / SlhDsaBackupKey — single recovery flow
+        // через mnemonic.
+        //
+        // Hedged-encaps witness: deterministic HKDF-SHA256 derivative
+        // from the 64-byte BIP-39 PBKDF2 seed + account index. Same source
+        // as CloudWrapRecoveryKey / SlhDsaBackupKey — single recovery
+        // flow via mnemonic.
+        #[cfg(feature = "pq")]
+        let hedged_witness = HedgedWitness::derive_from_identity_seed(seed.seed(), account);
 
         Ok(Self {
             seed,
@@ -342,6 +391,8 @@ impl InMemoryKeyStore {
             hybrid_devices: Mutex::new(BTreeMap::new()),
             #[cfg(feature = "pq")]
             cloud_wrap_recovery,
+            #[cfg(feature = "pq")]
+            hedged_witness,
         })
     }
 
@@ -546,6 +597,11 @@ impl KeyStore for InMemoryKeyStore {
         ct: &[u8; XWING_CIPHERTEXT_LEN],
     ) -> Result<SecretBox<[u8; XWING_SHARED_SECRET_LEN]>> {
         self.cloud_wrap_recovery.decapsulate(ct)
+    }
+
+    #[cfg(feature = "pq")]
+    fn hedged_encaps_witness(&self) -> &HedgedWitness {
+        &self.hedged_witness
     }
 }
 
