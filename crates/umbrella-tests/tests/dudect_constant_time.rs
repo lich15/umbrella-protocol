@@ -388,7 +388,7 @@ fn unwrap_v2_to_v1_valid_vs_tampered_envelope_timing() {
         unwrap_v2_to_v1, wrap_message_key, wrap_v1_into_v2, CanonicalAad, ThresholdConfig,
         WrappingParams, ED25519_PUB_LEN, MESSAGE_KEY_LEN, POINT_LEN, PROTOCOL_VERSION,
     };
-    use umbrella_pq::xwing_keygen;
+    use umbrella_pq::{xwing_keygen, HedgedWitness};
 
     let samples = sample_budget();
     let mut rng = OsRng;
@@ -411,7 +411,9 @@ fn unwrap_v2_to_v1_valid_vs_tampered_envelope_timing() {
     };
     let v1 = wrap_message_key(&v1_params, &mk, &aad, &mut rng).expect("v1 wrap");
     let (pk, sk) = xwing_keygen(&mut rng).expect("xwing keygen");
-    let valid_v2 = wrap_v1_into_v2(&pk, &v1, &aad, &mut rng).expect("v2 wrap");
+    let test_witness = HedgedWitness::zeroed_for_tests_only();
+    let valid_v2 =
+        wrap_v1_into_v2(&pk, &v1, &aad, &test_witness, &mut rng).expect("v2 wrap");
 
     // Pool of tampered envelopes (mutate aead_payload at different offsets).
     let tampered_pool: Vec<_> = (0..32)

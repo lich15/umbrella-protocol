@@ -23,7 +23,13 @@ use umbrella_backup::cloud_wrap::wire::{CanonicalAad, WrappedKey, ED25519_PUB_LE
 use umbrella_backup::cloud_wrap::wrap::wrap_message_key;
 use umbrella_backup::cloud_wrap::WrappingParams;
 use umbrella_backup::error::BackupError;
-use umbrella_pq::xwing_keygen;
+use umbrella_pq::{xwing_keygen, HedgedWitness};
+
+/// Тестовый `HedgedWitness` (zero-byte; sound только в тестах где RNG honest).
+/// Test-only `HedgedWitness` (zero-byte; sound only when test RNG is honest).
+fn test_hedged_witness() -> HedgedWitness {
+    HedgedWitness::zeroed_for_tests_only()
+}
 
 fn sample_v1_params() -> WrappingParams {
     let mut rng = OsRng;
@@ -72,7 +78,7 @@ fn v2_wire_rejected_by_v1_parser() {
     let aad = sample_aad();
     let v1_wrapped = wrap_message_key(&sample_v1_params(), &mk, &aad, &mut rng).unwrap();
     let (pk, _) = xwing_keygen(&mut rng).unwrap();
-    let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+    let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
     let v2_bytes = v2_wrapped.to_bytes();
     // V1 parser (`WrappedKey::from_bytes`) ожидает 81 bytes; V2 wire 1218 bytes.
@@ -92,7 +98,7 @@ fn caller_side_dispatch_pattern_works() {
     let aad = sample_aad();
     let v1_wrapped = wrap_message_key(&sample_v1_params(), &mk, &aad, &mut rng).unwrap();
     let (pk, _) = xwing_keygen(&mut rng).unwrap();
-    let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+    let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
     let v1_wire = v1_wrapped.to_bytes();
     let v2_wire = v2_wrapped.to_bytes();
@@ -207,7 +213,7 @@ fn v1_v2_wire_first_byte_distinct() {
     let aad = sample_aad();
     let v1_wrapped = wrap_message_key(&sample_v1_params(), &mk, &aad, &mut rng).unwrap();
     let (pk, _) = xwing_keygen(&mut rng).unwrap();
-    let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+    let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
     let v1_bytes = v1_wrapped.to_bytes();
     let v2_bytes = v2_wrapped.to_bytes();
@@ -245,7 +251,7 @@ fn mixed_v1_v2_alternating_corpus_dispatched_correctly() {
         let mk2 = [(i * 2 + 1) as u8; MESSAGE_KEY_LEN];
         let v1_inner = wrap_message_key(&sample_v1_params(), &mk2, &aad, &mut rng).unwrap();
         let (pk, _) = xwing_keygen(&mut rng).unwrap();
-        let v2 = wrap_v1_into_v2(&pk, &v1_inner, &aad, &mut rng).unwrap();
+        let v2 = wrap_v1_into_v2(&pk, &v1_inner, &aad, &test_hedged_witness(), &mut rng).unwrap();
         entries.push(v2.to_bytes().to_vec());
     }
 
@@ -280,7 +286,7 @@ fn v2_first_byte_invariant() {
         let mk = [0u8; MESSAGE_KEY_LEN];
         let v1 = wrap_message_key(&sample_v1_params(), &mk, &aad, &mut rng).unwrap();
         let (pk, _) = xwing_keygen(&mut rng).unwrap();
-        let v2 = wrap_v1_into_v2(&pk, &v1, &aad, &mut rng).unwrap();
+        let v2 = wrap_v1_into_v2(&pk, &v1, &aad, &test_hedged_witness(), &mut rng).unwrap();
         let bytes = v2.to_bytes();
         assert_eq!(bytes[0], 0x02);
     }

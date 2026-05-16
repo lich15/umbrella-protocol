@@ -546,6 +546,17 @@ mod tests {
         xwing_keygen(&mut rng).unwrap()
     }
 
+    /// Тестовый `HedgedWitness` (zero-byte; sound только в тестах где
+    /// RNG не compromised — здесь RNG = OsRng в `wrap_v1_into_v2`).
+    /// Production callsites получают witness from `KeyStore::hedged_encaps_witness()`.
+    /// Test-only `HedgedWitness` (zero-byte; sound only in tests where the
+    /// RNG is not compromised — here `wrap_v1_into_v2` uses `OsRng`).
+    /// Production callsites obtain the witness from
+    /// `KeyStore::hedged_encaps_witness()`.
+    fn test_hedged_witness() -> HedgedWitness {
+        HedgedWitness::zeroed_for_tests_only()
+    }
+
     /// Constants ровно совпадают с layout V2 wire format.
     /// Constants exactly match the V2 wire format layout.
     #[test]
@@ -612,7 +623,7 @@ mod tests {
 
         // V2 wrap layer.
         let (recipient_xwing_pk, recipient_xwing_sk) = fresh_xwing_keypair();
-        let v2_wrapped = wrap_v1_into_v2(&recipient_xwing_pk, &v1_wrapped, &aad, &mut rng).unwrap();
+        let v2_wrapped = wrap_v1_into_v2(&recipient_xwing_pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
         // V2 unwrap layer (recipient).
         let v1_recovered =
@@ -634,7 +645,7 @@ mod tests {
         let aad = sample_aad();
         let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
         let (pk, _) = fresh_xwing_keypair();
-        let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+        let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
         let bytes = v2_wrapped.to_bytes();
         assert_eq!(bytes[0], 0x02);
@@ -653,7 +664,7 @@ mod tests {
         let aad = sample_aad();
         let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
         let (pk, _) = fresh_xwing_keypair();
-        let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+        let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
         let bytes = v2_wrapped.to_bytes();
         assert_eq!(
@@ -673,7 +684,7 @@ mod tests {
         let aad = sample_aad();
         let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
         let (pk, _) = fresh_xwing_keypair();
-        let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+        let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
         let bytes = v2_wrapped.to_bytes();
         let parsed = WrappedKeyV2::from_bytes(&bytes).unwrap();
@@ -764,7 +775,7 @@ mod tests {
         let aad = sample_aad();
         let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
         let (pk, sk) = fresh_xwing_keypair();
-        let mut v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+        let mut v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
         v2_wrapped.xwing_ciphertext[0] ^= 0x01;
 
         let result = unwrap_v2_to_v1(&sk, &pk, &v2_wrapped, &aad);
@@ -785,7 +796,7 @@ mod tests {
         let aad = sample_aad();
         let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
         let (pk, sk) = fresh_xwing_keypair();
-        let mut v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+        let mut v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
         // Подменяем последний байт aead_payload (внутри Poly1305 tag).
         // Tamper the last byte of aead_payload (within the Poly1305 tag).
         let last = v2_wrapped.aead_payload.len() - 1;
@@ -806,7 +817,7 @@ mod tests {
         let aad = sample_aad();
         let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
         let (pk, sk) = fresh_xwing_keypair();
-        let mut v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+        let mut v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
         v2_wrapped.aead_payload[0] ^= 0x01;
 
         let result = unwrap_v2_to_v1(&sk, &pk, &v2_wrapped, &aad);
@@ -828,7 +839,7 @@ mod tests {
         let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
         let (pk, _correct_sk) = fresh_xwing_keypair();
         let (_, wrong_sk) = fresh_xwing_keypair();
-        let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+        let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
         let result = unwrap_v2_to_v1(&wrong_sk, &pk, &v2_wrapped, &aad);
         assert!(result.is_err(), "wrong seed must fail unwrap");
@@ -849,7 +860,7 @@ mod tests {
         let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
         let (correct_pk, sk) = fresh_xwing_keypair();
         let (other_pk, _) = fresh_xwing_keypair();
-        let v2_wrapped = wrap_v1_into_v2(&correct_pk, &v1_wrapped, &aad, &mut rng).unwrap();
+        let v2_wrapped = wrap_v1_into_v2(&correct_pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
         // shared_secret derives correctly через sk; но AAD/info используют other_pk → mismatch.
         // shared_secret derives correctly via sk; but AAD/info use other_pk → mismatch.
@@ -868,7 +879,7 @@ mod tests {
         let aad = sample_aad();
         let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
         let (pk, sk) = fresh_xwing_keypair();
-        let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+        let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
         let mut tampered_aad = aad.clone();
         tampered_aad.chat_id[0] ^= 0x01;
@@ -888,8 +899,8 @@ mod tests {
         let aad = sample_aad();
         let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
         let (pk, _) = fresh_xwing_keypair();
-        let w1 = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
-        let w2 = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+        let w1 = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
+        let w2 = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
         assert_ne!(
             w1.xwing_ciphertext, w2.xwing_ciphertext,
@@ -908,7 +919,7 @@ mod tests {
         let aad = sample_aad();
         let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
         let (pk, _) = fresh_xwing_keypair();
-        let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+        let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
         let bytes = v2_wrapped.to_bytes();
         let payload_offset = V2_VERSION_LEN + XWING_CIPHERTEXT_LEN;
@@ -940,7 +951,7 @@ mod tests {
         let aad = sample_aad();
         let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
         let (pk, sk) = fresh_xwing_keypair();
-        let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+        let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
         let v1_recovered = unwrap_v2_to_v1(&sk, &pk, &v2_wrapped, &aad).unwrap();
         assert_eq!(v1_recovered.version, PROTOCOL_VERSION);

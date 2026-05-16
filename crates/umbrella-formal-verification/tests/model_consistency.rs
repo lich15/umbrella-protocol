@@ -201,12 +201,17 @@ fn xwing_combiner_metadata_block_reference_is_9_2() {
 
 /// X-Wing combiner has a fresh completed Tamarin proof run.
 /// X-Wing combiner имеет свежий завершённый Tamarin proof run.
+///
+/// 2026-05-19: re-run после round-3 hedged-encaps closure
+/// (Bellare-Hoang-Keelveedhi 2015 extension); all 11 lemmas verified.
+/// 2026-05-19: re-run after round-3 hedged-encaps closure
+/// (Bellare-Hoang-Keelveedhi 2015 extension); all 11 lemmas verified.
 #[test]
 fn xwing_combiner_status_is_verified_after_fresh_tamarin_run() {
     assert_eq!(
         XWING_COMBINER.status,
         VerificationStatus::Verified {
-            last_run: "2026-05-09"
+            last_run: "2026-05-19"
         }
     );
 }

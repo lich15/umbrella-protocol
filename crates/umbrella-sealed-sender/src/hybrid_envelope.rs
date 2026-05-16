@@ -533,8 +533,14 @@ mod tests {
         let mut rng = OsRng;
         let message = b"forged-inner-signature";
 
+        // Test-only: use legacy xwing_encaps (still in API for tests where
+        // hedged witness не нужен). Production использует
+        // xwing_encaps_hedged via seal_v2.
+        // Test-only: use legacy xwing_encaps (still in API for tests where
+        // the hedged witness is not needed). Production uses
+        // xwing_encaps_hedged via seal_v2.
         let (xwing_ct, shared_secret) =
-            xwing_encaps(&mut rng, &bob_xwing_pk).expect("xwing encaps");
+            umbrella_pq::xwing_encaps(&mut rng, &bob_xwing_pk).expect("xwing encaps");
         let (aead_key, aead_nonce) =
             derive_v2_keys(&shared_secret, &xwing_ct, &bob_xwing_pk).expect("v2 keys");
 

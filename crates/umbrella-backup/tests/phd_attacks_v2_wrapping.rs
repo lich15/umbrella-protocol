@@ -31,9 +31,15 @@ use umbrella_backup::cloud_wrap::{
 };
 use umbrella_backup::BackupError;
 use umbrella_pq::{
-    xwing_decaps, xwing_encaps, xwing_keygen, XWingPublicKey, XWingSecretSeed,
+    xwing_decaps, xwing_encaps, xwing_keygen, HedgedWitness, XWingPublicKey, XWingSecretSeed,
     XWING_CIPHERTEXT_LEN,
 };
+
+/// Тестовый `HedgedWitness` (zero-byte; sound только в тестах где RNG honest).
+/// Test-only `HedgedWitness` (zero-byte; sound only when test RNG is honest).
+fn test_hedged_witness() -> HedgedWitness {
+    HedgedWitness::zeroed_for_tests_only()
+}
 
 // =============================================================================
 // Helpers
@@ -78,7 +84,7 @@ fn build_baseline_v2(
     let aad = sample_aad();
     let v1 = wrap_message_key(&v1_params, &mk, &aad, rng).unwrap();
     let (pk, sk) = fresh_xwing_keypair();
-    let v2 = wrap_v1_into_v2(&pk, &v1, &aad, rng).unwrap();
+    let v2 = wrap_v1_into_v2(&pk, &v1, &aad, &test_hedged_witness(), rng).unwrap();
     (v1, v2, pk, sk, aad)
 }
 
@@ -369,7 +375,7 @@ fn attack_xtra_v2_wire_mutation_5000_iterations_no_silent_decrypt() {
 fn attack_xtra_v2_wrong_recipient_200_keypairs_zero_decrypt() {
     let mut rng = OsRng;
     let (v1, _, sender_pk, _sender_sk, aad) = build_baseline_v2(&mut rng);
-    let v2 = wrap_v1_into_v2(&sender_pk, &v1, &aad, &mut rng).unwrap();
+    let v2 = wrap_v1_into_v2(&sender_pk, &v1, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
     let mut successes = 0usize;
     for _ in 0..200 {
@@ -395,7 +401,7 @@ fn verify_xtra_v2_byte_roundtrip_50_envelopes_stability() {
     let v1 = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
     let (pk, _sk) = fresh_xwing_keypair();
     for _ in 0..50 {
-        let v2 = wrap_v1_into_v2(&pk, &v1, &aad, &mut rng).unwrap();
+        let v2 = wrap_v1_into_v2(&pk, &v1, &aad, &test_hedged_witness(), &mut rng).unwrap();
         let bytes = v2.to_bytes();
         let parsed = WrappedKeyV2::from_bytes(&bytes).unwrap();
         assert_eq!(parsed, v2);
@@ -425,7 +431,7 @@ fn attack_xtra_v2_envelope_collision_100_envelopes_zero_match() {
     let (v1, _, pk, _, aad) = build_baseline_v2(&mut rng);
     let mut witnesses: Vec<[u8; XWING_CIPHERTEXT_LEN]> = Vec::with_capacity(100);
     for _ in 0..100 {
-        let v2 = wrap_v1_into_v2(&pk, &v1, &aad, &mut rng).unwrap();
+        let v2 = wrap_v1_into_v2(&pk, &v1, &aad, &test_hedged_witness(), &mut rng).unwrap();
         for prior in &witnesses {
             assert_ne!(*prior, v2.xwing_ciphertext);
         }
@@ -454,7 +460,7 @@ fn verify_xtra_v2_concurrent_4threads_25iter_no_race() {
             std::thread::spawn(move || {
                 let mut local_rng = OsRng;
                 for _ in 0..25 {
-                    let v2 = wrap_v1_into_v2(&pk, &v1, &aad, &mut local_rng).unwrap();
+                    let v2 = wrap_v1_into_v2(&pk, &v1, &aad, &test_hedged_witness(), &mut local_rng).unwrap();
                     let v1_recovered = unwrap_v2_to_v1(&sk, &pk, &v2, &aad).expect("unwrap");
                     assert_eq!(v1_recovered.to_bytes(), v1.to_bytes());
                 }
