@@ -362,6 +362,55 @@ rule reveal_identity_sk:
     [ Out(identity_sk) ]
 
 /*
+   --------------------------------------------------------------------------
+   F-PHD-RETRO-3-E (2026-05-17 inline PhD-B): rotation hijack abstraction gap
+
+   Following rule and lemma block document the gap between this Tamarin
+   model и real production code: `apply_identity_rotation` accepts a
+   rotation record based ONLY on two Ed25519 signatures (old + new
+   identity_sk), без platform attestation либо active-device co-signature
+   либо 12-words commitment.
+
+   Model's `rotate_identity_atomic` rule REQUIRES `!IdentitySk($A, old_sk)`
+   persistent fact (state of honest agent A). Adversary с K(old_sk) cannot
+   match. Real system has NO such barrier — anyone who can produce both
+   signatures can submit rotation.
+
+   The block below is INTENTIONALLY commented out to avoid Tamarin
+   non-termination и preserve the 10-lemma-verified baseline. Uncomment
+   и re-run Tamarin once the fix lands (e.g., 12-words commitment in
+   canonical signing input — see §4.4 of audit report 2026-05-17.md):
+
+   rule adversary_publish_rotation:
+       let
+           rotation_msg_old = <'dom_rotation', old_pk, new_pk>
+           rotation_msg_new = <'dom_rotation', new_pk, old_pk>
+           sig_old          = sign(rotation_msg_old, old_identity_sk)
+           sig_new          = sign(rotation_msg_new, ~new_identity_sk)
+       in
+       [ In(old_identity_sk),     // adversary имеет leaked 24-words
+         Fr(~new_identity_sk),    // generates fresh new sk locally
+         Let old_pk = pk(old_identity_sk),
+         Let new_pk = pk(~new_identity_sk) ]
+     --[ AdversaryRotation(old_pk, new_pk),
+         IdentityRotated('Adversary', old_pk, new_pk) ]->
+       [ !IdentityActive('Adversary', new_pk),
+         Out(<old_pk, new_pk, sig_old, sig_new>) ]
+
+   lemma twentyfour_words_leak_alone_insufficient_REGRESSION:
+       "NOT (Ex A device_pk identity_pk chat_id sig sid1 sid2 sid3 #i #r.
+           UnwrapGranted(device_pk, identity_pk, <chat_id, sig, sid1, sid2, sid3>) @ #i
+           & Reveal24Words(A, _) @ #r
+           & (Ex old_pk #adv. AdversaryRotation(old_pk, identity_pk) @ #adv))"
+
+   Если уkommentировать сейчас (БЕЗ fix в коде / canonical signing input),
+   `twentyfour_words_leak_alone_insufficient_REGRESSION` будет falsified
+   Tamarin — counter-trace будет показывать rotation hijack path. Это
+   формальное доказательство finding'a.
+   --------------------------------------------------------------------------
+*/
+
+/*
    Restriction: Equality (standard Tamarin pattern для encoding `verify(...) = true`).
 */
 restriction Equality:
