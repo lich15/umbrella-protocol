@@ -217,7 +217,13 @@ impl SframeBaseKey {
         )]
         const _: () = assert!(MAX_EXPORTER_LEN == BASE_KEY_LEN);
         let mut bytes = [0u8; BASE_KEY_LEN];
-        bytes.copy_from_slice(secret.expose_secret());
+        // Round-5: secret теперь `MlockedSecret<[u8; MAX_EXPORTER_LEN]>` →
+        // `.expose()` возвращает `&[u8; N]` вместо `&[u8]`. Round-5
+        // device-capture closure F-PHD-DC-R11-1.
+        // Round-5: `secret` is now `MlockedSecret<[u8; MAX_EXPORTER_LEN]>`
+        // → `.expose()` returns `&[u8; N]` instead of `&[u8]`. Round-5
+        // device-capture closure F-PHD-DC-R11-1.
+        bytes.copy_from_slice(secret.expose().as_slice());
         let base = Self::from_mls_exporter(bytes, ciphersuite, epoch);
         bytes.zeroize();
         Ok(base)

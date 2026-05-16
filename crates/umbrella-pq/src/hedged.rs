@@ -72,8 +72,8 @@
 //! the change is sender-only.
 
 use hkdf::Hkdf;
-use secrecy::{ExposeSecret, SecretBox};
 use sha2::{Sha256, Sha512};
+use umbrella_crypto_primitives::MlockedSecret;
 use zeroize::Zeroize;
 
 use crate::constants::XWING_ENCAPS_SEED_LEN;
@@ -122,17 +122,23 @@ pub const HEDGED_RNG_INPUT_LEN: usize = 64;
 
 /// Hedged witness — 32-byte secret производный из identity_seed.
 ///
-/// Содержит [`SecretBox`] (zeroize on drop). НИКОГДА не сериализуется,
-/// не выходит за пределы process memory. Cross-process leakage возможна
-/// только при дампе самой `IdentitySeed`, который тоже zeroizes.
+/// Round-5 device-capture closure F-PHD-DC-R11-1: содержит
+/// [`MlockedSecret`] (heap-resident + `libc::mlock` + zeroize on drop)
+/// вместо `secrecy::SecretBox` (heap-resident + zeroize, БЕЗ mlock).
+/// НИКОГДА не сериализуется, не выходит за пределы process memory.
+/// Cross-process leakage возможна только при дампе самой `IdentitySeed`,
+/// который тоже zeroize'd + mlock'd.
 ///
 /// Hedged witness — a 32-byte secret derived from identity_seed.
 ///
-/// Wraps a [`SecretBox`] (zeroize on drop). NEVER serialized, never
-/// leaves process memory. Cross-process leakage is only possible by
-/// dumping the `IdentitySeed` itself, which is also zeroized.
+/// Round-5 device-capture closure F-PHD-DC-R11-1: wraps [`MlockedSecret`]
+/// (heap-resident + `libc::mlock` + zeroize on drop) instead of
+/// `secrecy::SecretBox` (heap-resident + zeroize, NO mlock). NEVER
+/// serialized, never leaves process memory. Cross-process leakage is
+/// only possible by dumping the `IdentitySeed` itself, which is also
+/// zeroized + mlock'd.
 pub struct HedgedWitness {
-    bytes: SecretBox<[u8; HEDGED_WITNESS_LEN]>,
+    bytes: MlockedSecret<[u8; HEDGED_WITNESS_LEN]>,
 }
 
 impl HedgedWitness {
@@ -176,9 +182,15 @@ impl HedgedWitness {
         )]
         hk.expand(&info, &mut out)
             .expect("HKDF-SHA256 expand 32 bytes never fails");
-        Self {
-            bytes: SecretBox::new(Box::new(out)),
-        }
+        // Round-5 closure: MlockedSecret::new copies `out` into a heap
+        // Box + calls libc::mlock; local stack `out` zeroized below for
+        // defense-in-depth (caller-side path zeroized via Zeroize derive
+        // на `IdentitySeed` который владел `out` derivation source).
+        let witness = Self {
+            bytes: MlockedSecret::new(out),
+        };
+        out.zeroize();
+        witness
     }
 
     /// Эксплицитный testing helper: HedgedWitness с известным нулевым
@@ -201,7 +213,7 @@ impl HedgedWitness {
     #[doc(hidden)]
     pub fn zeroed_for_tests_only() -> Self {
         Self {
-            bytes: SecretBox::new(Box::new([0u8; HEDGED_WITNESS_LEN])),
+            bytes: MlockedSecret::new([0u8; HEDGED_WITNESS_LEN]),
         }
     }
 
@@ -221,17 +233,19 @@ impl HedgedWitness {
     #[doc(hidden)]
     pub fn from_bytes_for_tests_only(bytes: [u8; HEDGED_WITNESS_LEN]) -> Self {
         Self {
-            bytes: SecretBox::new(Box::new(bytes)),
+            bytes: MlockedSecret::new(bytes),
         }
     }
 
     /// Доступ к raw witness bytes (только для callers в umbrella-pq:
-    /// xwing.rs::xwing_encaps_hedged).
+    /// xwing.rs::xwing_encaps_hedged). Round-5: `MlockedSecret::expose`
+    /// возвращает `&[u8; N]` (canonical), не `.expose_secret()`.
     ///
     /// Access raw witness bytes (only for callers inside umbrella-pq:
-    /// xwing.rs::xwing_encaps_hedged).
+    /// xwing.rs::xwing_encaps_hedged). Round-5: `MlockedSecret::expose`
+    /// returns `&[u8; N]` (canonical), not `.expose_secret()`.
     pub(crate) fn expose(&self) -> &[u8; HEDGED_WITNESS_LEN] {
-        self.bytes.expose_secret()
+        self.bytes.expose()
     }
 }
 

@@ -55,9 +55,9 @@
 use chacha20poly1305::aead::{AeadInPlace, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce, Tag};
 use hkdf::Hkdf;
-use secrecy::{ExposeSecret, SecretBox};
 use sha2::Sha512;
 use subtle::ConstantTimeEq;
+use umbrella_crypto_primitives::MlockedSecret;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::ClientError;
@@ -80,13 +80,26 @@ const NONCE_INFO_PREFIX: &[u8] = b"umbrellax-sqlite-row-nonce-v1";
 /// signature.
 pub type EncryptedRow = (Vec<u8>, [u8; 12], [u8; 16]);
 
-/// Шифратор строк SQLite. Держит master-ключ в `SecretBox<[u8; 32]>` с
-/// `ZeroizeOnDrop` — при drop ключ zeroize'ится автоматически.
+/// Шифратор строк SQLite. Держит master-ключ в `MlockedSecret<[u8; 32]>` —
+/// heap-resident + `libc::mlock` + zeroize-on-drop (round-5 device-capture
+/// closure F-PHD-DC-R11-1).
 ///
-/// SQLite row cipher. Holds master-key in `SecretBox<[u8; 32]>` with
-/// `ZeroizeOnDrop` — the key is zeroized on drop automatically.
+/// **Pre-round-5** хранилось в `secrecy::SecretBox<[u8; 32]>` — heap-resident
+/// + zeroize, но **без** mlock. Round-4 R11 audit показал что страница могла
+/// быть выгружена в swap. `MlockedSecret<T>` (`umbrella-crypto-primitives::
+/// mlocked`) добавляет `libc::mlock` + graceful degrade на failure.
+///
+/// SQLite row cipher. Holds the master-key in `MlockedSecret<[u8; 32]>` —
+/// heap-resident + `libc::mlock` + zeroize-on-drop (round-5 device-capture
+/// closure F-PHD-DC-R11-1).
+///
+/// **Pre-round-5** the master-key lived in `secrecy::SecretBox<[u8; 32]>` —
+/// heap-resident + zeroize, but **without** mlock. The round-4 R11 audit
+/// showed the page could be paged out to swap. `MlockedSecret<T>`
+/// (`umbrella-crypto-primitives::mlocked`) adds `libc::mlock` + graceful
+/// degrade on failure.
 pub struct RowCipher {
-    master_key: SecretBox<[u8; 32]>,
+    master_key: MlockedSecret<[u8; 32]>,
 }
 
 impl RowCipher {
@@ -100,6 +113,10 @@ impl RowCipher {
     /// копии вызывающей стороны (F-57 closure блок 10.16; F-46/F-56 pattern
     /// recurrence closure — defense-in-depth поверх caller's responsibility).
     ///
+    /// Round-5: master_key bytes copies → `MlockedSecret::new` (heap-allocated
+    /// `Box<[u8; 32]>` + `libc::mlock`); local stack copy zeroized после
+    /// move (same defense-in-depth invariant as pre-round-5 SecretBox path).
+    ///
     /// Construct from a derived master-key. `master_key_bytes` **must** be
     /// zeroized by the caller after this call (or passed via move-semantics
     /// that zeroize on drop).
@@ -109,18 +126,25 @@ impl RowCipher {
     /// the caller-side zeroize is still required for the caller's source
     /// copy (F-57 closure block 10.16; F-46/F-56 pattern recurrence closure
     /// — defense-in-depth on top of the caller's responsibility).
+    ///
+    /// Round-5: master_key bytes copy → `MlockedSecret::new` (heap-allocated
+    /// `Box<[u8; 32]>` + `libc::mlock`); the local stack copy is zeroized
+    /// after the move (same defense-in-depth invariant as the pre-round-5
+    /// SecretBox path).
     #[must_use]
     pub fn new(mut master_key_bytes: [u8; 32]) -> Self {
         let cipher = Self {
-            master_key: SecretBox::new(Box::new(master_key_bytes)),
+            master_key: MlockedSecret::new(master_key_bytes),
         };
-        // `Box::new(master_key_bytes)` копирует Copy-массив в heap-allocated
-        // box; локальная stack-копия параметра остаётся валидной — зануляем
-        // её explicit вызовом `.zeroize()` для defense-in-depth.
+        // `MlockedSecret::new` копирует Copy-массив через `Box::new` в
+        // heap-allocated box + вызывает `libc::mlock`; локальная stack-копия
+        // параметра остаётся валидной — зануляем её explicit вызовом
+        // `.zeroize()` для defense-in-depth.
         //
-        // `Box::new(master_key_bytes)` copies the Copy array into the
-        // heap-allocated box; the local stack copy of the parameter remains
-        // valid — we explicitly zeroize it here for defense-in-depth.
+        // `MlockedSecret::new` copies the Copy array into a heap-allocated
+        // Box via `Box::new` and calls `libc::mlock`; the local stack copy
+        // of the parameter remains valid — we explicitly zeroize it here
+        // for defense-in-depth.
         master_key_bytes.zeroize();
         cipher
     }
@@ -268,14 +292,17 @@ impl RowCipher {
     }
 
     /// Внутренний helper: создаёт новый `ChaCha20Poly1305` instance. Key
-    /// хранится в self под SecretBox; cipher-копия key'а living только на
-    /// стеке этого вызова и дропается сразу.
+    /// хранится в self под MlockedSecret; cipher-копия key'а living только
+    /// на стеке этого вызова и дропается сразу. Round-5: `master_key.expose()`
+    /// возвращает `&[u8; 32]` (MlockedSecret API), не `.expose_secret()`.
     ///
     /// Internal helper: fresh `ChaCha20Poly1305` instance. The key lives in
-    /// `self` under SecretBox; the cipher's copy of the key is stack-local
-    /// to this call and dropped immediately after.
+    /// `self` under `MlockedSecret`; the cipher's copy of the key is
+    /// stack-local to this call and dropped immediately after. Round-5
+    /// rename: `master_key.expose()` returns `&[u8; 32]` (MlockedSecret API)
+    /// instead of `.expose_secret()`.
     fn cipher(&self) -> ChaCha20Poly1305 {
-        ChaCha20Poly1305::new(Key::from_slice(self.master_key.expose_secret().as_slice()))
+        ChaCha20Poly1305::new(Key::from_slice(self.master_key.expose().as_slice()))
     }
 
     /// Nonce-derivation: HKDF-SHA512(master_key, info = PREFIX || context ||
@@ -289,7 +316,7 @@ impl RowCipher {
         info.extend_from_slice(context.as_bytes());
         info.extend_from_slice(row_id);
 
-        let hk = Hkdf::<Sha512>::new(None, self.master_key.expose_secret().as_slice());
+        let hk = Hkdf::<Sha512>::new(None, self.master_key.expose().as_slice());
         let mut out = [0u8; 12];
         #[allow(
             unknown_lints,

@@ -28,7 +28,10 @@ use umbrella_mls::{
     UmbrellaCiphersuite, UmbrellaGroup, MAX_EXPORTER_LEN,
 };
 
-use secrecy::ExposeSecret;
+// Round-5 device-capture closure F-PHD-DC-R11-1: exporter_secret теперь
+// `MlockedSecret<T>` (not `SecretBox<T>`); `secrecy::ExposeSecret` больше не нужен.
+// Round-5 device-capture closure F-PHD-DC-R11-1: exporter_secret is now
+// `MlockedSecret<T>` (not `SecretBox<T>`); `secrecy::ExposeSecret` is no longer needed.
 
 /// X-Wing ciphersuite (0x004D) — единственный ciphersuite этого теста.
 /// X-Wing ciphersuite (0x004D) — the only ciphersuite for this test.
@@ -233,9 +236,13 @@ fn xwing_group_exporter_secret_matches_between_members() {
         .exporter_secret(&bob.provider, label, context, len)
         .expect("Bob exporter_secret");
 
+    // Round-5 device-capture closure F-PHD-DC-R11-1: exporter_secret теперь
+    // `MlockedSecret<[u8; MAX_EXPORTER_LEN]>`; expose() возвращает &[u8; N].
+    // Round-5 device-capture closure F-PHD-DC-R11-1: exporter_secret is now
+    // `MlockedSecret<[u8; MAX_EXPORTER_LEN]>`; expose() returns &[u8; N].
     assert_eq!(
-        &alice_secret.expose_secret()[..len],
-        &bob_secret.expose_secret()[..len],
+        &alice_secret.expose()[..len],
+        &bob_secret.expose()[..len],
         "exporter_secret должен совпадать между Alice и Bob (same epoch + label + context)"
     );
 
@@ -245,8 +252,8 @@ fn xwing_group_exporter_secret_matches_between_members() {
         .exporter_secret(&alice.provider, "other-label", context, len)
         .expect("alice other-label");
     assert_ne!(
-        &alice_secret.expose_secret()[..len],
-        &other.expose_secret()[..len],
+        &alice_secret.expose()[..len],
+        &other.expose()[..len],
         "разный label обязан давать разный exporter_secret"
     );
 

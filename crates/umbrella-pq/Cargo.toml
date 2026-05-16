@@ -42,6 +42,16 @@ secrecy = { workspace = true }
 rand_core = { workspace = true }
 thiserror = { workspace = true }
 
+# umbrella-crypto-primitives нужен для `MlockedSecret<T>` (round-5
+# device-capture closure F-PHD-DC-R11-1) в `hedged::HedgedWitness` —
+# раньше хранил `SecretBox<[u8; 32]>` без mlock'а; round-5 закрытие
+# мигрирует на `MlockedSecret<[u8; 32]>` для swap-resistance.
+# umbrella-crypto-primitives provides `MlockedSecret<T>` (round-5
+# device-capture closure F-PHD-DC-R11-1) for `hedged::HedgedWitness` —
+# previously stored a `SecretBox<[u8; 32]>` without mlock; the round-5
+# closure migrates to `MlockedSecret<[u8; 32]>` for swap-resistance.
+umbrella-crypto-primitives = { workspace = true }
+
 # Ed25519 нужен для hybrid signature (Ed25519 + ML-DSA-65 AND-mode).
 # Ed25519 is needed for hybrid signature (Ed25519 + ML-DSA-65 AND-mode).
 ed25519-dalek = { workspace = true }
