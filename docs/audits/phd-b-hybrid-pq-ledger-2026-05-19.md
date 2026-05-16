@@ -41,6 +41,29 @@
 2. **F-PHD-PQ-5 KAT extension** — import draft-connolly-cfrg-xwing-kem-10 Appendix C vectors 2..n via `umbrella-vectors` data harness. Target: v1.2.0.
 3. **F-PHD-PQ-6 ACVP integration** — pull NIST CSRC ACVP test vector set for ML-KEM-768. Target: v1.2.0.
 4. **F-PHD-PQ-8 upstream** — file libcrux-ml-kem improvement issue documenting 1-2 ns valid-vs-invalid ct timing signal observable on arm64 Darwin at 1M dudect samples. Note: not a secret-key-bit channel, so not blocking for production; track as quality improvement.
+5. **F-PHD-RP-R3-1 supply-chain hardening (NEW, reality pass R3)** — functional KATs cannot detect telemetry-only / side-channel supply-chain backdoors. Defense layer: SLSA L3 attestation + cargo-vet/crev review pass + reproducible-build verification gate. Target: v1.2.0 release-hardening track.
+
+## Reality pass (round 2, 2026-05-19) addendum
+
+Round-2 spec `docs/superpowers/specs/2026-05-19-phd-b-hybrid-pq-reality-pass-design.md`.
+Report: `docs/audits/phd-b-hybrid-pq-reality-pass-2026-05-19.md`.
+
+| Commit    | R   | Outcome                                                       |
+|-----------|-----|---------------------------------------------------------------|
+| c32bad71  | R1  | 0 KyberSlash bits recovered; sk-independent measurement signal |
+| ab2ea7ac  | R2  | 5/5 MITM vectors blocked by AEAD-MAC                           |
+| 47cc0e43  | R3  | Stage-1 caught by 6 KAT layers; Stage-2 telemetry backdoor undetected → NEW LOW F-PHD-RP-R3-1 |
+| 360c8337  | R4  | 0 bytes plaintext recovered offline; 2^256 brute / 2^125 DLog bounds measured |
+| 254c9911  | R5  | RNG injection succeeds under compromised-RNG model; production grep-invariant verifies zero production callers of `xwing_encaps_derand` |
+| 13ddca4c  | R6  | lldb scan: 1 match AFTER_KEYGEN (designed SecretBox content); 0 AFTER_DROP — zeroize fires |
+
+Reality-pass acceptance gate (R1+R2+R3+R4 mandatory): all four PASS.
+Round-2 finding ledger:
+
+| ID                | Severity | Status                                                       |
+|-------------------|----------|--------------------------------------------------------------|
+| F-PHD-PQ-1..8     | unchanged| (see round-1 table; round-2 strengthens evidence per R1–R6)  |
+| F-PHD-RP-R3-1     | LOW NEW  | CARRY-OVER to v1.2.0 SLSA / reproducible-build hardening     |
 
 ## 6/6 self-check honest evaluation
 
