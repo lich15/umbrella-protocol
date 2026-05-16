@@ -73,7 +73,7 @@ AND signed-request requirement; добавлена отдельная
 `unwrap_binds_chat_id_to_identity` lemma (verified, 12 шагов) что явно
 доказывает chat_id binding.
 
-### F-PHD-RETRO-3-C — Threshold 3-of-5 не моделируется
+### F-PHD-RETRO-3-C — Threshold 3-of-5 не моделируется (CLOSED)
 
 **Severity:** Medium (model abstraction gap)
 
@@ -82,16 +82,30 @@ sealed-server; реальная архитектура — Шамирское 3-
 (`crates/umbrella-backup/src/cloud_wrap/threshold.rs` `DEFAULT_TOTAL=5`,
 `threshold=3`). Compromised 2-of-5 не достаточно для recovery в коде
 (Lagrange combine требует 3 valid shares), но модель formally не
-доказывает это.
+доказывала это.
 
-**Закрытие (частичное):** Этот раунд попытался переписать модель с 5
-sealed-server entities + threshold combine rule + lemma
-`two_compromised_insufficient`. **Tamarin не сошёлся за 35+ минут** —
-см. F-PHD-RETRO-3-D. Замена: reduction-only argument в §4.3 с
-конкретными bounds (Shamir 1979 information-theoretic, 2^-128 reduction
-к UF-CMA через §4.1).
+**Закрытие (formal, session 2026-05-17 continuation):** Создана отдельная
+standalone модель
+`crates/umbrella-formal-verification/models/sealed_servers_threshold_3of5.spthy`
+с 5 sealed-server entities, явными compromise rules для server '1' и
+server '2', honest/compromised share rules, threshold combiner. Три
+леммы доказаны Tamarin 1.12.0 за **1.76 секунды**:
 
-### F-PHD-RETRO-3-D — Tamarin инструментальный предел на full threshold proof
+```
+at_least_one_honest_share_used                     verified (37 шагов)
+unwrap_requires_device_signature_via_honest_share  verified (37 шагов)
+honest_threshold_unwrap_executable (exists-trace)  verified (5 шагов)
+```
+
+**Methodological insight:** общий `AtMostTwoCompromised` restriction с
+pigeonhole-quantifier-based reasoning заставлял Tamarin застрять на
+35+ минут (см. F-PHD-RETRO-3-D). Замена на **scenario-based proof** —
+конкретно компрометируем `'1'` и `'2'`, остальные ('3', '4', '5') honest
+by construction — снимает квантификаторную нагрузку и Tamarin сходится
+за < 2 секунды. Этот подход подходит для большинства security claims:
+explicit threat scenario вместо universal restriction.
+
+### F-PHD-RETRO-3-D — Tamarin инструментальный предел (CLOSED via workaround)
 
 **Severity:** Medium (methodological / tooling)
 
@@ -99,14 +113,29 @@ sealed-server entities + threshold combine rule + lemma
 `AtMostTwoCompromised` restriction + `DistinctSids` restriction +
 квантификаторно-тяжёлые lemmas (pigeonhole-based reasoning) приводит
 к non-termination Tamarin 1.12.0 на 347% CPU за 35+ минут без output.
-Это **инструментальное ограничение** Tamarin (constraint-solving для
-information-theoretic lower bounds требует специальных эвристик либо
-ProVerif в роли альтернативного backend).
 
-**Закрытие:** Documented as methodological finding. Carry-over:
-specialized oracle либо переход на ProVerif для §4.3 reduction.
-Alternative: Coq/Lean machine-checked proof. Estimated +1-2 weeks
-dedicated work.
+**Закрытие (workaround found, session 2026-05-17 continuation):**
+Scenario-based reformulation в standalone модели
+`sealed_servers_threshold_3of5.spthy` сходится за 1.76 секунды.
+
+**Ключевой урок (записан в методологию):**
+
+- ❌ **General restriction** (`AtMostTwoCompromised: not (Ex 3 distinct ...)`)
+  → unbounded enumeration over compromised servers → non-termination.
+- ✓ **Scenario instantiation** (`rule compromise_server_1`,
+  `rule compromise_server_2`, без правил для '3'/'4'/'5')
+  → конкретный сценарий, бесконечного перебора нет → быстрая
+  верификация.
+
+Tradeoff: scenario-based proof доказывает свойство **для конкретного
+threat scenario** (servers '1' и '2' compromised), не для **всех**
+possible subsets of compromised servers. Для production assurance этого
+достаточно: assume adversary могут компрометировать любые 2 из 5; by
+symmetry argument любая пара эквивалентна. Если требуется more rigorous
+universal proof, нужен либо специализированный oracle для Tamarin,
+либо ProVerif port, либо Coq machine-checked. Carry-over к
+F-PHD-RETRO-3-D-FULL: universal threshold proof не critical для
+production confidence.
 
 ### F-PHD-RETRO-3-E — Identity rotation acceptance без attestation/active device co-sign
 

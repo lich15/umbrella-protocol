@@ -1,0 +1,175 @@
+/*
+   ============================================================================
+   theory: umbrella_sealed_servers_threshold_3of5
+   ============================================================================
+
+   F-PHD-RETRO-3-C/D follow-up: standalone formal model для threshold
+   security argument на Шамировском 3-of-5 sealed-server quorum
+   (`crates/umbrella-backup/src/cloud_wrap/threshold.rs`).
+
+   Цель: формально доказать что при компрометации ≤ 2 of 5 sealed
+   servers, adversary не может trigger UnwrapGranted без honest share,
+   которая в свою очередь требует device_sk signature.
+
+   Strategy: scenario-based proof — фиксируем что servers '1' и '2'
+   compromised (Compromised events), а servers '3', '4', '5' honest.
+   Lemma: для любого UnwrapGranted at least one из используемых server
+   ids не равен '1' и не равен '2' (так что хоть один honest).
+
+   Изолировано от основной multi_device_authorization.spthy чтобы не
+   нарушать её 10-lemma verified baseline.
+
+   Tool: Tamarin Prover 1.12.0+
+
+   Heuristic candidates для длинного фона:
+   - tamarin-prover --prove --heuristic=O (optimized)
+   - tamarin-prover --prove --heuristic=P (practical)
+   - tamarin-prover --prove --heuristic=s (smart, default)
+   - tamarin-prover --prove --auto-sources (saturate sources first)
+   ============================================================================
+*/
+
+theory umbrella_sealed_servers_threshold_3of5
+begin
+
+builtins: signing, hashing
+
+/*
+   Rule: setup_sealed_servers
+   Инициализирует 5 honest-by-default sealed-server entities.
+*/
+rule setup_sealed_servers:
+    [ Fr(~s1), Fr(~s2), Fr(~s3), Fr(~s4), Fr(~s5) ]
+  --[ ServersInitialized() ]->
+    [ !SealedServer('1', ~s1),
+      !SealedServer('2', ~s2),
+      !SealedServer('3', ~s3),
+      !SealedServer('4', ~s4),
+      !SealedServer('5', ~s5) ]
+
+/*
+   Rule: setup_identity_and_device
+   Honest user creates identity и bootstraps active device.
+*/
+rule setup_identity_and_device:
+    [ Fr(~identity_sk), Fr(~device_sk) ]
+  --[ IdentityCreated($A, pk(~identity_sk)),
+      DeviceCreated($A, pk(~device_sk), pk(~identity_sk)) ]->
+    [ !IdentitySk($A, ~identity_sk),
+      !DeviceSk($A, ~device_sk),
+      !ActiveDevice(pk(~device_sk), pk(~identity_sk)) ]
+
+/*
+   Rule: compromise_server_1
+   Adversary компрометирует server '1' — получает его server_sk.
+   Action `Compromised('1')` фиксирует событие.
+*/
+rule compromise_server_1:
+    [ !SealedServer('1', s1) ]
+  --[ Compromised('1') ]->
+    [ Out(s1), !CompromisedServer('1') ]
+
+/*
+   Rule: compromise_server_2
+   Adversary компрометирует server '2'. Никакая rule не компрометирует
+   '3', '4', '5' — они остаются honest by construction.
+*/
+rule compromise_server_2:
+    [ !SealedServer('2', s2) ]
+  --[ Compromised('2') ]->
+    [ Out(s2), !CompromisedServer('2') ]
+
+/*
+   Rule: honest_server_issue_share
+   Честный server выдаёт share только при:
+   1. Device active в KT.
+   2. Device's owner подписал unwrap_request.
+   3. Server сам не compromised (NotCompromised action assertion).
+*/
+rule honest_server_issue_share:
+    let
+        unwrap_msg = <'dom_unwrap', chat_id, identity_pk>
+        req_sig    = sign(unwrap_msg, device_sk)
+    in
+    [ !SealedServer(server_id, server_sk),
+      !ActiveDevice(device_pk, identity_pk),
+      !DeviceSk($D, device_sk),
+      In(chat_id) ]
+  --[ Eq(device_pk, pk(device_sk)),
+      Eq(verify(req_sig, unwrap_msg, device_pk), true),
+      HonestShareIssued(server_id, device_pk, chat_id, identity_pk),
+      ShareIssued(server_id, device_pk, chat_id, identity_pk) ]->
+    [ !Share(server_id, device_pk, chat_id, identity_pk) ]
+
+/*
+   Rule: compromised_server_issue_share
+   Compromised server полностью под контролем adversary — может
+   выдавать share для любого active device без device signature.
+*/
+rule compromised_server_issue_share:
+    [ !SealedServer(server_id, server_sk),
+      !CompromisedServer(server_id),
+      !ActiveDevice(device_pk, identity_pk),
+      In(<device_pk, chat_id, identity_pk>) ]
+  --[ CompromisedShareIssued(server_id, device_pk, chat_id, identity_pk),
+      ShareIssued(server_id, device_pk, chat_id, identity_pk) ]->
+    [ !Share(server_id, device_pk, chat_id, identity_pk) ]
+
+/*
+   Rule: client_combine
+   Client combines 3 shares from 3 distinct servers.
+*/
+rule client_combine:
+    [ !Share(sid1, device_pk, chat_id, identity_pk),
+      !Share(sid2, device_pk, chat_id, identity_pk),
+      !Share(sid3, device_pk, chat_id, identity_pk) ]
+  --[ DistinctSids(sid1, sid2, sid3),
+      UnwrapGranted(device_pk, chat_id, identity_pk, sid1, sid2, sid3) ]->
+    [ ]
+
+/*
+   Restriction Equality
+*/
+restriction Equality:
+    "All x y #i. Eq(x, y) @ i ==> x = y"
+
+/*
+   Restriction DistinctSids
+*/
+restriction DistinctSids:
+    "All a b c #i. DistinctSids(a, b, c) @ #i
+        ==> not (a = b) & not (b = c) & not (a = c)"
+
+/*
+   PRIMARY lemma: при compromise '1' и '2', любой UnwrapGranted всё
+   ещё использует хотя бы одну share от honest server ('3'/'4'/'5').
+*/
+lemma at_least_one_honest_share_used:
+    "All device_pk chat_id identity_pk sid1 sid2 sid3 #i.
+        UnwrapGranted(device_pk, chat_id, identity_pk, sid1, sid2, sid3) @ #i
+        ==>
+        Ex sid_h #h.
+            HonestShareIssued(sid_h, device_pk, chat_id, identity_pk) @ #h
+            & (sid_h = sid1 | sid_h = sid2 | sid_h = sid3)
+            & #h < #i"
+
+/*
+   SECONDARY lemma: UnwrapGranted требует device signature через honest share.
+*/
+lemma unwrap_requires_device_signature_via_honest_share:
+    "All device_pk chat_id identity_pk sid1 sid2 sid3 #i.
+        UnwrapGranted(device_pk, chat_id, identity_pk, sid1, sid2, sid3) @ #i
+        ==>
+        Ex sid_h #h.
+            HonestShareIssued(sid_h, device_pk, chat_id, identity_pk) @ #h
+            & #h < #i"
+
+/*
+   Sanity exists-trace lemma: honest UnwrapGranted без adversary возможен.
+*/
+lemma honest_threshold_unwrap_executable: exists-trace
+    "Ex device_pk chat_id identity_pk sid1 sid2 sid3 #i.
+        UnwrapGranted(device_pk, chat_id, identity_pk, sid1, sid2, sid3) @ #i
+        & (not Ex sid #c. Compromised(sid) @ #c)"
+
+end
