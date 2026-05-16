@@ -49,15 +49,32 @@ use super::signed_request::{DEVICE_PUBKEY_LEN, DEVICE_SIG_LEN};
 /// Exactly 30 bytes, fixed by ADR-008.
 pub const IDENTITY_ROTATION_DOMAIN_SEPARATOR: &[u8] = b"umbrellax-identity-rotation-v1";
 
-/// Фиксированная длина wire-format `IdentityRotationRecord` (202 байта).
-/// Fixed wire-format length of `IdentityRotationRecord` (202 bytes).
+/// Длина `code_recovery_public_half_proof` поля в wire-format. Это 32-байтовый
+/// HKDF-SHA512 derivation от 12-словной энтропии (см. `CodeRecoveryMnemonic::public_half_proof`).
+/// F-PHD-RETRO-3-E mitigation: блокирует rotation hijack через утечку 24 слов в одиночку.
+///
+/// Length of the `code_recovery_public_half_proof` field in wire format. This is a 32-byte
+/// HKDF-SHA512 derivation of the 12-word entropy (see `CodeRecoveryMnemonic::public_half_proof`).
+/// F-PHD-RETRO-3-E mitigation: blocks the rotation hijack via a 24-words leak alone.
+pub const CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN: usize = 32;
+
+/// Фиксированная длина wire-format `IdentityRotationRecord` (234 байта).
+/// Изменено с 202 → 234 в рамках F-PHD-RETRO-3-E fix: добавлено 32-байтовое
+/// поле `code_recovery_public_half_proof`, которое связывает запись смены
+/// identity со знанием 12-словного кода восстановления.
+///
+/// Fixed wire-format length of `IdentityRotationRecord` (234 bytes).
+/// Changed from 202 → 234 as part of the F-PHD-RETRO-3-E fix: added the
+/// 32-byte `code_recovery_public_half_proof` field, which binds the identity
+/// rotation record to knowledge of the 12-word recovery code.
 pub const IDENTITY_ROTATION_LEN: usize = 1                          // version
     + DEVICE_PUBKEY_LEN                                             // old_identity_pubkey
     + DEVICE_PUBKEY_LEN                                             // new_identity_pubkey
     + 8                                                             // rotation_timestamp
     + 1                                                             // rotation_reason
     + DEVICE_SIG_LEN                                                // old_identity_signature
-    + DEVICE_SIG_LEN; // new_identity_signature
+    + DEVICE_SIG_LEN                                                // new_identity_signature
+    + CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN; // code_recovery_public_half_proof (F-PHD-RETRO-3-E)
 
 // ---------------------------------------------------------------------------
 // RotationReason
@@ -142,15 +159,44 @@ pub struct IdentityRotationRecord {
     /// Подпись нового identity-key'а поверх ТОГО ЖЕ canonical signing input.
     /// Signature by the new identity-key over the SAME canonical signing input.
     pub new_identity_signature: [u8; DEVICE_SIG_LEN],
+    /// 32-байтовое HKDF-SHA512 доказательство знания 12-словного кода
+    /// восстановления (см. `CodeRecoveryMnemonic::public_half_proof`).
+    /// **F-PHD-RETRO-3-E mitigation**: блокирует rotation hijack через
+    /// утечку 24 слов в одиночку. Сервер сравнивает это значение с
+    /// `public_half_proof` сохранённым в KT при первом bootstrap'е; без
+    /// знания 12 слов adversary не может пересчитать одностороннее HKDF.
+    /// Обе подписи (old + new identity) покрывают это поле через
+    /// canonical signing input.
+    ///
+    /// 32-byte HKDF-SHA512 proof of knowledge of the 12-word recovery
+    /// mnemonic (see `CodeRecoveryMnemonic::public_half_proof`).
+    /// **F-PHD-RETRO-3-E mitigation**: blocks the rotation hijack via a
+    /// 24-words leak alone. The server compares this value with the
+    /// `public_half_proof` recorded in KT at first bootstrap; without
+    /// knowledge of the 12 words an adversary cannot recompute the
+    /// one-way HKDF. Both signatures (old + new identity) cover this
+    /// field via the canonical signing input.
+    pub code_recovery_public_half_proof: [u8; CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN],
 }
 
 /// Canonical signing input для `IdentityRotationRecord`. Обе подписи
 /// (`old_identity_signature` и `new_identity_signature`) покрывают один и тот
 /// же байтовый input — это зафиксировано ADR-008 и SPEC-12 §A.5.1.
 ///
+/// **F-PHD-RETRO-3-E:** input включает `code_recovery_public_half_proof`
+/// (32 байта). Это связывает подписи с конкретным значением 12-словного
+/// public_half_proof: tampering с proof'ом ломает обе подписи, поэтому
+/// adversary без 12 слов не может подменить proof и пройти dual-sig verify.
+///
 /// Canonical signing input for `IdentityRotationRecord`. Both signatures
 /// (`old_identity_signature` and `new_identity_signature`) cover the same
 /// byte input — fixed by ADR-008 and SPEC-12 §A.5.1.
+///
+/// **F-PHD-RETRO-3-E:** the input includes `code_recovery_public_half_proof`
+/// (32 bytes). This binds the signatures to a specific 12-word
+/// public_half_proof value: tampering with the proof breaks both signatures,
+/// so an adversary without the 12 words cannot substitute the proof and
+/// pass dual-signature verification.
 ///
 /// Формат / Format:
 /// ```text
@@ -160,6 +206,7 @@ pub struct IdentityRotationRecord {
 /// || new_identity_pubkey                   // 32 bytes
 /// || rotation_timestamp_u64_be             // 8 bytes
 /// || [rotation_reason]                     // 1 byte
+/// || code_recovery_public_half_proof       // 32 bytes (F-PHD-RETRO-3-E)
 /// ```
 #[must_use]
 pub fn canonical_signing_input_rotation(
@@ -168,13 +215,15 @@ pub fn canonical_signing_input_rotation(
     new_identity_pubkey: &[u8; DEVICE_PUBKEY_LEN],
     rotation_timestamp: u64,
     rotation_reason: RotationReason,
+    code_recovery_public_half_proof: &[u8; CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN],
 ) -> Vec<u8> {
     let capacity = IDENTITY_ROTATION_DOMAIN_SEPARATOR.len()
         + 1
         + DEVICE_PUBKEY_LEN
         + DEVICE_PUBKEY_LEN
         + 8
-        + 1;
+        + 1
+        + CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN;
     let mut out = Vec::with_capacity(capacity);
     out.extend_from_slice(IDENTITY_ROTATION_DOMAIN_SEPARATOR);
     out.push(version);
@@ -182,14 +231,35 @@ pub fn canonical_signing_input_rotation(
     out.extend_from_slice(new_identity_pubkey);
     out.extend_from_slice(&rotation_timestamp.to_be_bytes());
     out.push(rotation_reason.tag());
+    out.extend_from_slice(code_recovery_public_half_proof);
     out
 }
 
 /// Построить и подписать `IdentityRotationRecord` двумя identity signer
-/// closures. Обе подписи покрывают один и тот же canonical signing input.
+/// closures. Обе подписи покрывают один и тот же canonical signing input,
+/// включая `code_recovery_public_half_proof` (F-PHD-RETRO-3-E binding).
+///
+/// `code_recovery_public_half_proof` — 32-байтовое HKDF-SHA512 значение,
+/// полученное из 12-словной энтропии через
+/// `CodeRecoveryMnemonic::public_half_proof(account)`. Caller отвечает за
+/// его получение: либо имеет `CodeRecoveryMnemonic` и считает на месте,
+/// либо принимает proof из верхнеуровневого UX слоя где пользователь
+/// вводит 12 слов. Семантически это «открытая половина» двухфакторного
+/// recovery — она публикуется в KT при bootstrap и стабильна между
+/// rotation'ами одной и той же 12-словной фразы.
 ///
 /// Build and sign an `IdentityRotationRecord` with two identity signer
-/// closures. Both signatures cover the same canonical signing input.
+/// closures. Both signatures cover the same canonical signing input,
+/// including the `code_recovery_public_half_proof` (F-PHD-RETRO-3-E binding).
+///
+/// `code_recovery_public_half_proof` is a 32-byte HKDF-SHA512 value derived
+/// from the 12-word entropy via
+/// `CodeRecoveryMnemonic::public_half_proof(account)`. The caller is
+/// responsible for obtaining it: either holds a `CodeRecoveryMnemonic` and
+/// computes locally, or receives the proof from a higher-level UX layer
+/// that prompted the user for 12 words. Semantically this is the "public
+/// half" of two-factor recovery — published in KT at bootstrap and stable
+/// across rotations of the same 12-word phrase.
 ///
 /// # Errors
 /// - [`BackupError::InvalidWireFormat`] если `old_identity_pubkey` и
@@ -201,6 +271,7 @@ pub fn seal_identity_rotation_record<FOld, FNew>(
     new_identity_pubkey: [u8; DEVICE_PUBKEY_LEN],
     rotation_timestamp: u64,
     rotation_reason: RotationReason,
+    code_recovery_public_half_proof: [u8; CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN],
     old_identity_signer: FOld,
     new_identity_signer: FNew,
 ) -> Result<IdentityRotationRecord, BackupError>
@@ -218,6 +289,7 @@ where
         &new_identity_pubkey,
         rotation_timestamp,
         rotation_reason,
+        &code_recovery_public_half_proof,
     );
     let old_identity_signature = old_identity_signer(&canonical)?;
     let new_identity_signature = new_identity_signer(&canonical)?;
@@ -230,6 +302,7 @@ where
         rotation_reason,
         old_identity_signature,
         new_identity_signature,
+        code_recovery_public_half_proof,
     })
 }
 
@@ -244,11 +317,19 @@ impl IdentityRotationRecord {
             &self.new_identity_pubkey,
             self.rotation_timestamp,
             self.rotation_reason,
+            &self.code_recovery_public_half_proof,
         )
     }
 
-    /// Сериализовать в wire-format (202 байта, fixed).
-    /// Serialize to wire format (202 bytes, fixed).
+    /// Доступ к `code_recovery_public_half_proof` (F-PHD-RETRO-3-E binding).
+    /// Accessor for `code_recovery_public_half_proof` (F-PHD-RETRO-3-E binding).
+    #[must_use]
+    pub fn code_recovery_public_half_proof(&self) -> &[u8; CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN] {
+        &self.code_recovery_public_half_proof
+    }
+
+    /// Сериализовать в wire-format (234 байта, fixed).
+    /// Serialize to wire format (234 bytes, fixed).
     #[must_use]
     pub fn encode(&self) -> [u8; IDENTITY_ROTATION_LEN] {
         let mut out = [0u8; IDENTITY_ROTATION_LEN];
@@ -259,15 +340,16 @@ impl IdentityRotationRecord {
         out[73] = self.rotation_reason.tag();
         out[74..138].copy_from_slice(&self.old_identity_signature);
         out[138..202].copy_from_slice(&self.new_identity_signature);
+        out[202..234].copy_from_slice(&self.code_recovery_public_half_proof);
         out
     }
 
-    /// Десериализовать из wire-format (202 байта).
+    /// Десериализовать из wire-format (234 байта).
     ///
-    /// Deserialize from wire format (202 bytes).
+    /// Deserialize from wire format (234 bytes).
     ///
     /// # Errors
-    /// - [`BackupError::InvalidWireFormat`] если длина ≠ 202 байт, либо
+    /// - [`BackupError::InvalidWireFormat`] если длина ≠ 234 байт, либо
     ///   `rotation_reason` не в {0x01, 0x02, 0x03}, либо
     ///   `old_identity_pubkey == new_identity_pubkey`.
     /// - [`BackupError::WrappedKeyVersionMismatch`] если version != `0x01`.
@@ -304,6 +386,10 @@ impl IdentityRotationRecord {
         let new_identity_signature: [u8; DEVICE_SIG_LEN] = bytes[138..202]
             .try_into()
             .map_err(|_| BackupError::InvalidWireFormat)?;
+        let code_recovery_public_half_proof: [u8; CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN] = bytes
+            [202..234]
+            .try_into()
+            .map_err(|_| BackupError::InvalidWireFormat)?;
 
         Ok(Self {
             version,
@@ -313,16 +399,23 @@ impl IdentityRotationRecord {
             rotation_reason,
             old_identity_signature,
             new_identity_signature,
+            code_recovery_public_half_proof,
         })
     }
 
     /// Проверить обе подписи (старого и нового identity) поверх canonical
     /// signing input. Обе обязаны пройти verify — это защита от MITM где
-    /// один из identity-keys подменён.
+    /// один из identity-keys подменён. **F-PHD-RETRO-3-E:** canonical
+    /// signing input включает `code_recovery_public_half_proof`, поэтому
+    /// tampering с proof'ом ломает обе подписи: adversary без 12 слов не
+    /// может подменить proof и пройти verify.
     ///
     /// Verify both signatures (old and new identity) over the canonical
     /// signing input. Both must verify — this is protection against MITM
-    /// substitution of either identity key.
+    /// substitution of either identity key. **F-PHD-RETRO-3-E:** the
+    /// canonical signing input includes `code_recovery_public_half_proof`,
+    /// so tampering with the proof breaks both signatures: an adversary
+    /// without the 12 words cannot substitute the proof and pass verify.
     ///
     /// # Errors
     /// - [`BackupError::InvalidRistrettoEncoding`] если хоть один pubkey
@@ -375,6 +468,24 @@ mod tests {
         move |message: &[u8]| Ok(sk.sign(message).to_bytes())
     }
 
+    /// Свежий 32-байтовый `code_recovery_public_half_proof` для тестов.
+    /// Содержательно неважен (тестам нужно лишь валидное non-zero значение
+    /// которое подписи покроют как часть canonical input). В производстве
+    /// получают через `CodeRecoveryMnemonic::public_half_proof(account)`.
+    ///
+    /// Fresh 32-byte `code_recovery_public_half_proof` for tests. The
+    /// content is unimportant (tests only need a valid non-zero value
+    /// that signatures cover as part of the canonical input). In
+    /// production this comes from `CodeRecoveryMnemonic::public_half_proof(account)`.
+    fn fresh_code_recovery_proof() -> [u8; CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN] {
+        let mut proof = [0u8; CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN];
+        OsRng.fill_bytes(&mut proof);
+        // Гарантируем что не all-zero (теоретически возможно для CSPRNG, но
+        // вероятность 2⁻²⁵⁶). Defense-in-depth для тестов.
+        proof[0] |= 0x01;
+        proof
+    }
+
     // -------- Constants sanity --------
 
     #[test]
@@ -388,7 +499,14 @@ mod tests {
 
     #[test]
     fn wire_length_matches_spec() {
-        assert_eq!(IDENTITY_ROTATION_LEN, 202);
+        // F-PHD-RETRO-3-E: 202 → 234 (+32 за code_recovery_public_half_proof).
+        // F-PHD-RETRO-3-E: 202 → 234 (+32 for code_recovery_public_half_proof).
+        assert_eq!(IDENTITY_ROTATION_LEN, 234);
+    }
+
+    #[test]
+    fn code_recovery_public_half_proof_len_constant() {
+        assert_eq!(CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN, 32);
     }
 
     #[test]
@@ -427,6 +545,7 @@ mod tests {
             new_vk,
             1_700_000_000_000u64,
             RotationReason::CatastrophicRecovery,
+            fresh_code_recovery_proof(),
             sign_with(&old_sk),
             sign_with(&new_sk),
         )
@@ -443,6 +562,7 @@ mod tests {
             new_vk,
             1,
             RotationReason::PlannedRotation,
+            fresh_code_recovery_proof(),
             sign_with(&old_sk),
             sign_with(&new_sk),
         )
@@ -459,6 +579,7 @@ mod tests {
             new_vk,
             u64::MAX,
             RotationReason::IdentityCompromise,
+            fresh_code_recovery_proof(),
             sign_with(&old_sk),
             sign_with(&new_sk),
         )
@@ -469,17 +590,19 @@ mod tests {
     // -------- Canonical layout --------
 
     #[test]
-    fn canonical_layout_is_dom_ver_old_new_ts_reason() {
+    fn canonical_layout_is_dom_ver_old_new_ts_reason_proof() {
         let old_vk = [0x11u8; DEVICE_PUBKEY_LEN];
         let new_vk = [0x22u8; DEVICE_PUBKEY_LEN];
         let ts = 0x0102_0304_0506_0708u64;
         let reason = RotationReason::PlannedRotation;
+        let proof = [0x33u8; CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN];
         let canonical = canonical_signing_input_rotation(
             AUTHORIZATION_WIRE_VERSION,
             &old_vk,
             &new_vk,
             ts,
             reason,
+            &proof,
         );
 
         let mut off = 0;
@@ -497,7 +620,12 @@ mod tests {
         assert_eq!(&canonical[off..off + 8], &ts.to_be_bytes());
         off += 8;
         assert_eq!(canonical[off], reason.tag());
-        assert_eq!(off + 1, canonical.len());
+        off += 1;
+        assert_eq!(
+            &canonical[off..off + CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN],
+            &proof
+        );
+        assert_eq!(off + CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN, canonical.len());
     }
 
     #[test]
@@ -506,12 +634,14 @@ mod tests {
         let (new_sk, new_vk) = make_keypair();
         let ts = 12345u64;
         let reason = RotationReason::PlannedRotation;
+        let proof = fresh_code_recovery_proof();
         let canonical = canonical_signing_input_rotation(
             AUTHORIZATION_WIRE_VERSION,
             &old_vk,
             &new_vk,
             ts,
             reason,
+            &proof,
         );
 
         let record = seal_identity_rotation_record(
@@ -519,6 +649,7 @@ mod tests {
             new_vk,
             ts,
             reason,
+            proof,
             sign_with(&old_sk),
             sign_with(&new_sk),
         )
@@ -532,6 +663,31 @@ mod tests {
         new_dalek_vk.verify(&canonical, &new_sig).unwrap();
     }
 
+    #[test]
+    fn verify_rejects_tampered_code_recovery_proof() {
+        // F-PHD-RETRO-3-E: проверяем что tampering с code_recovery_public_half_proof
+        // ломает обе подписи — гарантирует что adversary без 12 слов не может
+        // подменить proof и пройти verify.
+        // F-PHD-RETRO-3-E: verify that tampering with code_recovery_public_half_proof
+        // breaks both signatures — guarantees that an adversary without the
+        // 12 words cannot substitute the proof and pass verify.
+        let (old_sk, old_vk) = make_keypair();
+        let (new_sk, new_vk) = make_keypair();
+        let mut record = seal_identity_rotation_record(
+            old_vk,
+            new_vk,
+            1,
+            RotationReason::PlannedRotation,
+            fresh_code_recovery_proof(),
+            sign_with(&old_sk),
+            sign_with(&new_sk),
+        )
+        .unwrap();
+        record.code_recovery_public_half_proof[0] ^= 0xFF;
+        let err = record.verify().unwrap_err();
+        assert!(matches!(err, BackupError::CryptoVerificationFailed));
+    }
+
     // -------- Roundtrip --------
 
     #[test]
@@ -543,6 +699,7 @@ mod tests {
             new_vk,
             999,
             RotationReason::CatastrophicRecovery,
+            fresh_code_recovery_proof(),
             sign_with(&old_sk),
             sign_with(&new_sk),
         )
@@ -564,6 +721,7 @@ mod tests {
             old_vk, // same pubkey
             1,
             RotationReason::PlannedRotation,
+            fresh_code_recovery_proof(),
             sign_with(&old_sk),
             |_| Ok([0u8; DEVICE_SIG_LEN]),
         )
@@ -580,6 +738,7 @@ mod tests {
             new_vk,
             1,
             RotationReason::PlannedRotation,
+            fresh_code_recovery_proof(),
             sign_with(&old_sk),
             sign_with(&new_sk),
         )
@@ -600,6 +759,7 @@ mod tests {
             new_vk,
             1,
             RotationReason::PlannedRotation,
+            fresh_code_recovery_proof(),
             sign_with(&old_sk),
             sign_with(&new_sk),
         )
@@ -618,6 +778,7 @@ mod tests {
             new_vk,
             1,
             RotationReason::PlannedRotation,
+            fresh_code_recovery_proof(),
             sign_with(&old_sk),
             sign_with(&new_sk),
         )
@@ -636,6 +797,7 @@ mod tests {
             new_vk,
             1,
             RotationReason::PlannedRotation,
+            fresh_code_recovery_proof(),
             sign_with(&old_sk),
             sign_with(&new_sk),
         )
@@ -654,6 +816,7 @@ mod tests {
             new_vk,
             1,
             RotationReason::PlannedRotation,
+            fresh_code_recovery_proof(),
             sign_with(&old_sk),
             sign_with(&new_sk),
         )
@@ -679,6 +842,7 @@ mod tests {
             new_vk,
             1,
             RotationReason::PlannedRotation,
+            fresh_code_recovery_proof(),
             sign_with(&old_sk),
             sign_with(&new_sk),
         )
@@ -709,6 +873,7 @@ mod tests {
             new_vk,
             1,
             RotationReason::PlannedRotation,
+            fresh_code_recovery_proof(),
             sign_with(&old_sk),
             sign_with(&new_sk),
         )
@@ -731,6 +896,7 @@ mod tests {
             new_vk,
             1,
             RotationReason::PlannedRotation,
+            fresh_code_recovery_proof(),
             |_| Err(BackupError::DeviceSigning("hw-unavailable")),
             |_| Ok([0u8; DEVICE_SIG_LEN]),
         )
@@ -747,6 +913,7 @@ mod tests {
             new_vk,
             1,
             RotationReason::PlannedRotation,
+            fresh_code_recovery_proof(),
             sign_with(&old_sk),
             |_| Err(BackupError::DeviceSigning("new-signer-offline")),
         )
@@ -765,6 +932,7 @@ mod tests {
             new_vk,
             0,
             RotationReason::PlannedRotation,
+            fresh_code_recovery_proof(),
             sign_with(&old_sk),
             sign_with(&new_sk),
         )
@@ -783,6 +951,7 @@ mod tests {
             new_vk,
             u64::MAX,
             RotationReason::CatastrophicRecovery,
+            fresh_code_recovery_proof(),
             sign_with(&old_sk),
             sign_with(&new_sk),
         )
@@ -802,6 +971,7 @@ mod tests {
             timestamp in any::<u64>(),
             reason_tag in 1u8..=3u8,
             old_bytes in proptest::array::uniform32(any::<u8>()),
+            proof in proptest::array::uniform32(any::<u8>()),
         ) {
             // Use a real keypair for new identity to ensure distinct pubkeys
             // (old_bytes is pseudo-random; chance of collision astronomical but
@@ -817,6 +987,7 @@ mod tests {
                 new_vk,
                 timestamp,
                 reason,
+                proof,
                 sign_with(&old_sk),
                 sign_with(&new_sk),
             ).unwrap();
@@ -824,6 +995,7 @@ mod tests {
             prop_assert_eq!(bytes.len(), IDENTITY_ROTATION_LEN);
             let decoded = IdentityRotationRecord::from_bytes(&bytes).unwrap();
             prop_assert_eq!(&record, &decoded);
+            prop_assert_eq!(decoded.code_recovery_public_half_proof(), &proof);
             decoded.verify().unwrap();
         }
 
@@ -838,6 +1010,7 @@ mod tests {
                 new_vk,
                 1_700_000_000_000u64,
                 RotationReason::PlannedRotation,
+                fresh_code_recovery_proof(),
                 sign_with(&old_sk),
                 sign_with(&new_sk),
             ).unwrap();

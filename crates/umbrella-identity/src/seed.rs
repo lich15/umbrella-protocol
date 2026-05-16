@@ -3,7 +3,7 @@
 
 use bip39::{Language, Mnemonic};
 use rand_core::{CryptoRng, RngCore};
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::error::{IdentityError, Result};
 
@@ -71,19 +71,19 @@ impl IdentitySeed {
     /// Генерирует новый identity seed из CSPRNG.
     /// Generates a new identity seed from a CSPRNG.
     pub fn generate<R: CryptoRng + RngCore>(rng: &mut R, language: MnemonicLanguage) -> Self {
-        let mut entropy = [0u8; ENTROPY_LEN];
-        rng.fill_bytes(&mut entropy);
+        let mut entropy = Zeroizing::new([0u8; ENTROPY_LEN]);
+        rng.fill_bytes(&mut entropy[..]);
         #[allow(
             unknown_lints,
             no_unwrap_in_lib,
             reason = "infallible: 32-byte entropy is always valid BIP-39 input"
         )]
-        let mnemonic = Mnemonic::from_entropy_in(language.as_bip39(), &entropy)
+        let mnemonic = Mnemonic::from_entropy_in(language.as_bip39(), &entropy[..])
             .expect("32-byte entropy is always valid for BIP-39");
-        let seed = mnemonic.to_seed_normalized("");
+        let seed = Zeroizing::new(mnemonic.to_seed_normalized(""));
         Self {
-            entropy,
-            seed,
+            entropy: *entropy,
+            seed: *seed,
             language,
         }
     }
@@ -103,19 +103,19 @@ impl IdentitySeed {
         }
         let mnemonic = Mnemonic::parse_in_normalized(language.as_bip39(), trimmed)
             .map_err(|_| IdentityError::InvalidMnemonic)?;
-        let entropy_vec = mnemonic.to_entropy();
+        let entropy_vec = Zeroizing::new(mnemonic.to_entropy());
         if entropy_vec.len() != ENTROPY_LEN {
             return Err(IdentityError::InvalidWordCount {
                 expected: MNEMONIC_WORD_COUNT,
                 got: word_count,
             });
         }
-        let mut entropy = [0u8; ENTROPY_LEN];
-        entropy.copy_from_slice(&entropy_vec);
-        let seed = mnemonic.to_seed_normalized("");
+        let mut entropy = Zeroizing::new([0u8; ENTROPY_LEN]);
+        entropy[..].copy_from_slice(&entropy_vec);
+        let seed = Zeroizing::new(mnemonic.to_seed_normalized(""));
         Ok(Self {
-            entropy,
-            seed,
+            entropy: *entropy,
+            seed: *seed,
             language,
         })
     }
@@ -224,5 +224,26 @@ mod tests {
         let phrase = seed.to_mnemonic();
         let phrase_formatted = format!("{phrase:?}");
         assert!(phrase_formatted.contains("redacted"));
+    }
+
+    #[test]
+    fn bip39_derivation_temporaries_are_zeroizing() {
+        let source = include_str!("seed.rs");
+        let entropy_zeroizing = ["Zeroizing::new(", "[0u8; ENTROPY_LEN])"].concat();
+        let mnemonic_entropy_zeroizing = ["Zeroizing::new(", "mnemonic.to_entropy())"].concat();
+        let seed_zeroizing = ["Zeroizing::new(", "mnemonic.to_seed_normalized(\"\")"].concat();
+
+        assert!(
+            source.contains(&entropy_zeroizing),
+            "generated entropy temporary must be zeroized"
+        );
+        assert!(
+            source.contains(&mnemonic_entropy_zeroizing),
+            "mnemonic entropy Vec temporary must be zeroized"
+        );
+        assert!(
+            source.contains(&seed_zeroizing),
+            "BIP-39 PBKDF2 seed temporary must be zeroized"
+        );
     }
 }

@@ -4,6 +4,26 @@
 
 ## English
 
+### Post-1.1.0 memory hygiene hardening - 2026-05-16
+
+Changed:
+
+- BIP-39 and SLIP-0010 derivation now zeroize intermediate entropy, PBKDF2
+  seed, HMAC output, fixed 64-byte copies, temporary extended secrets, and
+  temporary chain codes after use.
+- Sealed Sender `OpenedEnvelope.message` now uses `OpenedMessage`, a
+  zeroizing plaintext wrapper, instead of returning a plain `Vec<u8>`.
+- Retry backoff jitter now uses the system RNG (`OsRng`) for consistency with
+  the rest of the protocol code.
+
+Verification:
+
+- `bip39_derivation_temporaries_are_zeroizing`
+- `slip10_derivation_temporaries_are_zeroized`
+- `opened_envelope_message_is_zeroizing_wrapper`
+- `retry_jitter_uses_system_rng_not_thread_rng`
+- `cargo test -p umbrella-identity -p umbrella-client -p umbrella-sealed-sender --all-features --locked`
+
 ### Post-1.1.0 dependency monitoring - 2026-05-15
 
 Added:
@@ -118,6 +138,27 @@ Security:
 ---
 
 ## Русский
+
+### Гигиена памяти после 1.1.0 - 2026-05-16
+
+Изменено:
+
+- Вывод BIP-39 и SLIP-0010 теперь затирает промежуточную энтропию, PBKDF2 seed,
+  HMAC-выход, фиксированные 64-байтовые копии, временные расширенные секреты и
+  временные chain code после использования.
+- Sealed Sender `OpenedEnvelope.message` теперь возвращает `OpenedMessage` —
+  обёртку над расшифрованным текстом, которая затирает память при удалении, а
+  не обычный `Vec<u8>`.
+- Случайная задержка повторов теперь использует системный генератор (`OsRng`),
+  как остальные чувствительные части протокола.
+
+Проверка:
+
+- `bip39_derivation_temporaries_are_zeroizing`
+- `slip10_derivation_temporaries_are_zeroized`
+- `opened_envelope_message_is_zeroizing_wrapper`
+- `retry_jitter_uses_system_rng_not_thread_rng`
+- `cargo test -p umbrella-identity -p umbrella-client -p umbrella-sealed-sender --all-features --locked`
 
 ### Мониторинг зависимостей после 1.1.0 - 2026-05-15
 

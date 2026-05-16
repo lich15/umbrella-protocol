@@ -2,16 +2,17 @@
 //! Router — single server entry point: parse → anti-replay → rate-limit → decision.
 //!
 //! Порядок проверок намеренный: сначала дешёвая структурная валидация (отбрасываем битые
-//! байты до того как тратим время/память на replay lookup), затем anti-replay (дёшев против
-//! DoS повторами), затем rate-limit (учитываем только валидные уникальные сообщения).
+//! байты до того как тратим время/память на replay lookup), затем проверка повтора без записи,
+//! затем rate-limit, и только после разрешения лимитом — запись в anti-replay окно.
 //!
 //! The check order is deliberate: first the cheap structural validation (throw out malformed
-//! bytes before spending time/memory on a replay lookup), then anti-replay (cheap defence
-//! against replay-DoS), then rate-limit (accounting only valid unique messages).
+//! bytes before spending time/memory on a replay lookup), then duplicate detection without
+//! recording, then rate-limit, and only after the limiter allows the message — recording in
+//! the anti-replay window.
 
 use crate::envelope::{parse_mls_envelope, EnvelopeError, EnvelopeKind, ParsedEnvelope};
 use crate::ratelimit::RateLimiter;
-use crate::replay::{ReplayDecision, ReplayGuard};
+use crate::replay::ReplayGuard;
 
 /// Решение маршрутизации. Routing decision.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -121,19 +122,21 @@ impl<RL: RateLimiter> Router<RL> {
             return RoutingDecision::RejectUnsupportedKind(envelope.kind);
         }
 
-        // Anti-replay — до rate-limit: повтор не должен жечь sender'у квоту.
-        // Anti-replay first — a replay must not burn the sender's rate quota.
-        match self
-            .replay
-            .check_and_record(envelope.message_hash, now_unix)
-        {
-            ReplayDecision::Duplicate => return RoutingDecision::RejectReplay,
-            ReplayDecision::Accept => {}
+        // Повтор проверяем до rate-limit, но не записываем новый hash до того как
+        // rate-limit разрешит сообщение. Иначе unique flood сверх лимита забивает
+        // replay-память.
+        // Check duplicates before rate-limit, but do not record a new hash until
+        // the rate-limit allows the message. Otherwise a unique flood over quota
+        // fills replay memory.
+        if self.replay.is_duplicate(envelope.message_hash, now_unix) {
+            return RoutingDecision::RejectReplay;
         }
 
         if !self.rate_limiter.allow(sender_id, now_unix) {
             return RoutingDecision::RejectRateLimit;
         }
+
+        self.replay.record(envelope.message_hash, now_unix);
 
         RoutingDecision::Accept(envelope)
     }

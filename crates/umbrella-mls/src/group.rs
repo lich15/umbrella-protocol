@@ -75,7 +75,6 @@ use crate::signer::UmbrellaDeviceSigner;
 /// Outcome of a group-membership change (add / remove).
 /// Commit to be distributed to existing members, optional Welcome for newcomers,
 /// and the new epoch after merge.
-#[derive(Debug)]
 pub struct MemberChangeOutcome {
     /// TLS-сериализованный MlsMessage (commit). TLS-serialized MlsMessage (commit).
     pub commit: Vec<u8>,
@@ -86,9 +85,23 @@ pub struct MemberChangeOutcome {
     pub epoch: u64,
 }
 
+/// `Debug` скрывает MLS wire payloads: commit/welcome не должны копироваться в логи.
+/// `Debug` redacts MLS wire payloads: commit/welcome bytes must not be copied into logs.
+impl core::fmt::Debug for MemberChangeOutcome {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let welcome_len = self.welcome.as_ref().map(Vec::len);
+        f.debug_struct("MemberChangeOutcome")
+            .field("commit_len", &self.commit.len())
+            .field("commit", &"<redacted>")
+            .field("welcome_len", &welcome_len)
+            .field("welcome", &"<redacted>")
+            .field("epoch", &self.epoch)
+            .finish()
+    }
+}
+
 /// Результат обработки входящего MLS-сообщения.
 /// Outcome of processing an incoming MLS message.
-#[derive(Debug)]
 pub enum IncomingMessage {
     /// Application-payload от участника; sender_index — индекс автора в ratchet tree.
     /// Application payload from a member; sender_index is the author's ratchet-tree leaf index.
@@ -109,6 +122,33 @@ pub enum IncomingMessage {
     /// Proposal поставлен в очередь (ожидает commit).
     /// A proposal was queued (awaiting commit).
     ProposalQueued,
+}
+
+/// `Debug` скрывает расшифрованный payload: журналы не должны становиться копией переписки.
+/// `Debug` redacts decrypted payload: logs must not become a copy of private messages.
+impl core::fmt::Debug for IncomingMessage {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Application {
+                sender_index,
+                payload,
+            } => f
+                .debug_struct("Application")
+                .field("sender_index", sender_index)
+                .field("payload_len", &payload.len())
+                .field("payload", &"<redacted>")
+                .finish(),
+            Self::CommitApplied {
+                epoch,
+                self_removed,
+            } => f
+                .debug_struct("CommitApplied")
+                .field("epoch", epoch)
+                .field("self_removed", self_removed)
+                .finish(),
+            Self::ProposalQueued => f.write_str("ProposalQueued"),
+        }
+    }
 }
 
 /// Группа MLS по политике Umbrella — обёртка над `openmls::MlsGroup` с enforce-политикой.
@@ -695,6 +735,45 @@ mod tests {
 
     /// Стандартный unix-timestamp для тестов (2023-11-14 22:13:20).
     const T0: u64 = 1_700_000_000;
+
+    #[test]
+    fn incoming_message_debug_redacts_application_payload() {
+        let msg = IncomingMessage::Application {
+            sender_index: 42,
+            payload: b"private-mls-secret".to_vec(),
+        };
+
+        let debug = format!("{msg:?}");
+
+        assert!(
+            !debug.contains("112, 114, 105, 118, 97, 116, 101"),
+            "Debug output must not leak decrypted MLS payload bytes: {debug}"
+        );
+        assert!(
+            debug.contains("payload_len"),
+            "Debug output should keep length metadata for diagnostics: {debug}"
+        );
+    }
+
+    #[test]
+    fn member_change_outcome_debug_redacts_wire_payloads() {
+        let outcome = MemberChangeOutcome {
+            commit: b"mls-commit-wire-payload".to_vec(),
+            welcome: Some(b"mls-welcome-wire-payload".to_vec()),
+            epoch: 77,
+        };
+
+        let debug = format!("{outcome:?}");
+
+        assert!(
+            !debug.contains("109, 108, 115, 45"),
+            "Debug output must not leak MLS commit/welcome wire bytes: {debug}"
+        );
+        assert!(
+            debug.contains("commit_len") && debug.contains("welcome_len"),
+            "Debug output should keep wire length metadata: {debug}"
+        );
+    }
 
     /// Тестовый клиент: собственный keystore + собственный провайдер + device index.
     struct Client {

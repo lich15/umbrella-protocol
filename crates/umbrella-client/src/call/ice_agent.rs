@@ -38,7 +38,7 @@ use crate::ClientError;
 ///
 /// TURN server configuration for `Relay` candidates. `url` follows
 /// `turn:host:port?transport=udp` (webrtc-ice [`IceUrl::parse_url`]).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TurnConfig {
     /// TURN server URL — например `turn:relay.example.com:3478?transport=udp`.
     ///
@@ -52,6 +52,18 @@ pub struct TurnConfig {
     ///
     /// TURN long-term credential password / HMAC key.
     pub password: String,
+}
+
+/// `Debug` скрывает TURN password: отладочные журналы не должны давать доступ к relay.
+/// `Debug` redacts the TURN password: diagnostic logs must not grant relay access.
+impl std::fmt::Debug for TurnConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TurnConfig")
+            .field("url", &self.url)
+            .field("username", &self.username)
+            .field("password", &"<redacted>")
+            .finish()
+    }
 }
 
 /// `IceAgent` — обёртка над [`Agent`] с флагом `no_p2p` для compliance-gate
@@ -217,6 +229,26 @@ mod tests {
             username: "test".into(),
             password: "test".into(),
         }
+    }
+
+    #[test]
+    fn turn_config_debug_redacts_password() {
+        let turn = TurnConfig {
+            url: "turn:relay.localhost:3478?transport=udp".into(),
+            username: "call-user".into(),
+            password: "turn-password-material".into(),
+        };
+
+        let debug = format!("{turn:?}");
+
+        assert!(
+            !debug.contains("turn-password-material"),
+            "Debug output must not leak TURN credentials: {debug}"
+        );
+        assert!(
+            debug.contains("password"),
+            "Debug output should keep field-level diagnostics: {debug}"
+        );
     }
 
     #[tokio::test]

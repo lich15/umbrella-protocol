@@ -59,7 +59,7 @@ pub enum MockServerBehavior {
 
 /// Один mock Sealed Server для тестов.
 /// One mock Sealed Server for tests.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MockSealedServer {
     /// Индекс сервера. Server witness index.
     pub witness_index: WitnessIndex,
@@ -67,6 +67,18 @@ pub struct MockSealedServer {
     pub share: Scalar,
     /// Поведение. Behavior.
     pub behavior: MockServerBehavior,
+}
+
+/// `Debug` скрывает mock server share: тестовые секреты не должны приучать к логированию долей.
+/// `Debug` redacts the mock server share so tests do not normalize logging secret shares.
+impl core::fmt::Debug for MockSealedServer {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MockSealedServer")
+            .field("witness_index", &self.witness_index)
+            .field("share_redacted", &true)
+            .field("behavior", &self.behavior)
+            .finish()
+    }
 }
 
 /// Флаг состояния device-entry в KT mirror (ADR-008 §A.11, SPEC-09 §3, SPEC-11 §4.3).
@@ -135,7 +147,7 @@ pub struct DeviceEntryState {
 /// - If `device_entries` is non-empty — applies the full SPEC-12 §A.11 set
 ///   of five checks (entry flag → authorized_since → history_cutoff →
 ///   identity chain → revoked cross-check).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MockUnwrapTransport {
     servers: Vec<MockSealedServer>,
     /// Server-issued nonces already consumed by this mock cluster. Models the
@@ -151,6 +163,27 @@ pub struct MockUnwrapTransport {
     /// Published identity rotation record, if any. Used in the identity-chain
     /// consistency check.
     identity_rotation: Option<IdentityRotationRecord>,
+}
+
+/// `Debug` скрывает mock authorization state и consumed nonces.
+/// `Debug` redacts mock authorization state and consumed nonces.
+impl core::fmt::Debug for MockUnwrapTransport {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let used_server_nonces_len = self.used_server_nonces.lock().map(|set| set.len()).ok();
+        f.debug_struct("MockUnwrapTransport")
+            .field("servers", &self.servers)
+            .field("used_server_nonces_len", &used_server_nonces_len)
+            .field(
+                "authorized_device_pubkeys_len",
+                &self.authorized_device_pubkeys.len(),
+            )
+            .field("device_entries_len", &self.device_entries.len())
+            .field(
+                "identity_rotation_present",
+                &self.identity_rotation.is_some(),
+            )
+            .finish()
+    }
 }
 
 impl MockUnwrapTransport {
@@ -415,6 +448,69 @@ mod tests {
 
     fn _make_signature(sk: &SigningKey, msg: &[u8]) -> [u8; DEVICE_SIG_LEN] {
         sk.sign(msg).to_bytes()
+    }
+
+    #[test]
+    fn mock_sealed_server_debug_redacts_secret_share_scalar() {
+        let server = MockSealedServer {
+            witness_index: WitnessIndex::new(2).unwrap(),
+            share: Scalar::from(77u64),
+            behavior: MockServerBehavior::Honest,
+        };
+
+        let debug = format!("{server:?}");
+
+        assert!(
+            debug.contains("share_redacted"),
+            "Debug output must explicitly redact mock server secret share: {debug}"
+        );
+        assert!(
+            !debug.contains("share:"),
+            "Debug output must not print the raw secret share field: {debug}"
+        );
+    }
+
+    #[test]
+    fn mock_transport_debug_redacts_authorization_state() {
+        let server = MockSealedServer {
+            witness_index: WitnessIndex::new(2).unwrap(),
+            share: Scalar::from(77u64),
+            behavior: MockServerBehavior::Honest,
+        };
+        let mut transport = MockUnwrapTransport::new(vec![server]);
+        transport.authorize_device([0x42; DEVICE_PUBKEY_LEN]);
+        transport.register_device_entry(
+            [0x43; DEVICE_PUBKEY_LEN],
+            DeviceEntryState {
+                flag: DeviceEntryStateFlag::Active,
+                authorized_since: 1_700_000_000_000,
+                history_cutoff: 0,
+                identity_pubkey_at_publish: [0x44; DEVICE_PUBKEY_LEN],
+            },
+        );
+
+        let debug = format!("{transport:?}");
+
+        for forbidden in [
+            "authorized_device_pubkeys: {",
+            "device_entries: {",
+            "used_server_nonces: Mutex",
+            "66, 66",
+            "67, 67",
+            "68, 68",
+        ] {
+            assert!(
+                !debug.contains(forbidden),
+                "Debug output must not leak mock transport authorization state `{forbidden}`: {debug}"
+            );
+        }
+        assert!(
+            debug.contains("authorized_device_pubkeys_len")
+                && debug.contains("device_entries_len")
+                && debug.contains("used_server_nonces_len")
+                && debug.contains("identity_rotation_present"),
+            "Debug output should keep safe state counts: {debug}"
+        );
     }
 
     #[test]
@@ -915,6 +1011,7 @@ mod tests {
             new_id_vk,
             2_000_000_000_000u64,
             RotationReason::PlannedRotation,
+            [0xAAu8; 32], // F-PHD-RETRO-3-E: stub code_recovery_public_half_proof for test
             sign_id(&old_id_sk),
             sign_id(&new_id_sk),
         )
@@ -952,6 +1049,7 @@ mod tests {
             new_id_vk,
             2_000_000_000_000u64,
             RotationReason::CatastrophicRecovery,
+            [0xBBu8; 32], // F-PHD-RETRO-3-E: stub code_recovery_public_half_proof for test
             sign_id(&old_id_sk),
             sign_id(&new_id_sk),
         )

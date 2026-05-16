@@ -33,7 +33,7 @@ pub const PEER_ID_LEN: usize = 32;
 /// - `valid_until_ms` — Unix ms истечения credentials.
 ///
 /// TURN allocation response from `call-relay-svc`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TurnAllocation {
     /// Primary TURN URL (`turns:host:port`). Primary TURN URL.
     pub primary_url: String,
@@ -46,6 +46,20 @@ pub struct TurnAllocation {
     pub password_hmac_hex: String,
     /// Unix ms истечения credentials. Unix ms expiry.
     pub valid_until_ms: u64,
+}
+
+/// `Debug` скрывает TURN password material, иначе журналы дают временный доступ к relay.
+/// `Debug` redacts TURN password material, otherwise logs grant temporary relay access.
+impl core::fmt::Debug for TurnAllocation {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TurnAllocation")
+            .field("primary_url", &self.primary_url)
+            .field("secondary_url", &self.secondary_url)
+            .field("username", &self.username)
+            .field("password_hmac_hex", &"<redacted>")
+            .field("valid_until_ms", &self.valid_until_ms)
+            .finish()
+    }
 }
 
 /// Security level звонка. Маппится на TURN allocation policy:
@@ -156,6 +170,28 @@ mod tests {
         assert_eq!(parsed.username, original.username);
         assert_eq!(parsed.password_hmac_hex, original.password_hmac_hex);
         assert_eq!(parsed.valid_until_ms, original.valid_until_ms);
+    }
+
+    #[test]
+    fn turn_allocation_debug_redacts_password_material() {
+        let allocation = TurnAllocation {
+            primary_url: "turns:relay.umbrellax.io:5349".to_string(),
+            secondary_url: None,
+            username: "1700000000:peer".to_string(),
+            password_hmac_hex: "turn-secret-hmac".to_string(),
+            valid_until_ms: 1_700_000_000_000,
+        };
+
+        let debug = format!("{allocation:?}");
+
+        assert!(
+            !debug.contains("turn-secret-hmac"),
+            "Debug output must not leak TURN password material: {debug}"
+        );
+        assert!(
+            debug.contains("password_hmac_hex"),
+            "Debug output should keep the field name for diagnostics: {debug}"
+        );
     }
 
     #[test]

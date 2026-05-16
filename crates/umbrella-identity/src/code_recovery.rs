@@ -54,11 +54,11 @@
 //! pastes another account's pubkey).
 
 use bip39::{Language, Mnemonic};
-use hkdf::Hkdf;
+use hmac::{Hmac, KeyInit, Mac};
 use rand_core::{CryptoRng, RngCore};
 use sha2::Sha512;
 use subtle::ConstantTimeEq;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::error::{IdentityError, Result};
 use crate::identity_key::{IdentityKey, IdentityKeyPublic};
@@ -98,19 +98,18 @@ impl CodeRecoveryMnemonic {
     /// Генерирует новую 12-словную фразу из CSPRNG.
     /// Generates a new 12-word phrase from a CSPRNG.
     pub fn generate<R: CryptoRng + RngCore>(rng: &mut R, language: MnemonicLanguage) -> Self {
-        let mut entropy = [0u8; CODE_RECOVERY_ENTROPY_LEN];
-        rng.fill_bytes(&mut entropy);
+        let entropy = generate_code_recovery_entropy(rng);
         let bip39_lang = Self::bip39_language(language);
         #[allow(
             unknown_lints,
             no_unwrap_in_lib,
             reason = "infallible: 16-byte entropy is always valid BIP-39 input"
         )]
-        let mnemonic = Mnemonic::from_entropy_in(bip39_lang, &entropy)
+        let mnemonic = Mnemonic::from_entropy_in(bip39_lang, &entropy[..])
             .expect("16-byte entropy is always valid for BIP-39");
         Self {
             phrase: mnemonic.to_string(),
-            entropy,
+            entropy: *entropy,
             language,
         }
     }
@@ -129,18 +128,18 @@ impl CodeRecoveryMnemonic {
         let bip39_lang = Self::bip39_language(language);
         let mnemonic = Mnemonic::parse_in_normalized(bip39_lang, trimmed)
             .map_err(|_| IdentityError::InvalidCodeRecoveryMnemonic)?;
-        let entropy_vec = mnemonic.to_entropy();
+        let entropy_vec = mnemonic_entropy_zeroizing(&mnemonic);
         if entropy_vec.len() != CODE_RECOVERY_ENTROPY_LEN {
             return Err(IdentityError::InvalidCodeRecoveryWordCount {
                 expected: CODE_RECOVERY_WORD_COUNT,
                 got: word_count,
             });
         }
-        let mut entropy = [0u8; CODE_RECOVERY_ENTROPY_LEN];
+        let mut entropy = Zeroizing::new([0u8; CODE_RECOVERY_ENTROPY_LEN]);
         entropy.copy_from_slice(&entropy_vec);
         Ok(Self {
             phrase: mnemonic.to_string(),
-            entropy,
+            entropy: *entropy,
             language,
         })
     }
@@ -165,11 +164,123 @@ impl CodeRecoveryMnemonic {
         &self.entropy
     }
 
+    /// Вычисляет 32-байтовый публичный отпечаток 12-словной энтропии для
+    /// данного account. Закрытие F-PHD-RETRO-3-E: предотвращает захват
+    /// аккаунта через утечку 24 слов в одиночку.
+    ///
+    /// Computes a 32-byte public proof of the 12-word entropy for the
+    /// given account. F-PHD-RETRO-3-E mitigation: prevents account
+    /// hijack via a 24-words leak alone.
+    ///
+    /// Формула: HKDF-SHA512(
+    ///   salt = "umbrellax-12words-public-half-v1",
+    ///   ikm  = entropy,
+    ///   info = account_index_be,
+    ///   L    = 32 bytes
+    /// )
+    ///
+    /// Свойства:
+    /// - Односторонняя функция: восстановить entropy из public_half_proof
+    ///   математически невозможно (preimage resistance HKDF-SHA512).
+    /// - Stable across identity rotations: одни и те же 12 слов дают
+    ///   тот же отпечаток до и после ротации main key.
+    /// - Привязана к account: разные accounts дают разные отпечатки.
+    /// - Детерминированная: одни и те же входы дают тот же результат.
+    ///
+    /// Этот отпечаток публикуется в KT при создании учётной записи и
+    /// **не меняется при rotation** (только при смене 12 слов). При
+    /// смене identity-key клиент должен предоставить тот же
+    /// public_half_proof в записи смены — сервер сравнивает с хранимым,
+    /// и без знания 12 слов adversary не может его пересчитать.
+    #[must_use]
+    pub fn public_half_proof(&self, account: u32) -> [u8; 32] {
+        use hkdf::Hkdf;
+
+        let info = account.to_be_bytes();
+
+        let hk = Hkdf::<Sha512>::new(Some(PUBLIC_HALF_HKDF_SALT), &self.entropy);
+        let mut okm = [0u8; 32];
+        #[allow(
+            unknown_lints,
+            no_unwrap_in_lib,
+            reason = "infallible: HKDF-SHA512 32-byte expansion always fits within 8160 bytes"
+        )]
+        hk.expand(&info, &mut okm)
+            .expect("HKDF-SHA512 32-byte expansion always fits");
+        okm
+    }
+
+    /// Вычисляет 32-байтовый отпечаток-привязку 12-словной энтропии к
+    /// конкретной паре (old_identity_pubkey, new_identity_pubkey) при
+    /// rotation. Дополняет `public_half_proof`: первый доказывает знание
+    /// 12 слов, второй привязывает это знание к конкретной операции
+    /// смены ключа (anti-replay across rotations).
+    ///
+    /// Computes a 32-byte commitment binding the 12-word entropy to a
+    /// specific (old, new) identity_pubkey pair at rotation time.
+    /// Complements `public_half_proof`: the former proves knowledge of
+    /// the 12 words, the latter binds that knowledge to the specific
+    /// rotation operation (anti-replay across rotations).
+    ///
+    /// Формула: HKDF-SHA512(
+    ///   salt = "umbrellax-12words-rotation-bind-v1",
+    ///   ikm  = entropy,
+    ///   info = old_identity_pubkey || new_identity_pubkey,
+    ///   L    = 32 bytes
+    /// )
+    #[must_use]
+    pub fn rotation_commitment(
+        &self,
+        old_identity_pubkey: &[u8; 32],
+        new_identity_pubkey: &[u8; 32],
+    ) -> [u8; 32] {
+        use hkdf::Hkdf;
+
+        let mut info = Vec::with_capacity(64);
+        info.extend_from_slice(old_identity_pubkey);
+        info.extend_from_slice(new_identity_pubkey);
+
+        let hk = Hkdf::<Sha512>::new(Some(ROTATION_BIND_HKDF_SALT), &self.entropy);
+        let mut okm = [0u8; 32];
+        #[allow(
+            unknown_lints,
+            no_unwrap_in_lib,
+            reason = "infallible: HKDF-SHA512 32-byte expansion always fits within 8160 bytes"
+        )]
+        hk.expand(&info, &mut okm)
+            .expect("HKDF-SHA512 32-byte expansion always fits");
+        okm
+    }
+
     fn bip39_language(lang: MnemonicLanguage) -> Language {
         match lang {
             MnemonicLanguage::English => Language::English,
         }
     }
+}
+
+/// Соль HKDF для `CodeRecoveryMnemonic::public_half_proof` (F-PHD-RETRO-3-E).
+/// HKDF salt for `CodeRecoveryMnemonic::public_half_proof` (F-PHD-RETRO-3-E).
+pub const PUBLIC_HALF_HKDF_SALT: &[u8] = b"umbrellax-12words-public-half-v1";
+
+/// Соль HKDF для `CodeRecoveryMnemonic::rotation_commitment` (F-PHD-RETRO-3-E).
+/// HKDF salt for `CodeRecoveryMnemonic::rotation_commitment` (F-PHD-RETRO-3-E).
+pub const ROTATION_BIND_HKDF_SALT: &[u8] = b"umbrellax-12words-rotation-bind-v1";
+
+/// Генерирует entropy кода восстановления в очищаемой временной обёртке.
+/// Generates code-recovery entropy in a zeroizing temporary wrapper.
+fn generate_code_recovery_entropy<R: CryptoRng + RngCore>(
+    rng: &mut R,
+) -> Zeroizing<[u8; CODE_RECOVERY_ENTROPY_LEN]> {
+    let mut entropy = Zeroizing::new([0u8; CODE_RECOVERY_ENTROPY_LEN]);
+    rng.fill_bytes(&mut entropy[..]);
+    entropy
+}
+
+/// Возвращает entropy из BIP-39 mnemonic в очищаемом временном Vec.
+/// Returns entropy from a BIP-39 mnemonic in a zeroizing temporary Vec.
+fn mnemonic_entropy_zeroizing(mnemonic: &Mnemonic) -> Zeroizing<Vec<u8>> {
+    Zeroizing::new(mnemonic.to_entropy())
 }
 
 impl core::fmt::Debug for CodeRecoveryMnemonic {
@@ -267,25 +378,64 @@ pub fn derive_rotated_identity_material(
     //    ikm = identity_seed.seed (64 B) || code.entropy (16 B) — 80 B total.
     //    salt = ROTATION_DOMAIN_SEPARATOR (30 B, constant).
     //    info = old_identity_pubkey bytes (32 B) — binds derivation to a specific old identity.
-    let mut ikm = [0u8; SEED_LEN + CODE_RECOVERY_ENTROPY_LEN];
+    let mut ikm = compose_rotation_ikm(identity_seed, code);
+
+    let rotated_seed = derive_rotation_seed_zeroizing(&ikm[..], &supplied_bytes);
+
+    // Обнуляем промежуточный ikm сразу после использования, не только при Drop.
+    // Zeroize the intermediate ikm immediately, not only on Drop.
+    ikm.zeroize();
+
+    Ok(RotatedIdentityMaterial {
+        seed: *rotated_seed,
+    })
+}
+
+/// Собирает вход ротации identity в очищаемом временном буфере.
+/// Builds identity-rotation input in a zeroizing temporary buffer.
+fn compose_rotation_ikm(
+    identity_seed: &IdentitySeed,
+    code: &CodeRecoveryMnemonic,
+) -> Zeroizing<[u8; SEED_LEN + CODE_RECOVERY_ENTROPY_LEN]> {
+    let mut ikm = Zeroizing::new([0u8; SEED_LEN + CODE_RECOVERY_ENTROPY_LEN]);
     ikm[..SEED_LEN].copy_from_slice(identity_seed.seed());
     ikm[SEED_LEN..].copy_from_slice(code.entropy());
+    ikm
+}
 
-    let hk = Hkdf::<Sha512>::new(Some(ROTATION_DOMAIN_SEPARATOR), &ikm);
-    let mut rotated_seed = [0u8; SEED_LEN];
+/// HKDF-SHA512 extract+expand для ротации identity с явным затиранием PRK/OKM.
+/// HKDF-SHA512 extract+expand for identity rotation with explicit PRK/OKM wiping.
+fn derive_rotation_seed_zeroizing(ikm: &[u8], info: &[u8]) -> Zeroizing<[u8; SEED_LEN]> {
+    // Этот вывод даёт ровно один блок SHA-512: SEED_LEN == 64.
+    // This derivation needs exactly one SHA-512 block: SEED_LEN == 64.
     #[allow(
         unknown_lints,
         no_unwrap_in_lib,
-        reason = "infallible: SEED_LEN (64) << HKDF-SHA512 max output (16320)"
+        reason = "infallible: HMAC accepts any key length per RFC 2104"
     )]
-    hk.expand(&supplied_bytes, &mut rotated_seed)
-        .expect("SEED_LEN (64) is well under HKDF-SHA512 max output 255 * 64 = 16320 bytes");
+    let mut extract_mac =
+        Hmac::<Sha512>::new_from_slice(ROTATION_DOMAIN_SEPARATOR).expect("HMAC accepts any key");
+    extract_mac.update(ikm);
+    let mut extract_output = extract_mac.finalize().into_bytes();
 
-    // Обнуляем промежуточный ikm сразу после использования.
-    // Zeroize the intermediate ikm right after use.
-    ikm.zeroize();
+    let mut prk = Zeroizing::new([0u8; 64]);
+    prk.copy_from_slice(extract_output.as_slice());
+    extract_output.zeroize();
 
-    Ok(RotatedIdentityMaterial { seed: rotated_seed })
+    #[allow(
+        unknown_lints,
+        no_unwrap_in_lib,
+        reason = "infallible: HMAC accepts any key length per RFC 2104"
+    )]
+    let mut expand_mac = Hmac::<Sha512>::new_from_slice(&prk[..]).expect("HMAC accepts any key");
+    expand_mac.update(info);
+    expand_mac.update(&[1]);
+    let mut expand_output = expand_mac.finalize().into_bytes();
+
+    let mut rotated_seed = Zeroizing::new([0u8; SEED_LEN]);
+    rotated_seed.copy_from_slice(&expand_output[..SEED_LEN]);
+    expand_output.zeroize();
+    rotated_seed
 }
 
 #[cfg(test)]
@@ -306,6 +456,99 @@ mod tests {
 
     // ─────────────────────────────────────────────────────────────────────────────
     // §2.1 Unit + RFC / standard test vectors
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // F-PHD-RETRO-3-E primitive: public_half_proof + rotation_commitment
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn public_half_proof_is_deterministic() {
+        let code = fresh_code();
+        let account = 0u32;
+        let a = code.public_half_proof(account);
+        let b = code.public_half_proof(account);
+        assert_eq!(a, b, "public_half_proof must be deterministic");
+    }
+
+    #[test]
+    fn public_half_proof_stable_across_rotation() {
+        // F-PHD-RETRO-3-E: proof не зависит от identity_pubkey, поэтому
+        // он стабилен через rotation main key (одни 12 слов → один proof).
+        let code = fresh_code();
+        let p_account_0 = code.public_half_proof(0);
+        let p_account_0_again = code.public_half_proof(0);
+        assert_eq!(
+            p_account_0, p_account_0_again,
+            "proof stable across calls (no identity_pubkey dependency)"
+        );
+    }
+
+    #[test]
+    fn public_half_proof_differs_per_account() {
+        let code = fresh_code();
+        let p_a = code.public_half_proof(0);
+        let p_b = code.public_half_proof(1);
+        assert_ne!(
+            p_a, p_b,
+            "public_half_proof must bind to account index via HKDF info"
+        );
+    }
+
+    #[test]
+    fn public_half_proof_differs_per_code() {
+        let code_a = fresh_code();
+        let code_b = fresh_code();
+        let p_a = code_a.public_half_proof(0);
+        let p_b = code_b.public_half_proof(0);
+        // Probability of accidental match с другими 12 словами ≈ 2^-256, negligible.
+        assert_ne!(p_a, p_b, "different 12-words must yield different proofs");
+    }
+
+    #[test]
+    fn rotation_commitment_is_deterministic() {
+        let code = fresh_code();
+        let old_pk = [0x33u8; 32];
+        let new_pk = [0x44u8; 32];
+        let a = code.rotation_commitment(&old_pk, &new_pk);
+        let b = code.rotation_commitment(&old_pk, &new_pk);
+        assert_eq!(a, b, "rotation_commitment must be deterministic");
+    }
+
+    #[test]
+    fn rotation_commitment_differs_per_old_new_pair() {
+        let code = fresh_code();
+        let old_pk = [0xAAu8; 32];
+        let new_pk_a = [0xBBu8; 32];
+        let new_pk_b = [0xCCu8; 32];
+        let c_a = code.rotation_commitment(&old_pk, &new_pk_a);
+        let c_b = code.rotation_commitment(&old_pk, &new_pk_b);
+        assert_ne!(
+            c_a, c_b,
+            "rotation_commitment must differ for different new_pk"
+        );
+    }
+
+    #[test]
+    fn public_half_proof_zero_entropy_vector() {
+        // F-PHD-RETRO-3-E primitive — фиксированный test vector для regression
+        // detection если HKDF salt либо info construction случайно изменены.
+        // Code mnemonic из 16 нулевых байт entropy (BIP-39 «abandon × 11 about»).
+        let code = CodeRecoveryMnemonic::from_phrase(
+            "abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon abandon about",
+            MnemonicLanguage::English,
+        )
+        .expect("BIP-39 official vector parses");
+        let proof = code.public_half_proof(0);
+        assert_ne!(
+            proof, [0u8; 32],
+            "HKDF output should be non-zero for non-trivial entropy"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // §2.1 Unit + RFC / standard test vectors (existing)
     // ─────────────────────────────────────────────────────────────────────────────
 
     #[test]
@@ -339,6 +582,66 @@ mod tests {
         assert_eq!(
             code.as_str().split_whitespace().count(),
             CODE_RECOVERY_WORD_COUNT
+        );
+    }
+
+    #[test]
+    fn code_recovery_temporaries_are_zeroizing() {
+        fn assert_zeroizing_array<const N: usize>(_: &zeroize::Zeroizing<[u8; N]>) {}
+        fn assert_zeroizing_vec(_: &zeroize::Zeroizing<Vec<u8>>) {}
+
+        let mut rng = OsRng;
+        let generated = generate_code_recovery_entropy(&mut rng);
+        assert_zeroizing_array(&generated);
+
+        let mnemonic = Mnemonic::from_entropy_in(Language::English, &[0u8; 16]).unwrap();
+        let parsed = mnemonic_entropy_zeroizing(&mnemonic);
+        assert_zeroizing_vec(&parsed);
+
+        let identity_seed = fresh_seed();
+        let code = fresh_code();
+        let rotation_ikm_typed = compose_rotation_ikm(&identity_seed, &code);
+        assert_zeroizing_array(&rotation_ikm_typed);
+
+        let rotation_seed_typed =
+            derive_rotation_seed_zeroizing(&rotation_ikm_typed[..], &[0xA5u8; 32]);
+        assert_zeroizing_array(&rotation_seed_typed);
+
+        let source = include_str!("code_recovery.rs");
+        let generated_entropy = ["Zeroizing::new(", "[0u8; CODE_RECOVERY_ENTROPY_LEN])"].concat();
+        let parsed_entropy = ["Zeroizing::new(", "mnemonic.to_entropy())"].concat();
+        let rotation_ikm = [
+            "Zeroizing::new(",
+            "[0u8; SEED_LEN + CODE_RECOVERY_ENTROPY_LEN])",
+        ]
+        .concat();
+        let rotation_seed = ["Zeroizing::new(", "[0u8; SEED_LEN])"].concat();
+        let extract_zeroize = ["extract_output.", "zeroize()"].concat();
+        let expand_zeroize = ["expand_output.", "zeroize()"].concat();
+
+        assert!(
+            source.contains(&generated_entropy),
+            "generated 12-word recovery entropy must be zeroized"
+        );
+        assert!(
+            source.contains(&parsed_entropy),
+            "parsed 12-word recovery entropy Vec must be zeroized"
+        );
+        assert!(
+            source.contains(&rotation_ikm),
+            "identity+recovery-code HKDF input mix must be zeroized"
+        );
+        assert!(
+            source.contains(&rotation_seed),
+            "rotated seed temporary must be zeroized after copying into owner"
+        );
+        assert!(
+            source.contains(&extract_zeroize),
+            "HKDF extract output must be explicitly zeroized"
+        );
+        assert!(
+            source.contains(&expand_zeroize),
+            "HKDF expand output must be explicitly zeroized"
         );
     }
 

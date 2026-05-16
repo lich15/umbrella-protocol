@@ -179,16 +179,116 @@ pub enum SealedSenderError {
 /// Псевдоним Result для крейта. Crate result alias.
 pub type Result<T, E = SealedSenderError> = core::result::Result<T, E>;
 
+/// Расшифрованный текст сообщения, который затирает память при удалении.
+/// Decrypted message plaintext that zeroizes its memory on drop.
+#[derive(Clone)]
+pub struct OpenedMessage(Zeroizing<Vec<u8>>);
+
+impl OpenedMessage {
+    /// Создаёт сообщение из уже защищённого буфера.
+    /// Creates a message from an already zeroizing buffer.
+    pub(crate) fn from_zeroizing(bytes: Zeroizing<Vec<u8>>) -> Self {
+        Self(bytes)
+    }
+
+    /// Возвращает байты сообщения без копирования.
+    /// Returns the message bytes without copying.
+    #[must_use]
+    pub fn as_slice(&self) -> &[u8] {
+        self.0.as_slice()
+    }
+
+    /// Возвращает длину сообщения в байтах.
+    /// Returns the message length in bytes.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Проверяет, пустое ли сообщение.
+    /// Returns whether the message is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Передаёт владение защищённым буфером вызывающему коду.
+    /// Transfers ownership of the zeroizing buffer to the caller.
+    #[must_use]
+    pub fn into_zeroizing_vec(self) -> Zeroizing<Vec<u8>> {
+        self.0
+    }
+}
+
+impl AsRef<[u8]> for OpenedMessage {
+    fn as_ref(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+impl core::ops::Deref for OpenedMessage {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+impl core::fmt::Debug for OpenedMessage {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("OpenedMessage")
+            .field("len", &self.len())
+            .field("bytes", &"<redacted>")
+            .finish()
+    }
+}
+
+impl PartialEq for OpenedMessage {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl Eq for OpenedMessage {}
+
+impl PartialEq<Vec<u8>> for OpenedMessage {
+    fn eq(&self, other: &Vec<u8>) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl PartialEq<&[u8]> for OpenedMessage {
+    fn eq(&self, other: &&[u8]) -> bool {
+        self.as_slice() == *other
+    }
+}
+
+impl<const N: usize> PartialEq<&[u8; N]> for OpenedMessage {
+    fn eq(&self, other: &&[u8; N]) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
 /// Распакованный Sealed Sender envelope (после unseal).
 /// Unpacked Sealed Sender envelope (after unseal).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct OpenedEnvelope {
     /// Публичный identity Ed25519-ключ отправителя (аутентифицирован inner-подписью).
     /// Sender public Ed25519 identity key (authenticated by the inner signature).
     pub sender_identity: IdentityKeyPublic,
-    /// Плейнтекст сообщения (после strip padding).
-    /// Message plaintext (after strip padding).
-    pub message: Vec<u8>,
+    /// Плейнтекст сообщения, который затирается при удалении.
+    /// Message plaintext, zeroized when dropped.
+    pub message: OpenedMessage,
+}
+
+impl core::fmt::Debug for OpenedEnvelope {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("OpenedEnvelope")
+            .field("sender_identity", &self.sender_identity)
+            .field("message_len", &self.message.len())
+            .field("message", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Запечатывает application-message так, чтобы сервер не видел отправителя.
@@ -226,7 +326,7 @@ pub fn seal<R: CryptoRng + RngCore>(
 
     let sender_identity = keystore.identity_public();
     let sig_payload = signature_payload(&eph_pub, message);
-    let sig = keystore.sign_with_identity(&sig_payload);
+    let sig = keystore.sign_with_identity(sig_payload.as_slice());
 
     // SPEC-08 §5.2 step 9 — `inner_plaintext` + `padded_blob` zeroize on drop
     // через `Zeroizing<Vec<u8>>` (row 11 cold-boot mitigation, F-50 closure).
@@ -309,17 +409,18 @@ pub fn unseal(keystore: &dyn KeyStore, wire: &[u8]) -> Result<OpenedEnvelope> {
     sig_bytes.copy_from_slice(&inner[PUBLIC_KEY_LEN..INNER_HEADER_LEN]);
     let sig = Ed25519Signature::from_bytes(&sig_bytes);
 
-    let message = inner[INNER_HEADER_LEN..].to_vec();
+    let mut message = Zeroizing::new(Vec::with_capacity(inner.len() - INNER_HEADER_LEN));
+    message.extend_from_slice(&inner[INNER_HEADER_LEN..]);
 
-    let sig_payload = signature_payload(&eph_pub, &message);
+    let sig_payload = signature_payload(&eph_pub, message.as_slice());
     let vk = PublicVerifyingKey::from_bytes(&sender_id_bytes)
         .map_err(|_| SealedSenderError::MalformedSenderKey)?;
-    vk.verify(&sig_payload, &sig)
+    vk.verify(sig_payload.as_slice(), &sig)
         .map_err(|_| SealedSenderError::InvalidSignature)?;
 
     Ok(OpenedEnvelope {
         sender_identity,
-        message,
+        message: OpenedMessage::from_zeroizing(message),
     })
 }
 
@@ -349,8 +450,10 @@ fn derive_keys(
     Ok((aead_key, aead_nonce))
 }
 
-fn signature_payload(eph_pub: &X25519Public, message: &[u8]) -> Vec<u8> {
-    let mut payload = Vec::with_capacity(DOMAIN_SEP.len() + X25519_PUBLIC_LEN + message.len());
+fn signature_payload(eph_pub: &X25519Public, message: &[u8]) -> Zeroizing<Vec<u8>> {
+    let mut payload = Zeroizing::new(Vec::with_capacity(
+        DOMAIN_SEP.len() + X25519_PUBLIC_LEN + message.len(),
+    ));
     payload.extend_from_slice(DOMAIN_SEP);
     payload.extend_from_slice(&eph_pub.to_bytes());
     payload.extend_from_slice(message);
@@ -557,6 +660,53 @@ mod tests {
         .unwrap();
         let opened = unseal(bob.as_ref(), &wire).unwrap();
         assert_eq!(opened.sender_identity, alice.identity_public());
+    }
+
+    #[test]
+    fn opened_envelope_debug_redacts_message_plaintext() {
+        let alice = fresh_keystore();
+        let bob = fresh_keystore();
+        let mut rng = OsRng;
+        let wire = seal(
+            alice.as_ref(),
+            &bob.identity_x25519_public(),
+            b"private-chat-secret",
+            &mut rng,
+        )
+        .unwrap();
+
+        let opened = unseal(bob.as_ref(), &wire).unwrap();
+        let debug = format!("{opened:?}");
+
+        assert!(
+            !debug.contains("private-chat-secret"),
+            "Debug output must not leak message plaintext"
+        );
+        assert!(
+            !debug.contains("112, 114, 105, 118, 97, 116, 101"),
+            "Debug output must not leak message bytes"
+        );
+    }
+
+    #[test]
+    fn opened_envelope_message_is_zeroizing_wrapper() {
+        fn assert_zeroizing_message_type(_: &OpenedMessage) {}
+
+        let alice = fresh_keystore();
+        let bob = fresh_keystore();
+        let mut rng = OsRng;
+        let wire = seal(
+            alice.as_ref(),
+            &bob.identity_x25519_public(),
+            b"wipe-me-after-drop",
+            &mut rng,
+        )
+        .unwrap();
+
+        let opened = unseal(bob.as_ref(), &wire).unwrap();
+
+        assert_zeroizing_message_type(&opened.message);
+        assert_eq!(opened.message.as_ref(), b"wipe-me-after-drop");
     }
 
     #[test]

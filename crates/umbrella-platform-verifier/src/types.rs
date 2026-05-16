@@ -44,7 +44,7 @@ pub enum PlatformKind {
 
 /// Сохранённый платформенный ключ или запись.
 /// Stored platform key or record.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct RegisteredPlatformKey {
     /// Публичный ключ проверки подписи. Public signature verification key.
     pub public_key: DevicePublicKey,
@@ -52,9 +52,21 @@ pub struct RegisteredPlatformKey {
     pub last_counter: u32,
 }
 
+/// `Debug` скрывает platform public key как linkable device material.
+/// `Debug` redacts the platform public key as linkable device material.
+impl core::fmt::Debug for RegisteredPlatformKey {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("RegisteredPlatformKey")
+            .field("public_key_len", &self.public_key.len())
+            .field("public_key", &"<redacted>")
+            .field("last_counter", &self.last_counter)
+            .finish()
+    }
+}
+
 /// Вход платформенного проверяющего.
 /// Input for a platform verifier.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PlatformVerificationContext<'a> {
     /// Ожидаемая платформа. Expected platform.
     pub platform: PlatformKind,
@@ -70,6 +82,26 @@ pub struct PlatformVerificationContext<'a> {
     pub now_unix_millis: u64,
     /// Сохранённая платформенная запись. Stored platform record.
     pub registered_key: Option<&'a RegisteredPlatformKey>,
+}
+
+/// `Debug` скрывает platform token перед попаданием в серверные журналы.
+/// `Debug` redacts the platform token before it can reach server logs.
+impl core::fmt::Debug for PlatformVerificationContext<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("PlatformVerificationContext")
+            .field("platform", &self.platform)
+            .field("token_len", &self.token.len())
+            .field("token", &"<redacted>")
+            .field("server_nonce_len", &self.server_nonce.len())
+            .field("server_nonce", &"<redacted>")
+            .field("device_pubkey_len", &self.device_pubkey.len())
+            .field("device_pubkey", &"<redacted>")
+            .field("app_or_site_len", &self.app_or_site.len())
+            .field("app_or_site", &"<redacted>")
+            .field("now_unix_millis", &self.now_unix_millis)
+            .field("registered_key_present", &self.registered_key.is_some())
+            .finish()
+    }
 }
 
 /// Успешный результат проверки.
@@ -122,5 +154,48 @@ mod tests {
         if let Err(err) = validate_token_size(b"x", MAX_PLATFORM_TOKEN_BYTES) {
             panic!("non-empty token within the limit must be accepted: {err:?}");
         }
+    }
+
+    #[test]
+    fn platform_verification_context_debug_redacts_token() {
+        let nonce = [1u8; 32];
+        let device_pubkey = [2u8; 32];
+        let registered = RegisteredPlatformKey {
+            public_key: device_pubkey,
+            last_counter: 7,
+        };
+        let ctx = PlatformVerificationContext {
+            platform: PlatformKind::AndroidPlayIntegrity,
+            token: b"platform-token-secret",
+            server_nonce: &nonce,
+            device_pubkey: &device_pubkey,
+            app_or_site: "io.umbrellax.app",
+            now_unix_millis: 1_700_000_000_000,
+            registered_key: Some(&registered),
+        };
+
+        let debug = format!("{ctx:?}");
+
+        assert!(
+            !debug.contains("112, 108, 97, 116, 102, 111, 114, 109"),
+            "Debug output must not leak platform verification token bytes: {debug}"
+        );
+        assert!(
+            debug.contains("token_len"),
+            "Debug output should keep token length metadata for diagnostics: {debug}"
+        );
+        assert!(
+            !debug.contains("server_nonce: [")
+                && !debug.contains("device_pubkey: [")
+                && !debug.contains("io.umbrellax.app"),
+            "Debug output must not leak platform verifier nonce, device key, or app/site: {debug}"
+        );
+        assert!(
+            debug.contains("server_nonce_len")
+                && debug.contains("device_pubkey_len")
+                && debug.contains("app_or_site_len")
+                && debug.contains("registered_key_present"),
+            "Debug output should keep safe verifier metadata: {debug}"
+        );
     }
 }

@@ -66,7 +66,7 @@ const CANONICAL_QR_BODY_LEN: usize = 1 + PUBKEY_LEN + PUBKEY_LEN + PAIRING_CHALL
 /// - `expiry_unix_millis` в будущем относительно clock'а верификатора.
 /// - `identity_signature` валидна под `responder_identity_pubkey` для
 ///   `canonical_signing_input()`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct DevicePairingQr {
     /// Версия QR wire-format. QR wire format version.
     pub version: u8,
@@ -85,6 +85,31 @@ pub struct DevicePairingQr {
     /// Ed25519 подпись всего выше под `responder_identity_pubkey`.
     /// Ed25519 signature over all of the above, under `responder_identity_pubkey`.
     pub identity_signature: [u8; QR_SIG_LEN],
+}
+
+/// `Debug` скрывает QR payload: полный QR из логов можно переиспользовать до expiry.
+/// `Debug` redacts QR payload: a full QR copied from logs can be reused until expiry.
+impl core::fmt::Debug for DevicePairingQr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("DevicePairingQr")
+            .field("version", &self.version)
+            .field(
+                "responder_identity_pubkey_len",
+                &self.responder_identity_pubkey.len(),
+            )
+            .field("responder_identity_pubkey", &"<redacted>")
+            .field(
+                "responder_ephemeral_static_len",
+                &self.responder_ephemeral_static.len(),
+            )
+            .field("responder_ephemeral_static", &"<redacted>")
+            .field("pairing_challenge_len", &self.pairing_challenge.len())
+            .field("pairing_challenge", &"<redacted>")
+            .field("expiry_unix_millis", &self.expiry_unix_millis)
+            .field("identity_signature_len", &self.identity_signature.len())
+            .field("identity_signature", &"<redacted>")
+            .finish()
+    }
 }
 
 impl DevicePairingQr {
@@ -374,6 +399,33 @@ mod tests {
             &[0x01u8, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
         );
         assert_eq!(&bytes[105..169], &[0x44u8; 64]);
+    }
+
+    #[test]
+    fn qr_debug_redacts_replayable_pairing_material() {
+        let qr = DevicePairingQr {
+            version: QR_VERSION,
+            responder_identity_pubkey: [0x11u8; PUBKEY_LEN],
+            responder_ephemeral_static: [0x22u8; PUBKEY_LEN],
+            pairing_challenge: [0x33u8; PAIRING_CHALLENGE_LEN],
+            expiry_unix_millis: 0x0102_0304_0506_0708,
+            identity_signature: [0x44u8; QR_SIG_LEN],
+        };
+
+        let debug = format!("{qr:?}");
+
+        assert!(
+            !debug.contains("51, 51, 51, 51"),
+            "Debug output must not leak QR pairing challenge: {debug}"
+        );
+        assert!(
+            !debug.contains("68, 68, 68, 68"),
+            "Debug output must not leak replayable QR signature bytes: {debug}"
+        );
+        assert!(
+            debug.contains("pairing_challenge_len"),
+            "Debug output should keep pairing challenge length metadata: {debug}"
+        );
     }
 
     #[test]

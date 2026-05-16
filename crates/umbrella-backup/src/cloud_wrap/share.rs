@@ -34,13 +34,25 @@ pub const SERVER_UNWRAP_SHARE_LEN: usize = 1 + POINT_LEN;
 ///
 /// Invariant: `witness_index ∈ 1..=total`. Enforced on byte-parse; direct
 /// struct-literal construction is caller's responsibility (tests use it).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ServerUnwrapShare {
     /// Индекс Sealed Server'а, 1..=5. Sealed Server index, 1..=5.
     pub witness_index: WitnessIndex,
     /// Compressed Ristretto255 для `partial_i = k_i · R`.
     /// Compressed Ristretto255 of `partial_i = k_i · R`.
     pub partial: [u8; POINT_LEN],
+}
+
+/// `Debug` скрывает partial share: три такие доли из логов могут восстановить ключ.
+/// `Debug` redacts the partial share: three leaked shares can reconstruct the key.
+impl core::fmt::Debug for ServerUnwrapShare {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ServerUnwrapShare")
+            .field("witness_index", &self.witness_index)
+            .field("partial_len", &self.partial.len())
+            .field("partial", &"<redacted>")
+            .finish()
+    }
 }
 
 impl ServerUnwrapShare {
@@ -106,6 +118,25 @@ mod tests {
         assert_eq!(bytes[0], 5);
         assert_eq!(bytes[1], 0x11);
         assert_eq!(bytes[32], 0x99);
+    }
+
+    #[test]
+    fn server_unwrap_share_debug_redacts_partial_share() {
+        let share = ServerUnwrapShare {
+            witness_index: WitnessIndex::new(3).unwrap(),
+            partial: [0xAB; POINT_LEN],
+        };
+
+        let debug = format!("{share:?}");
+
+        assert!(
+            !debug.contains("171, 171, 171, 171"),
+            "Debug output must not leak partial unwrap share bytes: {debug}"
+        );
+        assert!(
+            debug.contains("partial_len"),
+            "Debug output should keep partial share length metadata: {debug}"
+        );
     }
 
     #[test]

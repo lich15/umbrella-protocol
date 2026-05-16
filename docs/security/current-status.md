@@ -1,6 +1,6 @@
 # Current Status
 
-Дата: 2026-05-15
+Дата: 2026-05-16
 
 [English](#english) | [Русский](#русский)
 
@@ -54,6 +54,14 @@ Implemented and currently documented:
   and the daily dependency monitor checks root/fuzz RustSec advisories,
   cargo-deny policy, PQ/backend boundaries, and dry-run update drift without
   merging updates into `main`;
+- the 2026-05-15 security-hardening audit closed local debug/log leakage in
+  sensitive protocol structs, rejected reserved DNS names in production
+  transport config, and fixed the blind-postman replay-window growth path where
+  unique over-limit messages could consume replay memory;
+- the 2026-05-16 memory-hygiene pass zeroizes BIP-39, SLIP-0010, 12-word
+  recovery-code and backup unwrap temporaries, adds a zeroizing SQLite row
+  plaintext path, returns Sealed Sender plaintext through the zeroizing
+  `OpenedMessage` wrapper, and uses the system RNG for retry jitter;
 - external crypto attack ledger:
   `docs/security/external-crypto-attack-ledger-2026-05-14.md` and
   `docs/security/external-crypto-attack-ledger-2026-05-15.md`; they record
@@ -132,6 +140,14 @@ Umbrella Protocol 1.1.0 — набор Rust-крейтов протокола с
   обновлениями, а ежедневный сторож проверяет RustSec для корневого и fuzz
   lockfile, cargo-deny, PQ/backend-границы и доступные обновления через dry-run,
   не вливая изменения в `main`;
+- аудит усиления от 2026-05-15 закрыл локальные утечки через `Debug`/журналы в
+  чувствительных структурах протокола, запретил reserved DNS-имена в боевой
+  настройке транспорта и исправил рост replay-памяти blind postman, когда
+  уникальные сообщения сверх лимита могли занимать replay-окно;
+- проход гигиены памяти от 2026-05-16 затирает временные значения вывода
+  BIP-39 и SLIP-0010, возвращает расшифрованный текст Sealed Sender через
+  очищаемую обёртку `OpenedMessage` и использует системный генератор для
+  случайной задержки повторов;
 - внешний реестр криптографических атак:
   `docs/security/external-crypto-attack-ledger-2026-05-14.md` и
   `docs/security/external-crypto-attack-ledger-2026-05-15.md`; они связывают

@@ -244,6 +244,18 @@ fn is_forbidden_production_host(host: &str) -> bool {
     if h.is_empty()
         || h == "localhost"
         || h.ends_with(".localhost")
+        || h == "local"
+        || h.ends_with(".local")
+        || h == "test"
+        || h.ends_with(".test")
+        || h == "example"
+        || h.ends_with(".example")
+        || h == "example.com"
+        || h.ends_with(".example.com")
+        || h == "example.net"
+        || h.ends_with(".example.net")
+        || h == "example.org"
+        || h.ends_with(".example.org")
         || h.ends_with(".invalid")
         || h.ends_with(".example.invalid")
     {
@@ -428,20 +440,20 @@ mod tests {
                 .enumerate()
                 .map(|(idx, url)| endpoint(url, (idx + 1) as u8))
                 .collect(),
-            postman: endpoint("https://postman.umbrella.example", 11),
-            kt: endpoint("https://kt.umbrella.example", 12),
-            call_relay: endpoint("https://relay.umbrella.example", 13),
+            postman: endpoint("https://postman.umbrellax.io", 11),
+            kt: endpoint("https://kt.umbrellax.io", 12),
+            call_relay: endpoint("https://relay.umbrellax.io", 13),
         }
     }
 
     #[test]
     fn production_transport_rejects_http_url() {
         let cfg = production_config_with_urls(vec![
-            "http://sealed-0.umbrella.example",
-            "https://sealed-1.umbrella.example",
-            "https://sealed-2.umbrella.example",
-            "https://sealed-3.umbrella.example",
-            "https://sealed-4.umbrella.example",
+            "http://sealed-0.umbrellax.io",
+            "https://sealed-1.umbrellax.io",
+            "https://sealed-2.umbrellax.io",
+            "https://sealed-3.umbrellax.io",
+            "https://sealed-4.umbrellax.io",
         ]);
 
         let err = cfg.validate().unwrap_err();
@@ -452,10 +464,10 @@ mod tests {
     fn production_transport_rejects_test_hosts() {
         let cfg = production_config_with_urls(vec![
             "https://localhost",
-            "https://sealed-1.umbrella.example",
-            "https://sealed-2.umbrella.example",
-            "https://sealed-3.umbrella.example",
-            "https://sealed-4.umbrella.example",
+            "https://sealed-1.umbrellax.io",
+            "https://sealed-2.umbrellax.io",
+            "https://sealed-3.umbrellax.io",
+            "https://sealed-4.umbrellax.io",
         ]);
 
         let err = cfg.validate().unwrap_err();
@@ -463,13 +475,39 @@ mod tests {
     }
 
     #[test]
+    fn production_transport_rejects_reserved_dns_test_names() {
+        for url in [
+            "https://sealed-0.umbrella.example",
+            "https://sealed-0.umbrella.test",
+            "https://sealed-0.umbrella.local",
+            "https://example.com",
+            "https://example.net",
+            "https://example.org",
+        ] {
+            let cfg = production_config_with_urls(vec![
+                url,
+                "https://sealed-1.umbrellax.io",
+                "https://sealed-2.umbrellax.io",
+                "https://sealed-3.umbrellax.io",
+                "https://sealed-4.umbrellax.io",
+            ]);
+
+            let err = cfg.validate().unwrap_err();
+            assert!(
+                format!("{err}").contains("test host"),
+                "{url} must be rejected, got {err}"
+            );
+        }
+    }
+
+    #[test]
     fn production_transport_rejects_ip_literal_hosts() {
         let cfg = production_config_with_urls(vec![
             "https://192.0.2.10",
-            "https://sealed-1.umbrella.example",
-            "https://sealed-2.umbrella.example",
-            "https://sealed-3.umbrella.example",
-            "https://sealed-4.umbrella.example",
+            "https://sealed-1.umbrellax.io",
+            "https://sealed-2.umbrellax.io",
+            "https://sealed-3.umbrellax.io",
+            "https://sealed-4.umbrellax.io",
         ]);
 
         let err = cfg.validate().unwrap_err();
@@ -481,10 +519,10 @@ mod tests {
         for url in ["https://169.254.169.254", "https://100.64.0.10"] {
             let cfg = production_config_with_urls(vec![
                 url,
-                "https://sealed-1.umbrella.example",
-                "https://sealed-2.umbrella.example",
-                "https://sealed-3.umbrella.example",
-                "https://sealed-4.umbrella.example",
+                "https://sealed-1.umbrellax.io",
+                "https://sealed-2.umbrellax.io",
+                "https://sealed-3.umbrellax.io",
+                "https://sealed-4.umbrellax.io",
             ]);
 
             let err = cfg.validate().unwrap_err();
@@ -500,10 +538,10 @@ mod tests {
         for url in ["https://[::1]", "https://[fd00::1]", "https://[fe80::1]"] {
             let cfg = production_config_with_urls(vec![
                 url,
-                "https://sealed-1.umbrella.example",
-                "https://sealed-2.umbrella.example",
-                "https://sealed-3.umbrella.example",
-                "https://sealed-4.umbrella.example",
+                "https://sealed-1.umbrellax.io",
+                "https://sealed-2.umbrellax.io",
+                "https://sealed-3.umbrellax.io",
+                "https://sealed-4.umbrellax.io",
             ]);
 
             let err = cfg.validate().unwrap_err();
@@ -524,10 +562,10 @@ mod tests {
         ] {
             let cfg = production_config_with_urls(vec![
                 url,
-                "https://sealed-1.umbrella.example",
-                "https://sealed-2.umbrella.example",
-                "https://sealed-3.umbrella.example",
-                "https://sealed-4.umbrella.example",
+                "https://sealed-1.umbrellax.io",
+                "https://sealed-2.umbrellax.io",
+                "https://sealed-3.umbrellax.io",
+                "https://sealed-4.umbrellax.io",
             ]);
 
             let err = cfg.validate().unwrap_err();
@@ -541,10 +579,10 @@ mod tests {
     #[test]
     fn production_transport_rejects_wrong_sealed_server_count() {
         let cfg = production_config_with_urls(vec![
-            "https://sealed-0.umbrella.example",
-            "https://sealed-1.umbrella.example",
-            "https://sealed-2.umbrella.example",
-            "https://sealed-3.umbrella.example",
+            "https://sealed-0.umbrellax.io",
+            "https://sealed-1.umbrellax.io",
+            "https://sealed-2.umbrellax.io",
+            "https://sealed-3.umbrellax.io",
         ]);
 
         let err = cfg.validate().unwrap_err();
@@ -554,11 +592,11 @@ mod tests {
     #[test]
     fn production_transport_validation_accepts_realistic_pinned_https_config() {
         let cfg = production_config_with_urls(vec![
-            "https://sealed-0.umbrella.example",
-            "https://sealed-1.umbrella.example",
-            "https://sealed-2.umbrella.example",
-            "https://sealed-3.umbrella.example",
-            "https://sealed-4.umbrella.example",
+            "https://sealed-0.umbrellax.io",
+            "https://sealed-1.umbrellax.io",
+            "https://sealed-2.umbrellax.io",
+            "https://sealed-3.umbrellax.io",
+            "https://sealed-4.umbrellax.io",
         ]);
 
         cfg.validate().expect("pinned https config validates");
@@ -567,13 +605,13 @@ mod tests {
     #[test]
     fn production_pin_map_rejects_conflicting_pins_for_same_host() {
         let mut cfg = production_config_with_urls(vec![
-            "https://shared.umbrella.example",
-            "https://sealed-1.umbrella.example",
-            "https://sealed-2.umbrella.example",
-            "https://sealed-3.umbrella.example",
-            "https://sealed-4.umbrella.example",
+            "https://shared.umbrellax.io",
+            "https://sealed-1.umbrellax.io",
+            "https://sealed-2.umbrellax.io",
+            "https://sealed-3.umbrellax.io",
+            "https://sealed-4.umbrellax.io",
         ]);
-        cfg.postman = endpoint("https://shared.umbrella.example", 99);
+        cfg.postman = endpoint("https://shared.umbrellax.io", 99);
 
         let err = cfg.pins_by_host().unwrap_err();
         assert!(format!("{err}").contains("conflicting SPKI pins"));
@@ -582,11 +620,11 @@ mod tests {
     #[test]
     fn production_client_builds_with_real_pinning_verifier() {
         let cfg = production_config_with_urls(vec![
-            "https://sealed-0.umbrella.example",
-            "https://sealed-1.umbrella.example",
-            "https://sealed-2.umbrella.example",
-            "https://sealed-3.umbrella.example",
-            "https://sealed-4.umbrella.example",
+            "https://sealed-0.umbrellax.io",
+            "https://sealed-1.umbrellax.io",
+            "https://sealed-2.umbrellax.io",
+            "https://sealed-3.umbrellax.io",
+            "https://sealed-4.umbrellax.io",
         ]);
 
         let client = build_production_http2_client(Http2Config::default(), &cfg)

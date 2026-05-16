@@ -35,6 +35,9 @@ boundaries.
 Supply-chain hardening for 1.1.0 removes the unused optional `hpke-rs` libcrux
 HPKE backend from the root and fuzz lockfiles, so `RUSTSEC-2026-0124` is closed
 in the checked dependency graph instead of being ignored.
+The 2026-05-16 memory-hygiene pass zeroizes key-derivation, recovery-code,
+backup unwrap, and SQLite row temporaries, returns Sealed Sender opened
+plaintext through a zeroizing wrapper, and uses the system RNG for retry jitter.
 External crypto release audit:
 [`docs/audits/external-crypto-release-audit-status-2026-05-14.md`](docs/audits/external-crypto-release-audit-status-2026-05-14.md).
 
@@ -333,6 +336,8 @@ The current status of formal verification and local lint gates is recorded in
 [`docs/audits/formal-lint-status-2026-05-13.md`](docs/audits/formal-lint-status-2026-05-13.md).
 Local release hardening status is recorded in
 [`docs/audits/local-release-hardening-status-2026-05-14.md`](docs/audits/local-release-hardening-status-2026-05-14.md).
+Memory-hygiene hardening status is recorded in
+[`docs/audits/security-hardening-audit-2026-05-16.md`](docs/audits/security-hardening-audit-2026-05-16.md).
 A command counts as a current release gate only when that status file shows
 exit code 0 for the exact command.
 
@@ -449,6 +454,9 @@ Play Integrity всё ещё закрыто отказывают, пока не 
 Усиление цепочки зависимостей в 1.1.0 убирает неиспользуемый optional
 libcrux-бэкенд HPKE из `hpke-rs` в корневом и fuzz lockfile, поэтому
 `RUSTSEC-2026-0124` закрыт в проверяемом графе зависимостей, а не игнорируется.
+Проход гигиены памяти от 2026-05-16 затирает временные значения вывода ключей,
+возвращает раскрытый plaintext Sealed Sender через очищаемую обёртку и
+использует системный генератор для задержки повторов.
 Внешний крипто-аудит выпуска:
 [`docs/audits/external-crypto-release-audit-status-2026-05-14.md`](docs/audits/external-crypto-release-audit-status-2026-05-14.md).
 

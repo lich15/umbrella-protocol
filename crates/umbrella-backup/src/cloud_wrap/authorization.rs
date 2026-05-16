@@ -138,7 +138,7 @@ pub const POLICY_FLAGS_RESERVED_MASK: u8 = 0xFE;
 /// because the new device's key is not yet active). Used for push
 /// notification to existing devices; not a cryptographic prerequisite for
 /// approval (approval may be initiated manually).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct DeviceAuthorizationRequest {
     /// Wire-version (= `AUTHORIZATION_WIRE_VERSION`). Wire-format version.
     pub version: u8,
@@ -157,6 +157,25 @@ pub struct DeviceAuthorizationRequest {
     /// Ed25519 подпись identity-key'а поверх canonical signing input.
     /// Ed25519 signature by the identity-key over the canonical signing input.
     pub identity_signature: [u8; DEVICE_SIG_LEN],
+}
+
+/// `Debug` скрывает replayable/private поля запроса: challenge, location и подпись.
+/// `Debug` redacts replayable/private request fields: challenge, location, and signature.
+impl core::fmt::Debug for DeviceAuthorizationRequest {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("DeviceAuthorizationRequest")
+            .field("version", &self.version)
+            .field("new_device_pubkey_len", &self.new_device_pubkey.len())
+            .field("new_device_pubkey", &"<redacted>")
+            .field("request_timestamp", &self.request_timestamp)
+            .field("challenge_nonce_len", &self.challenge_nonce.len())
+            .field("challenge_nonce", &"<redacted>")
+            .field("location_hint_len", &self.location_hint.len())
+            .field("location_hint", &"<redacted>")
+            .field("identity_signature_len", &self.identity_signature.len())
+            .field("identity_signature", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Canonical signing input для `DeviceAuthorizationRequest`.
@@ -387,7 +406,7 @@ impl DeviceAuthorizationRequest {
 /// requests for envelopes older than the cutoff (SPEC-12 §A.11.3). Signed
 /// by the approver's active device-key under domain separator
 /// `"umbrellax-device-auth-approval-v1"`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct DeviceAuthorizationApproval {
     /// Wire-version (= `AUTHORIZATION_WIRE_VERSION`). Wire-format version.
     pub version: u8,
@@ -412,6 +431,31 @@ pub struct DeviceAuthorizationApproval {
     /// Ed25519 подпись approver-device-key'а поверх canonical signing input.
     /// Ed25519 signature by the approver device-key over the canonical signing input.
     pub approver_signature: [u8; DEVICE_SIG_LEN],
+}
+
+/// `Debug` скрывает подписанный approval payload, оставляя только размеры и timestamps.
+/// `Debug` redacts signed approval payload, keeping only lengths and timestamps.
+impl core::fmt::Debug for DeviceAuthorizationApproval {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("DeviceAuthorizationApproval")
+            .field("version", &self.version)
+            .field("new_device_pubkey_len", &self.new_device_pubkey.len())
+            .field("new_device_pubkey", &"<redacted>")
+            .field(
+                "approver_device_pubkey_len",
+                &self.approver_device_pubkey.len(),
+            )
+            .field("approver_device_pubkey", &"<redacted>")
+            .field(
+                "authorized_since_timestamp",
+                &self.authorized_since_timestamp,
+            )
+            .field("history_cutoff_timestamp", &self.history_cutoff_timestamp)
+            .field("policy_flags", &self.policy_flags)
+            .field("approver_signature_len", &self.approver_signature.len())
+            .field("approver_signature", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Canonical signing input для `DeviceAuthorizationApproval`.
@@ -631,7 +675,7 @@ impl DeviceAuthorizationApproval {
 /// self-revocation where `revoked == revoker`). Published to KT; moves
 /// the entry to the `revoked` terminal state. Signed by the revoker's
 /// active device-key under domain separator `"umbrellax-device-auth-revoke-v1"`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct DeviceAuthorizationRevocation {
     /// Wire-version (= `AUTHORIZATION_WIRE_VERSION`).
     pub version: u8,
@@ -646,6 +690,29 @@ pub struct DeviceAuthorizationRevocation {
     /// Ed25519 подпись revoker-device-key поверх canonical input.
     /// Ed25519 signature by the revoker device-key over the canonical input.
     pub revoker_signature: [u8; DEVICE_SIG_LEN],
+}
+
+/// `Debug` скрывает signed revocation payload, чтобы логи не становились replay source.
+/// `Debug` redacts signed revocation payload so logs do not become a replay source.
+impl core::fmt::Debug for DeviceAuthorizationRevocation {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("DeviceAuthorizationRevocation")
+            .field("version", &self.version)
+            .field(
+                "revoked_device_pubkey_len",
+                &self.revoked_device_pubkey.len(),
+            )
+            .field("revoked_device_pubkey", &"<redacted>")
+            .field(
+                "revoker_device_pubkey_len",
+                &self.revoker_device_pubkey.len(),
+            )
+            .field("revoker_device_pubkey", &"<redacted>")
+            .field("revocation_timestamp", &self.revocation_timestamp)
+            .field("revoker_signature_len", &self.revoker_signature.len())
+            .field("revoker_signature", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Canonical signing input для `DeviceAuthorizationRevocation`.
@@ -879,6 +946,68 @@ mod tests {
         assert_eq!(DEVICE_AUTH_REQUEST_MAX_LEN, 266);
         assert_eq!(DEVICE_AUTH_APPROVAL_LEN, 146);
         assert_eq!(DEVICE_AUTH_REVOKE_LEN, 137);
+    }
+
+    #[test]
+    fn authorization_request_debug_redacts_replayable_material() {
+        let request = DeviceAuthorizationRequest {
+            version: AUTHORIZATION_WIRE_VERSION,
+            new_device_pubkey: [0x11u8; DEVICE_PUBKEY_LEN],
+            request_timestamp: 1_700_000_000_000,
+            challenge_nonce: [0x22u8; CHALLENGE_NONCE_LEN],
+            location_hint: HString::try_from("home office").unwrap(),
+            identity_signature: [0x33u8; DEVICE_SIG_LEN],
+        };
+
+        let debug = format!("{request:?}");
+
+        assert!(
+            !debug.contains("34, 34, 34, 34"),
+            "Debug output must not leak request challenge nonce: {debug}"
+        );
+        assert!(
+            !debug.contains("home office"),
+            "Debug output must not leak location hints: {debug}"
+        );
+        assert!(
+            !debug.contains("51, 51, 51, 51"),
+            "Debug output must not leak replayable request signature: {debug}"
+        );
+        assert!(debug.contains("location_hint_len"));
+    }
+
+    #[test]
+    fn authorization_approval_and_revocation_debug_redact_signatures() {
+        let approval = DeviceAuthorizationApproval {
+            version: AUTHORIZATION_WIRE_VERSION,
+            new_device_pubkey: [0x11u8; DEVICE_PUBKEY_LEN],
+            approver_device_pubkey: [0x22u8; DEVICE_PUBKEY_LEN],
+            authorized_since_timestamp: 1_700_000_000_000,
+            history_cutoff_timestamp: 1_600_000_000_000,
+            policy_flags: 1,
+            approver_signature: [0x33u8; DEVICE_SIG_LEN],
+        };
+        let revocation = DeviceAuthorizationRevocation {
+            version: AUTHORIZATION_WIRE_VERSION,
+            revoked_device_pubkey: [0x44u8; DEVICE_PUBKEY_LEN],
+            revoker_device_pubkey: [0x55u8; DEVICE_PUBKEY_LEN],
+            revocation_timestamp: 1_700_000_000_001,
+            revoker_signature: [0x66u8; DEVICE_SIG_LEN],
+        };
+
+        let approval_debug = format!("{approval:?}");
+        let revocation_debug = format!("{revocation:?}");
+
+        assert!(
+            !approval_debug.contains("51, 51, 51, 51"),
+            "Debug output must not leak approval signature: {approval_debug}"
+        );
+        assert!(
+            !revocation_debug.contains("102, 102, 102, 102"),
+            "Debug output must not leak revocation signature: {revocation_debug}"
+        );
+        assert!(approval_debug.contains("approver_signature_len"));
+        assert!(revocation_debug.contains("revoker_signature_len"));
     }
 
     // -------- DeviceAuthorizationRequest — unit --------

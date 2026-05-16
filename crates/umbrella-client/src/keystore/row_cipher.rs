@@ -58,7 +58,7 @@ use hkdf::Hkdf;
 use secrecy::{ExposeSecret, SecretBox};
 use sha2::Sha512;
 use subtle::ConstantTimeEq;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::ClientError;
 
@@ -161,7 +161,7 @@ impl RowCipher {
         let nonce_bytes = self.derive_nonce(context, row_id);
         let cipher = self.cipher();
 
-        let mut buffer = plaintext.to_vec();
+        let mut buffer = Zeroizing::new(plaintext.to_vec());
         let tag = cipher
             .encrypt_in_place_detached(
                 Nonce::from_slice(&nonce_bytes),
@@ -171,7 +171,7 @@ impl RowCipher {
             .map_err(|e| ClientError::Storage(format!("aead encrypt: {e}")))?;
 
         let tag_bytes: [u8; 16] = tag.into();
-        Ok((buffer, nonce_bytes, tag_bytes))
+        Ok((std::mem::take(&mut *buffer), nonce_bytes, tag_bytes))
     }
 
     /// Расшифровать `ciphertext`. Nonce **сверяется** с detereministically
@@ -206,6 +206,26 @@ impl RowCipher {
         nonce: [u8; 12],
         tag: [u8; 16],
     ) -> Result<Vec<u8>, ClientError> {
+        Ok(self
+            .decrypt_row_zeroizing(context, row_id, ciphertext, nonce, tag)?
+            .to_vec())
+    }
+
+    /// Расшифровать строку и вернуть plaintext в очищаемой обёртке.
+    /// Decrypts a row and returns plaintext in a zeroizing wrapper.
+    ///
+    /// Этот путь нужен внутренним местам, где расшифрованные байты являются
+    /// только временной копией перед переносом в конечный пользовательский тип.
+    /// This path is for internal call sites where decrypted bytes are only a
+    /// temporary copy before moving into the final caller-owned type.
+    pub fn decrypt_row_zeroizing(
+        &self,
+        context: &str,
+        row_id: &[u8],
+        ciphertext: &[u8],
+        nonce: [u8; 12],
+        tag: [u8; 16],
+    ) -> Result<Zeroizing<Vec<u8>>, ClientError> {
         let expected_nonce = self.derive_nonce(context, row_id);
         // Constant-time сравнение через `subtle::ConstantTimeEq::ct_eq`
         // (F-57 closure блок 10.16; F-51 pattern recurrence closure).
@@ -235,7 +255,7 @@ impl RowCipher {
         }
 
         let cipher = self.cipher();
-        let mut buffer = ciphertext.to_vec();
+        let mut buffer = Zeroizing::new(ciphertext.to_vec());
         cipher
             .decrypt_in_place_detached(
                 Nonce::from_slice(&nonce),
@@ -375,6 +395,43 @@ mod tests {
             .decrypt_row("ctx", b"id", &ct, nonce, tag)
             .expect("decrypt");
         assert_eq!(pt, Vec::<u8>::new());
+    }
+
+    #[test]
+    fn decrypt_row_zeroizing_returns_zeroizing_plaintext() {
+        fn assert_zeroizing_plaintext(_: &zeroize::Zeroizing<Vec<u8>>) {}
+
+        let cipher = RowCipher::new([0x88u8; 32]);
+        let (ct, nonce, tag) = cipher
+            .encrypt_row("messages.text", b"row-1", b"wipe this duplicate")
+            .expect("encrypt");
+        let pt = cipher
+            .decrypt_row_zeroizing("messages.text", b"row-1", &ct, nonce, tag)
+            .expect("decrypt");
+
+        assert_zeroizing_plaintext(&pt);
+        assert_eq!(pt.as_slice(), b"wipe this duplicate");
+    }
+
+    #[test]
+    fn row_cipher_sensitive_temporaries_are_zeroizing() {
+        let source = include_str!("row_cipher.rs");
+        let encrypt_buffer = ["Zeroizing::new(", "plaintext.to_vec())"].concat();
+        let decrypt_buffer = ["Zeroizing::new(", "ciphertext.to_vec())"].concat();
+        let success_take = ["std::mem::take(", "&mut *buffer"].concat();
+
+        assert!(
+            source.contains(&encrypt_buffer),
+            "encrypt_row plaintext copy must be zeroized if encryption errors before return"
+        );
+        assert!(
+            source.contains(&decrypt_buffer),
+            "decrypt_row plaintext buffer must be a zeroizing wrapper"
+        );
+        assert!(
+            source.contains(&success_take),
+            "encrypt_row must move successful ciphertext out of the zeroizing buffer"
+        );
     }
 
     use proptest::prelude::*;

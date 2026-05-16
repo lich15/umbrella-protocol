@@ -34,7 +34,7 @@
 use std::future::Future;
 use std::time::Duration;
 
-use rand::Rng;
+use rand::{CryptoRng, Rng};
 
 /// Максимум попыток для idempotent операций по умолчанию.
 /// Default max attempts for idempotent operations.
@@ -98,18 +98,30 @@ where
             Ok(v) => return Ok(v),
             Err(e) if retryable(&e) && attempt < max_attempts => {
                 // Decorrelated jitter: uniform in [0, backoff/2).
-                let half_ms = (backoff.as_millis() as u64) / 2;
-                let jitter_ms: u64 = if half_ms == 0 {
-                    0
-                } else {
-                    rand::thread_rng().gen_range(0..half_ms)
-                };
+                let jitter_ms = jitter_millis(backoff);
                 let sleep_for = backoff.saturating_add(Duration::from_millis(jitter_ms));
                 tokio::time::sleep(sleep_for).await;
                 backoff = backoff.saturating_mul(2).min(MAX_BACKOFF);
             }
             Err(e) => return Err(e),
         }
+    }
+}
+
+fn jitter_millis(backoff: Duration) -> u64 {
+    let mut rng = rand::rngs::OsRng;
+    jitter_millis_with_rng(backoff, &mut rng)
+}
+
+fn jitter_millis_with_rng<R>(backoff: Duration, rng: &mut R) -> u64
+where
+    R: Rng + CryptoRng,
+{
+    let half_ms = (backoff.as_millis() as u64) / 2;
+    if half_ms == 0 {
+        0
+    } else {
+        rng.gen_range(0..half_ms)
     }
 }
 
@@ -287,6 +299,22 @@ mod tests {
         assert!(
             elapsed >= MAX_BACKOFF,
             "expected elapsed ≥ MAX_BACKOFF, got {elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn retry_jitter_uses_system_rng_not_thread_rng() {
+        let source = include_str!("retry.rs");
+        let system_rng = ["rand::rngs::", "OsRng"].concat();
+        let thread_rng = ["rand::", "thread_rng()"].concat();
+
+        assert!(
+            source.contains(&system_rng),
+            "retry jitter must use the system RNG"
+        );
+        assert!(
+            !source.contains(&thread_rng),
+            "retry jitter must not use thread_rng"
         );
     }
 }

@@ -55,7 +55,7 @@ pub const MAX_SNAPSHOT_GROUPS: u32 = 4096;
 /// `MlsGroup`.
 ///
 /// MLS group state — opaque tls_codec-serialized openmls `MlsGroup` bytes.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct MlsGroupState {
     /// Идентификатор группы. Group identifier.
     pub group_id: [u8; MLS_GROUP_ID_LEN],
@@ -63,9 +63,21 @@ pub struct MlsGroupState {
     pub state_bytes: Vec<u8>,
 }
 
+/// `Debug` скрывает сериализованное MLS-состояние группы.
+/// `Debug` redacts serialized MLS group state.
+impl core::fmt::Debug for MlsGroupState {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MlsGroupState")
+            .field("group_id", &self.group_id)
+            .field("state_bytes_len", &self.state_bytes.len())
+            .field("state_bytes", &"<redacted>")
+            .finish()
+    }
+}
+
 /// Полный snapshot — groups + encrypted local DB blob + EOF marker.
 /// Full snapshot — groups + encrypted local DB blob + EOF marker.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Snapshot {
     /// Версия. Version.
     pub version: u8,
@@ -79,6 +91,19 @@ pub struct Snapshot {
     /// Encrypted local DB ciphertext (encryption is caller's responsibility,
     /// typically a symmetric key derived from identity master; opaque here).
     pub local_db_ciphertext: Vec<u8>,
+}
+
+/// `Debug` скрывает переносимый backup blob и состояние групп.
+/// `Debug` redacts the transferable backup blob and group states.
+impl core::fmt::Debug for Snapshot {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Snapshot")
+            .field("version", &self.version)
+            .field("mls_groups", &self.mls_groups)
+            .field("local_db_ciphertext_len", &self.local_db_ciphertext.len())
+            .field("local_db_ciphertext", &"<redacted>")
+            .finish()
+    }
 }
 
 impl Snapshot {
@@ -220,6 +245,29 @@ mod tests {
             mls_groups,
             local_db_ciphertext,
         }
+    }
+
+    #[test]
+    fn snapshot_debug_redacts_group_state_and_db_blob() {
+        let s = Snapshot {
+            version: SNAPSHOT_VERSION,
+            mls_groups: vec![MlsGroupState {
+                group_id: [1u8; MLS_GROUP_ID_LEN],
+                state_bytes: b"private-openmls-state".to_vec(),
+            }],
+            local_db_ciphertext: b"private-db-ciphertext".to_vec(),
+        };
+
+        let debug = format!("{s:?}");
+
+        assert!(
+            !debug.contains("112, 114, 105, 118, 97, 116, 101"),
+            "Debug output must not leak snapshot state bytes: {debug}"
+        );
+        assert!(
+            debug.contains("state_bytes_len") && debug.contains("local_db_ciphertext_len"),
+            "Debug output should keep blob length metadata for diagnostics: {debug}"
+        );
     }
 
     #[test]
