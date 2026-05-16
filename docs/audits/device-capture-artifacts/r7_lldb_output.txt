@@ -1,0 +1,14 @@
+(lldb) command source -s 0 '/tmp/r7_lldb_commands.txt'
+Executing commands in '/tmp/r7_lldb_commands.txt'.
+(lldb) target create target/r6-release/examples/r7_identity_lldb_target
+Current executable set to '/Users/daniel/Documents/Projects/Messenger/Umbrella Protocol/target/r6-release/examples/r7_identity_lldb_target' (arm64).
+(lldb) command script import /tmp/r7_lldb_script.py
+(lldb) breakpoint set -n r7_break_after_needle_alive --auto-continue true --command r7_scan_pos
+Breakpoint 1: where = r7_identity_lldb_target`r7_identity_lldb_target::r7_break_after_needle_alive::h33d80b7b6fd792b3 + 8 [inlined] core::hint::black_box::ha0c948715282585f at hint.rs:491:5, address = 0x0000000100000ff4
+(lldb) breakpoint set -n r7_phase_before_bootstrap --auto-continue true --command r7_scan_before
+Breakpoint 2: where = r7_identity_lldb_target`r7_identity_lldb_target::r7_phase_before_bootstrap::h68695ecc74ba1b59 + 12 at r7_identity_lldb_target.rs:50:5, address = 0x0000000100000fc8
+(lldb) breakpoint set -n r7_phase_live_identity --auto-continue true --command r7_scan_live
+Breakpoint 3: where = r7_identity_lldb_target`r7_identity_lldb_target::r7_phase_live_identity::hc89f0bd720e6c241 + 12 at r7_identity_lldb_target.rs:59:5, address = 0x0000000100000f98
+(lldb) breakpoint set -n r7_phase_after_drop --auto-continue true --command r7_scan_drop
+Breakpoint 4: where = r7_identity_lldb_target`r7_identity_lldb_target::r7_phase_after_drop::he0d5ba2e91680605 + 12 at r7_identity_lldb_target.rs:67:5, address = 0x0000000100000f68
+(lldb) run

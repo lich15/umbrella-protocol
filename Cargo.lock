@@ -4074,6 +4074,7 @@ name = "umbrella-client"
 version = "1.1.0"
 dependencies = [
  "async-trait",
+ "bip39",
  "chacha20poly1305",
  "ed25519-dalek",
  "hex",

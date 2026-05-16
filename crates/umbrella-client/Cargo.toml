@@ -125,3 +125,17 @@ rcgen = { workspace = true }
 # used for seal_unwrap_request_with_async_attestation + verify.
 ed25519-dalek = { workspace = true }
 rand_core = { workspace = true }
+
+# BIP-39 mnemonic for R7 device-capture lldb example (round 4 PhD-B audit).
+# Reads a 32-byte entropy needle, builds the canonical IdentitySeed, then
+# parks at named breakpoints so an lldb Python scanner can search process
+# memory for the needle bytes.
+bip39 = { workspace = true }
+
+[[example]]
+name = "r7_identity_lldb_target"
+required-features = []
+
+[[example]]
+name = "r12_ratchet_lldb_target"
+required-features = []
