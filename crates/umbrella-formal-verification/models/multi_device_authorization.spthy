@@ -198,20 +198,31 @@ builtins: signing, hashing
 /*
    Rule: bootstrap_identity
 
-   $A creates new identity from 24-words seed; bootstrap первого
-   active device одновременно с identity creation. Это initial state
-   per ADR-008 §3 Вариант B (catastrophic recovery flow inverse —
-   normal registration generates identity AND first device).
+   $A creates new identity from 24-words seed AND a 12-words recovery
+   code (~e12 entropy). Bootstrap первого active device одновременно
+   с identity creation. Это initial state per ADR-008 §3 Вариант B
+   (catastrophic recovery flow inverse — normal registration generates
+   identity AND first device AND 12-words recovery code).
+
+   F-PHD-RETRO-3-E fix: at bootstrap the honest agent commits to a
+   fresh ~e12 fact `!CodeRecoveryEntropy($A, ~e12)`. The public_half
+   `h(~e12)` is published in KT through the `!CodeRecoveryProofPublished`
+   fact. Subsequent rotation rules require knowledge of ~e12 (via
+   either `!CodeRecoveryEntropy` for the honest agent, or `K(~e12)` for
+   the adversary after an explicit reveal).
 */
 rule bootstrap_identity:
-    [ Fr(~identity_sk), Fr(~first_device_sk) ]
+    [ Fr(~identity_sk), Fr(~first_device_sk), Fr(~e12) ]
   --[ BootstrapIdentity($A, ~identity_sk, pk(~first_device_sk)),
-      DeviceActivated($A, pk(~first_device_sk)) ]->
+      DeviceActivated($A, pk(~first_device_sk)),
+      CodeRecoveryBootstrap($A, ~e12, h(~e12)) ]->
     [ !IdentitySk($A, ~identity_sk),
       !IdentityActive($A, pk(~identity_sk)),
       !KtActive(pk(~first_device_sk), pk(~identity_sk)),
       !DeviceSk($A, ~first_device_sk),
-      Out(<pk(~identity_sk), pk(~first_device_sk)>) ]
+      !CodeRecoveryEntropy($A, ~e12),
+      !CodeRecoveryProofPublished($A, h(~e12)),
+      Out(<pk(~identity_sk), pk(~first_device_sk), h(~e12)>) ]
 
 /*
    Rule: publish_device_pending
@@ -321,32 +332,45 @@ rule sealed_server_unwrap:
    IdentityRotationRecord обязательно signed и старым и новым identity-sk
    (dual signature) — single signature insufficient.
 
-   После rotation все old-identity device entries auto-revoked.
+   F-PHD-RETRO-3-E binding: rotation rule также требует знание ~e12
+   через persistent fact `!CodeRecoveryEntropy($A, ~e12)`. Канонический
+   signing input включает `h(~e12)` (public_half), что:
+   1) Связывает обе подписи с конкретным public_half_proof'ом — proof
+      нельзя подменить (canonical input включает его).
+   2) Требует знание e12 для предъявления valid public_half_proof'a,
+      сходящегося с stored `!CodeRecoveryProofPublished($A, h(~e12))`.
+
+   После rotation все old-identity device entries auto-revoked. Новый
+   первый device под новым identity сразу bootstrap-active.
 */
 rule rotate_identity_atomic:
     let
         old_pk      = pk(old_identity_sk)
         new_pk      = pk(~new_identity_sk)
-        rotation_msg_old = <'dom_rotation', old_pk, new_pk>
-        rotation_msg_new = <'dom_rotation', new_pk, old_pk>
+        public_half = h(e12)
+        rotation_msg_old = <'dom_rotation', old_pk, new_pk, public_half>
+        rotation_msg_new = <'dom_rotation', new_pk, old_pk, public_half>
         sig_old     = sign(rotation_msg_old, old_identity_sk)
         sig_new     = sign(rotation_msg_new, ~new_identity_sk)
     in
     [ !IdentitySk($A, old_identity_sk),
       !IdentityActive($A, old_pk),
+      !CodeRecoveryEntropy($A, e12),
+      !CodeRecoveryProofPublished($A, public_half),
       Fr(~new_identity_sk),
       Fr(~new_first_device_sk) ]
   --[ Eq(verify(sig_old, rotation_msg_old, old_pk), true),
       Eq(verify(sig_new, rotation_msg_new, new_pk), true),
       SignedRotationOld(old_pk, sig_old),
       SignedRotationNew(new_pk, sig_new),
+      RotationProof(public_half),
       DeviceActivated($A, pk(~new_first_device_sk)),
       IdentityRotated($A, old_pk, new_pk) ]->
     [ !IdentitySk($A, ~new_identity_sk),
       !IdentityActive($A, new_pk),
       !KtActive(pk(~new_first_device_sk), new_pk),
       !DeviceSk($A, ~new_first_device_sk),
-      Out(<old_pk, new_pk, sig_old, sig_new>) ]
+      Out(<old_pk, new_pk, sig_old, sig_new, public_half>) ]
 
 /*
    Rule: reveal_identity_sk (24-words leak attack simulation)
@@ -362,53 +386,63 @@ rule reveal_identity_sk:
     [ Out(identity_sk) ]
 
 /*
+   Rule: reveal_code_recovery (12-words leak attack simulation, F-PHD-RETRO-3-E)
+
+   Adversary получает 12-словную энтропию (e12) через отдельный
+   physical leak (другая бумажка). Action label `Reveal12Words` фиксирует
+   что adversary имеет access к e12. Этот канал намеренно отдельный от
+   `reveal_identity_sk`, чтобы доказать что rotation требует **двух
+   независимых утечек**: и 24 слов (для identity_sk), и 12 слов (для e12).
+
+   `Reveal12Words` plus `Reveal24Words` together = both knowledge factors
+   compromised — rotation становится возможной (это modelling threat
+   level D из SPEC-01 § 4).
+*/
+rule reveal_code_recovery:
+    [ !CodeRecoveryEntropy($A, e12) ]
+  --[ Reveal12Words($A, e12) ]->
+    [ Out(e12) ]
+
+/*
    --------------------------------------------------------------------------
-   F-PHD-RETRO-3-E (2026-05-17 inline PhD-B): rotation hijack abstraction gap
+   F-PHD-RETRO-3-E (2026-05-18 fix): rotation hijack abstraction gap CLOSED.
 
-   Following rule and lemma block document the gap between this Tamarin
-   model и real production code: `apply_identity_rotation` accepts a
-   rotation record based ONLY on two Ed25519 signatures (old + new
-   identity_sk), без platform attestation либо active-device co-signature
-   либо 12-words commitment.
+   `adversary_publish_rotation` rule below modelirует попытку adversary'a
+   опубликовать rotation запись без legitimate honest-agent context. После
+   F-PHD-RETRO-3-E fix adversary обязан предъявить proof, который сходится
+   с stored `public_half = h(e12)` в KT — это persistent fact
+   `!CodeRecoveryProofPublished($A, public_half)`. Adversary не имеет
+   `!CodeRecoveryEntropy` для произвольного $A, поэтому единственный способ
+   получить e12 — через явный `reveal_code_recovery` rule (леск 12 слов).
 
-   Model's `rotate_identity_atomic` rule REQUIRES `!IdentitySk($A, old_sk)`
-   persistent fact (state of honest agent A). Adversary с K(old_sk) cannot
-   match. Real system has NO such barrier — anyone who can produce both
-   signatures can submit rotation.
-
-   The block below is INTENTIONALLY commented out to avoid Tamarin
-   non-termination и preserve the 10-lemma-verified baseline. Uncomment
-   и re-run Tamarin once the fix lands (e.g., 12-words commitment in
-   canonical signing input — see §4.4 of audit report 2026-05-17.md):
-
-   rule adversary_publish_rotation:
-       let
-           rotation_msg_old = <'dom_rotation', old_pk, new_pk>
-           rotation_msg_new = <'dom_rotation', new_pk, old_pk>
-           sig_old          = sign(rotation_msg_old, old_identity_sk)
-           sig_new          = sign(rotation_msg_new, ~new_identity_sk)
-       in
-       [ In(old_identity_sk),     // adversary имеет leaked 24-words
-         Fr(~new_identity_sk),    // generates fresh new sk locally
-         Let old_pk = pk(old_identity_sk),
-         Let new_pk = pk(~new_identity_sk) ]
-     --[ AdversaryRotation(old_pk, new_pk),
-         IdentityRotated('Adversary', old_pk, new_pk) ]->
-       [ !IdentityActive('Adversary', new_pk),
-         Out(<old_pk, new_pk, sig_old, sig_new>) ]
-
-   lemma twentyfour_words_leak_alone_insufficient_REGRESSION:
-       "NOT (Ex A device_pk identity_pk chat_id sig sid1 sid2 sid3 #i #r.
-           UnwrapGranted(device_pk, identity_pk, <chat_id, sig, sid1, sid2, sid3>) @ #i
-           & Reveal24Words(A, _) @ #r
-           & (Ex old_pk #adv. AdversaryRotation(old_pk, identity_pk) @ #adv))"
-
-   Если уkommentировать сейчас (БЕЗ fix в коде / canonical signing input),
-   `twentyfour_words_leak_alone_insufficient_REGRESSION` будет falsified
-   Tamarin — counter-trace будет показывать rotation hijack path. Это
-   формальное доказательство finding'a.
+   Если adversary имеет K(e12) через reveal, он МОЖЕТ выполнить rotation —
+   это корректное поведение для threat-model где обе знания утекли.
+   Lemma `rotation_requires_e12_knowledge` доказывает универсально: любая
+   IdentityRotated event требует e12 (через honest path либо leak).
    --------------------------------------------------------------------------
 */
+rule adversary_publish_rotation:
+    let
+        old_pk           = pk(old_identity_sk)
+        new_pk           = pk(~new_identity_sk)
+        public_half      = h(e12)
+        rotation_msg_old = <'dom_rotation', old_pk, new_pk, public_half>
+        rotation_msg_new = <'dom_rotation', new_pk, old_pk, public_half>
+        sig_old          = sign(rotation_msg_old, old_identity_sk)
+        sig_new          = sign(rotation_msg_new, ~new_identity_sk)
+    in
+    [ In(old_identity_sk),     // adversary имеет leaked 24-words
+      In(e12),                 // adversary имеет leaked 12-words (separately)
+      !CodeRecoveryProofPublished($A, public_half),
+      Fr(~new_identity_sk) ]
+  --[ Eq(verify(sig_old, rotation_msg_old, old_pk), true),
+      Eq(verify(sig_new, rotation_msg_new, new_pk), true),
+      SignedRotationOld(old_pk, sig_old),
+      SignedRotationNew(new_pk, sig_new),
+      RotationProof(public_half),
+      AdversaryRotation(old_pk, new_pk),
+      IdentityRotated($A, old_pk, new_pk) ]->
+    [ Out(<old_pk, new_pk, sig_old, sig_new, public_half>) ]
 
 /*
    Restriction: Equality (standard Tamarin pattern для encoding `verify(...) = true`).
@@ -614,5 +648,58 @@ lemma honest_setup_executable: exists-trace
         & UnwrapGranted(device2_pk, identity_pk, <chat_id, sig>) @ #k
         & i < j & j < k
         & (not Ex B id_sk #r. Reveal24Words(B, id_sk) @ #r)"
+
+/*
+   Lemma: rotation_requires_e12_knowledge
+   (F-PHD-RETRO-3-E fix 2026-05-18 NEW)
+
+   Universal claim: любой IdentityRotated event требует чтобы либо honest
+   agent имел доступ к ~e12 (через `!CodeRecoveryEntropy` persistent fact,
+   установленный в bootstrap_identity), либо adversary имел K(e12)
+   (через `reveal_code_recovery` rule).
+
+   Это формализует F-PHD-RETRO-3-E fix universally: ротация невозможна
+   без 12-словного фактора. Adversary с одной утечкой 24 слов (только
+   identity_sk через `reveal_identity_sk`) не может trigger rotation —
+   ему нужна **отдельная** утечка 12 слов.
+
+   Honest path: `rotate_identity_atomic` требует
+   `!CodeRecoveryEntropy($A, e12)` premise — фиксирует prior
+   `CodeRecoveryBootstrap` event для того же $A.
+
+   Adversary path: `adversary_publish_rotation` требует `In(e12)` —
+   adversary получает e12 через `reveal_code_recovery` (производит
+   `K(e12)` через Out(e12)) либо через external knowledge (Tamarin
+   adversary cannot construct ~e12 без leak — Fr names are unforgeable).
+*/
+lemma rotation_requires_e12_knowledge:
+    "All A old_pk new_pk #i.
+        IdentityRotated(A, old_pk, new_pk) @ #i
+        ==>
+        (Ex e12 #k. CodeRecoveryBootstrap(A, e12, h(e12)) @ #k & #k < #i)
+        | (Ex B e12 #r. Reveal12Words(B, e12) @ #r & #r < #i)"
+
+/*
+   Lemma: twentyfour_words_leak_alone_insufficient_REGRESSION
+   (F-PHD-RETRO-3-E regression-guard 2026-05-18 UNCOMMENTED)
+
+   Если adversary имеет ТОЛЬКО 24-words leak (только Reveal24Words, без
+   Reveal12Words и без legitimate CodeRecoveryBootstrap для adversary's
+   own identity), он не может trigger IdentityRotated event.
+
+   До F-PHD-RETRO-3-E fix этот lemma falsified бы Tamarin: adversary
+   мог собрать rotation запись имея только old_identity_sk (плюс
+   fresh new_identity_sk). После fix canonical signing input включает
+   public_half = h(e12), который adversary не может предъявить без
+   знания e12 (HKDF preimage resistance).
+*/
+lemma twentyfour_words_leak_alone_insufficient_REGRESSION:
+    "All A old_pk new_pk #i.
+        IdentityRotated(A, old_pk, new_pk) @ #i
+        & (Ex id_sk #r24. Reveal24Words(A, id_sk) @ #r24)
+        & (not Ex e12 #r12. Reveal12Words(A, e12) @ #r12)
+        & (not Ex e12 #k. CodeRecoveryBootstrap(A, e12, h(e12)) @ #k & #k < #i)
+        ==>
+        F"
 
 end

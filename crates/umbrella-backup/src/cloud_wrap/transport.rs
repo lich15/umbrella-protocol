@@ -1011,6 +1011,7 @@ mod tests {
             new_id_vk,
             2_000_000_000_000u64,
             RotationReason::PlannedRotation,
+            [0xAAu8; 32], // F-PHD-RETRO-3-E: stub code_recovery_public_half_proof for test
             sign_id(&old_id_sk),
             sign_id(&new_id_sk),
         )
@@ -1048,6 +1049,7 @@ mod tests {
             new_id_vk,
             2_000_000_000_000u64,
             RotationReason::CatastrophicRecovery,
+            [0xBBu8; 32], // F-PHD-RETRO-3-E: stub code_recovery_public_half_proof for test
             sign_id(&old_id_sk),
             sign_id(&new_id_sk),
         )

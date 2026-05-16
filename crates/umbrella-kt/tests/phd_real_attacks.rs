@@ -656,6 +656,7 @@ fn real_attack_concurrent_apply_identity_rotation_race_no_corruption() {
         new_identity_a_pk,
         100,
         RotationReason::PlannedRotation,
+        [0xD1u8; 32], // F-PHD-RETRO-3-E: stub code_recovery_public_half_proof
         signer(&identity_old_sk),
         signer(&new_identity_a_sk),
     )
@@ -665,6 +666,7 @@ fn real_attack_concurrent_apply_identity_rotation_race_no_corruption() {
         new_identity_b_pk,
         101,
         RotationReason::PlannedRotation,
+        [0xD2u8; 32], // F-PHD-RETRO-3-E: stub code_recovery_public_half_proof
         signer(&identity_old_sk),
         signer(&new_identity_b_sk),
     )

@@ -464,11 +464,16 @@ fn scenario_2_catastrophic_recovery_flow() {
     // Шаг 5: seal_identity_rotation_record с reason = CatastrophicRecovery.
     // Step 5: seal_identity_rotation_record with reason = CatastrophicRecovery.
     let rotation_ts = TIMESTAMP_BASELINE + 100;
+    // F-PHD-RETRO-3-E: rotation requires 12-words knowledge через
+    // code_recovery_public_half_proof. Тест simulates valid rotation
+    // путём passing того же proof который был бы stored при bootstrap.
+    let rotation_proof = code_12.public_half_proof(0);
     let rotation = seal_identity_rotation_record(
         old_id_pk,
         new_id_pk,
         rotation_ts,
         RotationReason::CatastrophicRecovery,
+        rotation_proof,
         sign_with(&old_id_sk),
         sign_with(&new_id_sk),
     )
