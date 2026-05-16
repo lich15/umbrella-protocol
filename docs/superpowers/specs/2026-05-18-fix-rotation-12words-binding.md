@@ -208,26 +208,23 @@ After fix lands:
   `twentyfour_words_leak_alone_insufficient_REGRESSION` (currently
   commented) should now verify (not falsify).
 
-### 5. Wire format migration story
+### 5. Wire format change (no migration)
 
-`IdentityRotationRecord` has two versions co-existing during transition:
+**Owner decision 2026-05-17 continuation:** реальных пользователей нет,
+поэтому миграция между версиями не нужна, версия protocol не поднимается.
+Делаем **прямой fix на текущем формате**:
 
-- **v1 (legacy):** existing wire format. Acceptance by KT publisher
-  **deprecated after migration deadline**.
-- **v2 (with commitment):** new wire format. Required after migration.
+- Поле `code_recovery_public_half_proof: [u8; 32]` добавляется в
+  `IdentityRotationRecord` без bump'а версии.
+- Длина wire-format меняется: было 202 байта, станет 234 байта (+ 32).
+- Все существующие тесты, которые проверяли старую длину 202, обновляются.
+- `canonical_signing_input_rotation` пересобирается с включением
+  commitment.
+- `seal_identity_rotation_record` обязательно принимает
+  `code_recovery_mnemonic: &CodeRecoveryMnemonic` параметр.
+- `verify` проверяет commitment против stored public_half в KT.
 
-**Migration phases:**
-
-**Phase 1 (release 1.2.0):** Both v1 and v2 accepted. New rotations
-generated client-side use v2 always. v1 acceptance logged with warning.
-
-**Phase 2 (release 1.3.0, ≥3 months after 1.2.0):** v1 no longer
-accepted by KT publisher. Server rejects with `RotationWireVersionRetired`.
-Existing v1-rotated identities continue to function with their new
-identity_pubkey — no need to "re-rotate".
-
-**Phase 3 (release 1.4.0):** Remove v1 code paths entirely. Wire-format
-unification.
+Старых записей нет — миграция тривиальна.
 
 ### 6. UX changes
 

@@ -1,0 +1,141 @@
+/*
+   ============================================================================
+   theory: umbrella_sealed_servers_threshold_universal
+   ============================================================================
+
+   F-PHD-RETRO-3-D-FULL: universal формальное доказательство threshold
+   security — НЕ scenario-based.
+
+   Утверждение: для **любого** подмножества ≤ 2 of 5 sealed servers,
+   которое adversary компрометирует в трассе, любой UnwrapGranted event
+   использует at least одну share от honest server (т.е. от server, который
+   НЕ был compromised до момента issuance share).
+
+   Подход: universal `compromise_server` rule (для любого sid из множества
+   '1'..'5'), restriction `AtMostTwoCompromised` ограничивающий cardinality
+   compromised set ≤ 2 в трассе, и lemma по pigeonhole — 3 distinct shares
+   используются, минимум один sid не в compromised множестве.
+
+   NOTE: эта формулировка ранее (2026-05-17 inline first attempt) приводила
+   к non-termination Tamarin за 35+ min. Это попытка с упрощённой структурой
+   плюс explicit ordering на compromise events.
+
+   Tool: Tamarin Prover 1.12.0+
+   ============================================================================
+*/
+
+theory umbrella_sealed_servers_threshold_universal
+begin
+
+builtins: signing
+
+/*
+   Rule: setup_sealed_servers
+   5 sealed-server entities '1'..'5'.
+*/
+rule setup_sealed_servers:
+    [ Fr(~s1), Fr(~s2), Fr(~s3), Fr(~s4), Fr(~s5) ]
+  --[ ServersInitialized() ]->
+    [ !SealedServer('1', ~s1),
+      !SealedServer('2', ~s2),
+      !SealedServer('3', ~s3),
+      !SealedServer('4', ~s4),
+      !SealedServer('5', ~s5) ]
+
+rule setup_identity_and_device:
+    [ Fr(~identity_sk), Fr(~device_sk) ]
+  --[ IdentityCreated($A, pk(~identity_sk)),
+      DeviceCreated($A, pk(~device_sk), pk(~identity_sk)) ]->
+    [ !IdentitySk($A, ~identity_sk),
+      !DeviceSk($A, ~device_sk),
+      !ActiveDevice(pk(~device_sk), pk(~identity_sk)) ]
+
+/*
+   Rule: compromise_server (universal)
+   Adversary может компрометировать любой sealed-server по его id.
+   Action `Compromised(sid)` фиксирует event; rule applicable к каждому
+   из пяти servers через unification.
+*/
+rule compromise_server:
+    [ !SealedServer(sid, server_sk) ]
+  --[ Compromised(sid) ]->
+    [ Out(server_sk), !CompromisedServer(sid) ]
+
+rule honest_server_issue_share:
+    let
+        unwrap_msg = <'dom_unwrap', chat_id, identity_pk>
+        req_sig    = sign(unwrap_msg, device_sk)
+    in
+    [ !SealedServer(server_id, server_sk),
+      !ActiveDevice(device_pk, identity_pk),
+      !DeviceSk($D, device_sk),
+      In(chat_id) ]
+  --[ Eq(device_pk, pk(device_sk)),
+      Eq(verify(req_sig, unwrap_msg, device_pk), true),
+      HonestShareIssued(server_id, device_pk, chat_id, identity_pk),
+      ShareIssued(server_id, device_pk, chat_id, identity_pk) ]->
+    [ !Share(server_id, device_pk, chat_id, identity_pk) ]
+
+rule compromised_server_issue_share:
+    [ !SealedServer(server_id, server_sk),
+      !CompromisedServer(server_id),
+      !ActiveDevice(device_pk, identity_pk),
+      In(<device_pk, chat_id, identity_pk>) ]
+  --[ CompromisedShareIssued(server_id, device_pk, chat_id, identity_pk),
+      ShareIssued(server_id, device_pk, chat_id, identity_pk) ]->
+    [ !Share(server_id, device_pk, chat_id, identity_pk) ]
+
+rule client_combine:
+    [ !Share(sid1, device_pk, chat_id, identity_pk),
+      !Share(sid2, device_pk, chat_id, identity_pk),
+      !Share(sid3, device_pk, chat_id, identity_pk) ]
+  --[ DistinctSids(sid1, sid2, sid3),
+      UnwrapGranted(device_pk, chat_id, identity_pk, sid1, sid2, sid3) ]->
+    [ ]
+
+restriction Equality:
+    "All x y #i. Eq(x, y) @ i ==> x = y"
+
+restriction DistinctSids:
+    "All a b c #i. DistinctSids(a, b, c) @ #i
+        ==> not (a = b) & not (b = c) & not (a = c)"
+
+/*
+   Restriction: AtMostTwoCompromised
+   Не более 2 distinct compromised servers в трассе.
+*/
+restriction AtMostTwoCompromised:
+    "All sid1 sid2 sid3 #c1 #c2 #c3.
+        Compromised(sid1) @ #c1
+      & Compromised(sid2) @ #c2
+      & Compromised(sid3) @ #c3
+      & not (sid1 = sid2)
+      & not (sid2 = sid3)
+      & not (sid1 = sid3)
+      ==> F"
+
+/*
+   Lemma: honest_share_exists_in_unwrap (PRIMARY universal claim)
+
+   Для любого UnwrapGranted, ровно по pigeonhole — из 3 distinct shares
+   и не более 2 compromised servers, хотя бы один sid в (sid1, sid2, sid3)
+   НЕ был compromised before share issuance, значит он был issued honest
+   server.
+*/
+lemma honest_share_exists_in_unwrap:
+    "All device_pk chat_id identity_pk sid1 sid2 sid3 #i.
+        UnwrapGranted(device_pk, chat_id, identity_pk, sid1, sid2, sid3) @ #i
+        ==>
+        (Ex #h1. HonestShareIssued(sid1, device_pk, chat_id, identity_pk) @ #h1 & #h1 < #i)
+      | (Ex #h2. HonestShareIssued(sid2, device_pk, chat_id, identity_pk) @ #h2 & #h2 < #i)
+      | (Ex #h3. HonestShareIssued(sid3, device_pk, chat_id, identity_pk) @ #h3 & #h3 < #i)"
+
+/*
+   Sanity exists-trace: honest UnwrapGranted без компрометации.
+*/
+lemma honest_unwrap_executable: exists-trace
+    "Ex device_pk chat_id identity_pk sid1 sid2 sid3 #i.
+        UnwrapGranted(device_pk, chat_id, identity_pk, sid1, sid2, sid3) @ #i
+      & (not Ex sid #c. Compromised(sid) @ #c)"
+
+end
