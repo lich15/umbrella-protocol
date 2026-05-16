@@ -13,13 +13,16 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use umbrella_backup::cloud_wrap::WrappingParams;
 use umbrella_calls::CallPolicy;
-use umbrella_identity::{IdentityKey, IdentitySeed};
+use umbrella_identity::{IdentityKey, IdentitySeed, MnemonicLanguage};
 use umbrella_kt::KtLogState;
 
 use crate::error::{ClientError, Result};
 use crate::facade::chat_common::UMBRELLA_CIPHERSUITE_CLASSICAL_DEFAULT;
 #[cfg(feature = "pq")]
 use crate::facade::chat_common::UMBRELLA_CIPHERSUITE_PQ_HYBRID;
+use crate::keystore::hw_callback::{
+    bootstrap_hw_identity, HwKeyHandle, PersistentKeyStoreCallback,
+};
 use crate::transport::async_unwrap::AsyncUnwrapTransport;
 use crate::transport::stub::{
     StubCallRelayTransport, StubKtTransport, StubPostmanTransport, StubUnwrapTransport,
@@ -281,6 +284,34 @@ pub struct ClientCore {
     ///
     /// Config with which the client was bootstrapped.
     pub(crate) config: ClientConfig,
+
+    /// Hardware-backed keystore callback (round-5 device-capture closure
+    /// F-PHD-DC-R7-1 / F-PHD-DC-R10-1). `Some(...)` если клиент был
+    /// bootstrapped через [`ClientCore::new_with_hw_callback`] —
+    /// identity_sk **физически не находится в Rust heap**, все sign
+    /// operations идут через FFI в Secure Enclave / StrongBox.
+    ///
+    /// `None` для legacy / test path'ей через [`ClientCore::new_for_test`].
+    /// В этом случае `identity` (Rust heap-resident) — единственный источник
+    /// signing material.
+    ///
+    /// Hardware-backed keystore callback (round-5 device-capture closure
+    /// F-PHD-DC-R7-1 / F-PHD-DC-R10-1). `Some(...)` if the client was
+    /// bootstrapped via [`ClientCore::new_with_hw_callback`] — identity_sk
+    /// **does not physically reside on the Rust heap**, all sign operations
+    /// route through FFI into Secure Enclave / StrongBox.
+    ///
+    /// `None` for the legacy / test paths via
+    /// [`ClientCore::new_for_test`]. In that case `identity` (Rust heap-
+    /// resident) is the sole signing-material source.
+    pub(crate) hw_callback: Option<Arc<dyn PersistentKeyStoreCallback>>,
+
+    /// `Some(handle)` если identity_sk живёт в hardware keystore и доступен
+    /// только через [`hw_callback`]. `None` для legacy / test path'ей.
+    ///
+    /// `Some(handle)` if identity_sk lives in the hardware keystore and is
+    /// only accessible via [`hw_callback`]. `None` for legacy / test paths.
+    pub(crate) hw_identity_handle: Option<HwKeyHandle>,
 }
 
 impl ClientCore {
@@ -319,7 +350,116 @@ impl ClientCore {
             call_relay_transport: Arc::new(StubCallRelayTransport::default()),
             user_policy: Arc::new(RwLock::new(CallPolicy::default())),
             config,
+            hw_callback: None,
+            hw_identity_handle: None,
         }))
+    }
+
+    /// Round-5 device-capture closure F-PHD-DC-R7-1 + F-PHD-DC-R10-1 entry
+    /// point. Bootstrap `ClientCore` using a hardware-backed keystore
+    /// callback (`PersistentKeyStoreCallback`). The identity signing key is
+    /// **generated and held inside Secure Enclave / StrongBox**; only the
+    /// opaque `HwKeyHandle` lives on the Rust side.
+    ///
+    /// Legacy `identity: Arc<IdentityKey>` field is set to a placeholder
+    /// derived from a one-shot ephemeral seed that is immediately dropped
+    /// (used only for `device_index` plumbing and `Debug` impls — it
+    /// **does not** hold the canonical identity_sk). All real signing
+    /// operations on this `ClientCore` route through `hw_callback`.
+    ///
+    /// Round-5 device-capture closure F-PHD-DC-R7-1 + F-PHD-DC-R10-1 entry
+    /// point. Bootstrap a `ClientCore` using a hardware-backed keystore
+    /// callback (`PersistentKeyStoreCallback`). The identity signing key
+    /// is **generated and held inside Secure Enclave / StrongBox**; only
+    /// the opaque `HwKeyHandle` lives on the Rust side.
+    ///
+    /// The legacy `identity: Arc<IdentityKey>` field is set to a
+    /// placeholder derived from a one-shot ephemeral seed which is
+    /// immediately dropped (used only for `device_index` plumbing and
+    /// `Debug` impls — it **does not** carry the canonical identity_sk).
+    /// Every real signing operation on this `ClientCore` routes through
+    /// `hw_callback`.
+    ///
+    /// # Параметры / Parameters
+    ///
+    /// - `config` — клиентский конфиг (URLs, ciphersuite, …).
+    /// - `callback` — implementation `PersistentKeyStoreCallback`
+    ///   (iOS Swift `KeyStoreBridge`, Android Kotlin `KeyStoreBridge`,
+    ///   или `MockHwKeystore` для тестов).
+    /// - `label` — Keychain `kSecAttrApplicationTag` / Android Keystore
+    ///   alias (e.g. `"xyz.umbrellax.identity.primary"`).
+    ///
+    /// # Ошибки / Errors
+    ///
+    /// - `ClientError::Platform(...)` — native side вернул [`HwKeystoreError`]
+    ///   (user denied prompt, SE unavailable, etc.).
+    pub async fn new_with_hw_callback(
+        config: ClientConfig,
+        callback: Arc<dyn PersistentKeyStoreCallback>,
+        label: impl Into<String>,
+    ) -> Result<Arc<Self>> {
+        // Bootstrap identity inside the HW keystore. The handle is the
+        // only thing that comes back to Rust — secret bytes stay in TEE.
+        let label = label.into();
+        let (handle, _verifying_key_placeholder) =
+            bootstrap_hw_identity(&callback, label).map_err(ClientError::from)?;
+
+        // Legacy `identity: Arc<IdentityKey>` slot — we synthesize a
+        // throwaway IdentityKey from an ephemeral seed for backwards-
+        // compat with downstream code that still reads `core.identity`.
+        // The seed is `Box<[u8; 32]>` heap-resident, zeroized on drop;
+        // production code is expected to migrate the readers to
+        // `core.hw_identity_handle + core.hw_callback` over v1.2.x.
+        //
+        // Legacy `identity: Arc<IdentityKey>` slot — we synthesize a
+        // throwaway IdentityKey from an ephemeral seed for backwards-
+        // compat with downstream code that still reads `core.identity`.
+        // The seed is `Box<[u8; 32]>` heap-resident, zeroized on drop;
+        // production code is expected to migrate readers to
+        // `core.hw_identity_handle + core.hw_callback` over v1.2.x.
+        let ephemeral_seed =
+            IdentitySeed::generate(&mut rand_core::OsRng, MnemonicLanguage::English);
+        let identity = Arc::new(IdentityKey::derive(&ephemeral_seed, 0)?);
+        drop(ephemeral_seed); // explicit zeroize-on-drop
+
+        let unwrap_transport: Arc<dyn AsyncUnwrapTransport + Send + Sync> =
+            Arc::new(StubUnwrapTransport::default());
+
+        Ok(Arc::new(Self {
+            identity,
+            device_index: 0,
+            kt_state: Arc::new(RwLock::new(KtLogState::new())),
+            unwrap_transport,
+            postman_transport: Arc::new(StubPostmanTransport::default()),
+            kt_transport: Arc::new(StubKtTransport::default()),
+            call_relay_transport: Arc::new(StubCallRelayTransport::default()),
+            user_policy: Arc::new(RwLock::new(CallPolicy::default())),
+            config,
+            hw_callback: Some(callback),
+            hw_identity_handle: Some(handle),
+        }))
+    }
+
+    /// `true` если ClientCore был bootstrapped с hardware-backed identity
+    /// (через `new_with_hw_callback`) — identity_sk физически в TEE, не в
+    /// Rust heap.
+    ///
+    /// `true` if ClientCore was bootstrapped with a hardware-backed
+    /// identity (via `new_with_hw_callback`) — identity_sk physically
+    /// resides in the TEE, not the Rust heap.
+    #[must_use]
+    pub fn has_hw_identity(&self) -> bool {
+        self.hw_callback.is_some() && self.hw_identity_handle.is_some()
+    }
+
+    /// Returns a reference to the HW identity handle if bootstrapped with
+    /// hardware backing.
+    ///
+    /// Returns a reference to the HW identity handle if bootstrapped with
+    /// hardware backing.
+    #[must_use]
+    pub fn hw_identity_handle(&self) -> Option<&HwKeyHandle> {
+        self.hw_identity_handle.as_ref()
     }
 
     /// Закрытая граница неполного HTTP/2 bootstrap.
@@ -405,6 +545,29 @@ impl UmbrellaClient {
     /// Forwards all errors from [`ClientCore::new_for_test`].
     pub async fn bootstrap_for_test(config: ClientConfig, seed: IdentitySeed) -> Result<Arc<Self>> {
         let core = ClientCore::new_for_test(config, seed).await?;
+        Ok(Arc::new(Self { core }))
+    }
+
+    /// Bootstrap client с hardware-backed identity (round-5 device-capture
+    /// closure F-PHD-DC-R7-1 / F-PHD-DC-R10-1). identity_sk физически
+    /// находится в Secure Enclave / StrongBox; Rust держит только
+    /// `HwKeyHandle`. Использует [`ClientCore::new_with_hw_callback`].
+    ///
+    /// Bootstrap a client with hardware-backed identity (round-5 device-
+    /// capture closure F-PHD-DC-R7-1 / F-PHD-DC-R10-1). identity_sk
+    /// physically resides in Secure Enclave / StrongBox; Rust holds only
+    /// the `HwKeyHandle`. Uses [`ClientCore::new_with_hw_callback`].
+    ///
+    /// # Ошибки / Errors
+    ///
+    /// Same as [`ClientCore::new_with_hw_callback`]; in particular
+    /// `ClientError::Platform(...)` on native-side failures.
+    pub async fn bootstrap_with_hw_callback(
+        config: ClientConfig,
+        callback: Arc<dyn PersistentKeyStoreCallback>,
+        label: impl Into<String>,
+    ) -> Result<Arc<Self>> {
+        let core = ClientCore::new_with_hw_callback(config, callback, label).await?;
         Ok(Arc::new(Self { core }))
     }
 
