@@ -277,14 +277,35 @@ pub fn xwing_decaps_raw(
 
 /// X-Wing Decapsulation.
 ///
-/// Восстанавливает shared secret из ciphertext через secret seed. При
-/// corrupted ciphertext возвращает `XWingDecapsulationFailed` (X-Wing
-/// combiner отвергает invalid X25519 части явно — не implicit rejection
-/// как в pure ML-KEM).
+/// Восстанавливает shared secret из ciphertext через secret seed.
 ///
-/// Recovers shared secret from ciphertext using secret seed. On corrupted
-/// ciphertext returns `XWingDecapsulationFailed` (X-Wing combiner explicitly
-/// rejects invalid X25519 parts — not implicit rejection like in pure ML-KEM).
+/// **Rejection semantics (F-PHD-PQ-7, 2026-05-19 audit closure):** X-Wing
+/// inherits ML-KEM-768's **implicit rejection** at the combiner level per
+/// draft-connolly-cfrg-xwing-kem-10 §5.4. На tamper в ML-KEM половине ct
+/// decapsulate чаще всего возвращает `Ok(ss')` где `ss'` — pseudo-random
+/// shared secret, отличный от sender's (FIPS 203 §7.3 design). X25519
+/// half проверяется unconditionally — invalid X25519 ephemeral public
+/// возвращает all-zero shared secret вместо отдельного Err. Wrapper
+/// возвращает `XWingDecapsulationFailed` только когда libcrux backend
+/// reports decode/structural error (ct_len mismatch и т.п.), что редко
+/// в production wire — caller обязан опираться на AEAD tag binding (V2
+/// envelope + AEAD AAD coverage) для detection mismatch, **не** на
+/// XWingDecapsulationFailed error path.
+///
+/// Recovers shared secret from ciphertext using secret seed.
+///
+/// **Rejection semantics (F-PHD-PQ-7, 2026-05-19 audit closure):**
+/// X-Wing inherits ML-KEM-768 **implicit rejection** at the combiner per
+/// draft-connolly-cfrg-xwing-kem-10 §5.4. For ML-KEM-half tampering, the
+/// decapsulate path most often returns `Ok(ss')` where `ss'` is a
+/// pseudo-random shared secret distinct from the sender's (FIPS 203 §7.3
+/// design). The X25519 half is checked unconditionally — an invalid X25519
+/// ephemeral public produces an all-zero shared secret rather than a
+/// separate `Err`. The wrapper returns `XWingDecapsulationFailed` only when
+/// libcrux reports a structural / decode error (length mismatch and so on),
+/// which is rare on production wire — callers must rely on AEAD tag binding
+/// (V2 envelope + AAD coverage) to detect a mismatch, **not** on the
+/// `XWingDecapsulationFailed` error path.
 pub fn xwing_decaps(
     seed: &XWingSecretSeed,
     ct: &[u8; XWING_CIPHERTEXT_LEN],

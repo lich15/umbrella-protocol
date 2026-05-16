@@ -44,3 +44,7 @@ proptest    = { workspace = true }
 rand        = { workspace = true }
 rand_chacha = { workspace = true }
 umbrella-vectors = { workspace = true }
+# Dev-only — used by tests/phd_real_attacks.rs for direct HKDF byte-distinct
+# verification at the primitive level (A4 V1/V2 domain separation).
+hkdf  = { workspace = true }
+sha2  = { workspace = true }
