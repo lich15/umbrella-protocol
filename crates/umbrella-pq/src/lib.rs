@@ -55,6 +55,7 @@
 
 pub mod constants;
 pub mod error;
+pub mod hedged;
 
 #[cfg(feature = "ml-kem")]
 pub mod ml_kem;
@@ -80,9 +81,37 @@ pub use ml_kem::{
 
 #[cfg(feature = "ml-kem")]
 pub use xwing::{
-    xwing_decaps, xwing_decaps_raw, xwing_encaps, xwing_encaps_derand, xwing_keygen,
+    xwing_decaps, xwing_decaps_raw, xwing_encaps, xwing_encaps_hedged, xwing_keygen,
     xwing_keygen_from_seed, XWingPublicKey, XWingSecretSeed,
 };
+
+// `xwing_encaps_derand` под обычной сборкой имеет видимость `pub(crate)`
+// и не реэкспортируется. Под internal test-only feature
+// `__internal-kat-hooks` (используется только integration tests внутри
+// umbrella-pq самой) видимость поднимается до `pub` — re-export здесь
+// также gate'нут под феатур, чтобы downstream crates compile-fail'ились
+// при попытке `use umbrella_pq::xwing_encaps_derand`.
+//
+// Round-3 hedged-encaps closure (2026-05-19): см. spec
+// `2026-05-19-phd-b-hybrid-pq-hedged-encaps-design.md` §Component 2.
+//
+// `xwing_encaps_derand` under the normal build has `pub(crate)` visibility
+// and is not re-exported. Under the internal test-only feature
+// `__internal-kat-hooks` (used only by integration tests inside
+// umbrella-pq itself) its visibility is raised to `pub` — the re-export
+// here is also gated behind the feature so downstream crates compile-fail
+// when attempting `use umbrella_pq::xwing_encaps_derand`.
+#[cfg(all(feature = "ml-kem", feature = "__internal-kat-hooks"))]
+pub use xwing::xwing_encaps_derand;
+
+/// Re-export hedged-encaps support module (Bellare-Hoang-Keelveedhi 2015 defense
+/// против compromised CSPRNG). `HedgedWitness` derive'ится KeyStore'ом из
+/// long-term identity_seed.
+///
+/// Re-export hedged-encaps support module (Bellare-Hoang-Keelveedhi 2015
+/// defense against a compromised CSPRNG). `HedgedWitness` is derived by
+/// KeyStore from the long-term identity_seed.
+pub use hedged::{HedgedWitness, HEDGED_WITNESS_HKDF_SALT, HEDGED_WITNESS_LEN};
 
 #[cfg(feature = "ml-dsa")]
 pub use ml_dsa::{

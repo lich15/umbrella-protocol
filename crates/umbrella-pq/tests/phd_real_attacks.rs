@@ -45,7 +45,14 @@
 //! (regression guard for fixes) or successful exploitation (negative
 //! findings).
 
-#![cfg(feature = "ml-kem")]
+// `__internal-kat-hooks` gate (round-3 hedged-encaps closure 2026-05-19):
+// этот test использует `xwing_encaps_derand` в `attack_a8_*` сценарии,
+// который теперь pub(crate) и доступен только под internal feature.
+//
+// `__internal-kat-hooks` gate (round-3 hedged-encaps closure 2026-05-19):
+// this test uses `xwing_encaps_derand` in the `attack_a8_*` scenarios; it
+// is now `pub(crate)` and only available under the internal feature.
+#![cfg(all(feature = "ml-kem", feature = "__internal-kat-hooks"))]
 
 use rand::rngs::OsRng;
 use rand_core::RngCore;
