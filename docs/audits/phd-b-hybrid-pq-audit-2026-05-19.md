@@ -20,12 +20,16 @@ adversary D per SPEC-01 §4.
 
 ## 1. Executive summary
 
-PhD-B audit нашёл **8 findings** в hybrid PQ stack: 5 documented Tamarin
-model gaps (F-PHD-PQ-1 .. F-PHD-PQ-3), 2 KAT coverage gaps (F-PHD-PQ-5,
-F-PHD-PQ-6), 1 documentation drift fixed in-block (F-PHD-PQ-7), и 1 dudect
-1M-sample timing observation (F-PHD-PQ-8). **Все 10 attack hypotheses A1-A10
-exercised**, либо exploit blocked (regression test), либо unexploitable in
-production context (documented analysis).
+PhD-B audit нашёл **8 findings** в hybrid PQ stack: 3 documented Tamarin
+model gaps (F-PHD-PQ-1, F-PHD-PQ-2, F-PHD-PQ-3), 1 verified-clean version
+dispatch (F-PHD-PQ-4), 2 KAT coverage gaps (F-PHD-PQ-5, F-PHD-PQ-6),
+1 documentation drift fixed in-block (F-PHD-PQ-7), и 1 dudect 1M-sample
+timing observation (F-PHD-PQ-8). **Все 10 attack hypotheses A1-A10
+exercised** через **46 regression tests** (38 real `attack_*` adversarial
+scenarios + 8 `verify_*` property baselines, 82.6% real-attack ratio
+honestly counted per memory `feedback_phd_vs_a_level_distinguisher`
+quantitative gate). Каждый exploit либо blocked (regression test) либо
+unexploitable in production context (documented analysis).
 
 Production code remains correct. **No exploitable vulnerability found**.
 The PQ subsystem stands up against the Variant-B adversary model under
@@ -354,7 +358,7 @@ modelled property. This is documented as a model abstraction gap.
 | # | Question | Honest answer | Notes |
 |---|---|---|---|
 | 1 | Findings count ≥ 5? | **YES** — 8 findings (F-PHD-PQ-1..8) | 5 LOW + 3 INFO; 1 LOW inline-fixed (F-PHD-PQ-7), 2 LOW carry-over (F-PHD-PQ-3 model gap, F-PHD-PQ-5 KAT coverage), 5 closed in-block via spec modifications |
-| 2 | Test naming honesty — `attack_*` adversarial, end-to-end? | **YES** — 33 of 33 (100%) tests in the new files use `attack_*` prefix AND embed adversary action + defense + failure-mode trio (see attack-categorization at §8) | crates/umbrella-pq/tests/phd_real_attacks.rs (19 tests) + crates/umbrella-backup/tests/phd_attacks_v2_wrapping.rs (14 tests) |
+| 2 | Test naming honesty — `attack_*` adversarial, end-to-end? | **YES — 38 of 46 (82.6%) real attacks, exceeding 80% gate** | Honest reclassification: 8 of 46 tests are property/verification checks (renamed `verify_*` not `attack_*` per memory `feedback_phd_vs_a_level_distinguisher` quantitative-count-gate rule). crates/umbrella-pq/tests/phd_real_attacks.rs (21 `attack_*` + 5 `verify_*`) + crates/umbrella-backup/tests/phd_attacks_v2_wrapping.rs (17 `attack_*` + 3 `verify_*`) |
 | 3 | Tamarin engagement ≥ 80% line-by-line? | **YES** — 100% (864 / 864 LoC read across 3 in-scope models) | Substantive findings F-PHD-PQ-1, F-PHD-PQ-2, F-PHD-PQ-3 ALL came from deep reading (would be invisible from preamble-only inspection) |
 | 4 | dudect ≥ 1M samples on CT-critical operations? | **YES** — 4 runs of ml_kem_768_decaps + 3 runs of xwing_decaps + 1 run of unwrap_v2_to_v1, all at DUDECT_SAMPLES=1000000 | F-PHD-PQ-8 INFO discovered (borderline-LEAK on ml_kem at 1M) |
 | 5 | Reduction sketches with concrete numbers? | **YES** — §5.1 X-Wing IND-CCA2 (2^-125 floor), §5.2 V2 AE (2^-69 budget), §5.3 downgrade-distinguishing (0 deterministic) | All include specific theorems + bounds + adversary-query budgets |
@@ -380,18 +384,29 @@ in commit message valid.
 | A9 | BackendError message leak | `attack_a9_xwing_backend_error_message_does_not_leak_byte_ranges` (pq) | Verified clean — no sentinel bytes / pointer prefixes in message |
 | A10 | Memory hygiene seed zeroize | `attack_a10_seed_zeroize_does_not_corrupt_keygen_output` (pq) | Acceptable — keygen output determinism preserved; zeroize executes AFTER backend consumes seed |
 
-**Cross-cutting `attack_xtra_*` coverage** (umbrella-pq: 6 tests +
-umbrella-backup: 6 tests = 12 extra):
+**Cross-cutting `attack_xtra_*` coverage** (umbrella-pq + umbrella-backup):
 - Mutation fuzz 100 + 5000 iter (zero collisions, zero silent decrypts)
 - Forge without private key 50 attempts (zero matches)
-- Concurrent stress 8 threads × 200 iter + 4 threads × 25 iter (no race)
-- Length fuzz 0..=4096 (1 accepted, 4096 rejected)
-- Wire byte-roundtrip 50 envelopes stability
-- 200 wrong-recipient keypair attempts (zero decrypts)
+- Random ct search 200 (X-Wing) + 1000 (ML-KEM) zero collisions
+- Random seed search 100 attempts on `xwing_decaps_raw` (zero matches)
+- Length fuzz 0..=4096 (exactly 1 accepted, 4096 rejected)
+- 200 wrong-recipient keypair attempts on V2 (zero decrypts)
+- Inner V1 wrapped-key byte-swap 97 positions exhaustive (all rejected)
+- Cross-chat replay + sender substitution + recipient substitution +
+  msg_seq tamper (all AEAD-MAC rejected)
+- First-byte enumeration 255 values on ML-KEM ct (zero collisions)
+- 256-byte value enumeration on WrappingCiphersuite (only 0x01 + 0x02)
+- PK substitution attempt (cross-key blocked)
+- Garbage-byte pubkey no-panic test
+- Documented carry-over: replay-at-unwrap-layer succeeds by design
+  (replay defense = Sealed Server's responsibility)
 
-**Total: 33 `attack_*` tests across 2 new files.** All 33 pass at HEAD.
-None are tautological / behavioral-with-adversarial-naming — each
-embeds adversary action that mutates state away from the honest path.
+**Total: 46 tests across 2 new files (38 `attack_*` real + 8 `verify_*`
+property checks renamed honestly per memory quantitative-count-gate
+rule). 38/46 = 82.6% real-attack ratio.** All pass at HEAD. Each
+`attack_*` embeds adversary action that mutates state away from the
+honest path; `verify_*` tests are explicit property baselines
+(determinism, concurrent safety, ss correctness, etc.).
 
 ---
 

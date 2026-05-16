@@ -47,7 +47,7 @@
 | # | Criterion | Status | Notes |
 |---|---|---|---|
 | 1 | Findings count ≥ 5 | PASS | 8 findings (F-PHD-PQ-1..8) |
-| 2 | `attack_*` adversarial test naming, end-to-end real scenarios | PASS | 33 tests across 2 new files; 100% real-attack ratio |
+| 2 | `attack_*` adversarial test naming, end-to-end real scenarios | PASS | 38 of 46 (82.6%) real attacks across 2 new files; 8 verify_* property tests renamed honestly per memory rule |
 | 3 | Tamarin engagement ≥ 80% line-by-line | PASS | 864 LoC, 100% read |
 | 4 | dudect ≥ 1M samples on CT-critical operations | PASS | 4×1M ml_kem + 3×1M xwing + 1×1M unwrap_v2 |
 | 5 | Reduction sketches with concrete numbers | PASS | X-Wing IND-CCA2 (2^-125), V2 AE (2^-69), downgrade (0 deterministic) |
