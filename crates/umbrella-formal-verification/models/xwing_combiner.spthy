@@ -277,4 +277,210 @@ lemma honest_setup_executable: exists-trace
         & (not Ex skx #x. RevealX25519(A, skx) @ x)
         & (not Ex skm #y. RevealMlkem(A, skm) @ y)"
 
+/*
+   ============================================================================
+   Round-3 hedged-encaps closure (2026-05-19): hedged_encaps_*
+   ============================================================================
+
+   Модель `xwing_encaps_hedged` (Bellare-Hoang-Keelveedhi 2015):
+   eseed = HKDF-SHA512(rng_bytes || hedged_witness, transcript_hash ||
+                        recipient_pk_hash).
+   ss     = stock X-Wing combiner на новом eseed.
+
+   Здесь модель упрощена до сути: hedged_eseed выводится из
+   `<rng_bytes, witness>` фактов через abstract hash `kdf_hedged/2`.
+   Adversary получает hedged_eseed только если знает ОБА (rng_bytes
+   reveal + witness reveal) — это формализует hedged-encryption claim.
+
+   Action labels:
+   - `RngCompromise($A)` — abstract reveal of CSPRNG-output for $A's
+     hedged encaps call.
+   - `WitnessCompromise($A)` — abstract reveal of long-term witness.
+   - `HedgedEncaps($A, K, ct)` — successful hedged encaps trace event.
+
+   Hedged keypair rule reuses `!PubkeyXWing` + `!MlkemDecapKey` фактов от
+   base X-Wing keygen — wire-level identity.
+   ============================================================================
+*/
+
+functions: kdf_hedged/2
+
+/*
+   Rule: hedged_encaps_honest
+
+   Honest hedged encaps: рандомные ~rng (CSPRNG output) и ~witness
+   (long-term identity-derivative), затем eseed = kdf_hedged(<rng, w>),
+   далее X-Wing encaps protocol на eseed (split в ~ephemeral_sk_x25519
+   + ~r_mlkem — обе моделируются как deterministic функция от eseed,
+   фиксированной для simplification).
+
+   Adversary в начале НЕ знает ни ~rng ни ~witness; reveal rules
+   (`reveal_rng_bytes`, `reveal_witness`) дают ему доступ к каждому
+   отдельно.
+*/
+rule hedged_encaps_honest:
+    let // honest hedged eseed derivation
+        eseed     = kdf_hedged(~rng, ~witness)
+        // X-Wing encaps internals derived from eseed (abstracted —
+        // both ephemeral_sk and r_mlkem are deterministic functions
+        // of eseed; treated as the same fresh value here).
+        ek_x25519 = 'g'^eseed
+        ss_x      = pkx^eseed
+        ss_m      = mlkem_extract_ss(pkm, eseed)
+        ct_mlkem  = mlkem_encaps(pkm, eseed)
+        kdf_input = <ss_x, ss_m, pkx, pkm, ek_x25519, ct_mlkem>
+        K         = h(kdf_input)
+    in
+    [ Fr(~rng), Fr(~witness),
+      !PubkeyXWing($A, <pkx, pkm>),
+      !MlkemDecapKey(pkm, skm) ]
+  --[ HedgedEncaps($A, K, <ek_x25519, ct_mlkem>),
+      HedgedSeedSource($A, ~rng, ~witness, eseed) ]->
+    [ !MlkemCiphertextSecret(ct_mlkem, skm, ss_m),
+      !HedgedRng($A, ~rng),
+      !HedgedWitness($A, ~witness),
+      Out(<ek_x25519, ct_mlkem>) ]
+
+/*
+   Rule: reveal_rng_bytes
+
+   Adversary compromises sender's CSPRNG (kernel-level: Debian OpenSSL
+   2008 / Cloudflare 2017 pattern).
+*/
+rule reveal_rng_bytes:
+    [ !HedgedRng($A, rng) ]
+  --[ RngCompromise($A, rng) ]->
+    [ Out(rng) ]
+
+/*
+   Rule: reveal_witness
+
+   Adversary compromises sender's long-term identity_seed → derives
+   HedgedWitness.
+*/
+rule reveal_witness:
+    [ !HedgedWitness($A, w) ]
+  --[ WitnessCompromise($A, w) ]->
+    [ Out(w) ]
+
+/*
+   Lemma: hedged_encaps_unbreakable_with_partial_compromise
+
+   Substantive claim (Bellare-Hoang-Keelveedhi 2015 Theorem 4.1
+   specialised к HKDF-as-RO):
+
+      Если adversary знает K (`K(K)` factor), то:
+       - либо ОБА rng_bytes и witness были revealed (двойная
+         компрометация = fundamental limit),
+       - либо ML-KEM secret revealed (стандартный quantum break
+         противоречит joint security инвариантам),
+       - либо X25519 secret revealed.
+
+   Симметричный: если ТОЛЬКО один из {rng, witness} revealed (но не
+   оба), то K остаётся секретным — это и есть hedged-encaps defense.
+
+   Adversary recovers K only if at least one of these holds:
+      (а) ОБА rng и witness revealed
+   ИЛИ (б) ML-KEM secret revealed
+   ИЛИ (в) X25519 secret revealed.
+*/
+lemma hedged_encaps_unbreakable_with_partial_compromise:
+    "All A K ct #i.
+        HedgedEncaps(A, K, ct) @ i
+        ==>
+        (not Ex #j. K(K) @ j)
+        | (Ex rng witness #r #w. RngCompromise(A, rng) @ r
+                              & WitnessCompromise(A, witness) @ w)
+        | (Ex skm #y. RevealMlkem(A, skm) @ y)
+        | (Ex skx #x. RevealX25519(A, skx) @ x)"
+
+/*
+   Lemma: rng_only_compromise_preserves_secrecy
+
+   Sub-claim: только compromise CSPRNG (без witness reveal и без
+   ML-KEM/X25519 reveal) НЕ позволяет recover K. Это конкретизация
+   главного lemma в наиболее интересный для round-2 R5 случай.
+
+   Sub-claim: CSPRNG compromise alone (without witness reveal and
+   without ML-KEM/X25519 reveal) does NOT let the adversary recover K.
+   This is the specialisation of the main lemma to the round-2 R5
+   threat scenario.
+*/
+lemma rng_only_compromise_preserves_secrecy:
+    "All A K ct #i.
+        HedgedEncaps(A, K, ct) @ i
+        & (Ex rng #r. RngCompromise(A, rng) @ r)
+        & (not Ex w #w. WitnessCompromise(A, w) @ w)
+        & (not Ex skm #y. RevealMlkem(A, skm) @ y)
+        & (not Ex skx #x. RevealX25519(A, skx) @ x)
+        ==>
+        not (Ex #j. K(K) @ j)"
+
+/*
+   Lemma: witness_only_compromise_preserves_secrecy
+
+   Symmetric к выше: только witness compromise без rng reveal не
+   ломает hedged encaps (witness — pre-stored long-term, но без знания
+   фактического rng_bytes adversary не может derive eseed).
+
+   Symmetric to the above: witness-only compromise without rng reveal
+   does not break hedged encaps (witness is pre-stored long-term, but
+   without the actual rng_bytes the adversary cannot derive eseed).
+*/
+lemma witness_only_compromise_preserves_secrecy:
+    "All A K ct #i.
+        HedgedEncaps(A, K, ct) @ i
+        & (Ex w #w. WitnessCompromise(A, w) @ w)
+        & (not Ex rng #r. RngCompromise(A, rng) @ r)
+        & (not Ex skm #y. RevealMlkem(A, skm) @ y)
+        & (not Ex skx #x. RevealX25519(A, skx) @ x)
+        ==>
+        not (Ex #j. K(K) @ j)"
+
+/*
+   Lemma: hedged_encaps_executable (exists-trace sanity)
+
+   Sanity check: hedged encaps протокол выполняется в чистом случае.
+*/
+lemma hedged_encaps_executable: exists-trace
+    "Ex A K ct #i.
+        HedgedEncaps(A, K, ct) @ i
+        & (not Ex rng #r. RngCompromise(A, rng) @ r)
+        & (not Ex w #w. WitnessCompromise(A, w) @ w)
+        & (not Ex skm #y. RevealMlkem(A, skm) @ y)
+        & (not Ex skx #x. RevealX25519(A, skx) @ x)"
+
+/*
+   Lemma: hedged_lemma_is_tight_under_double_compromise (exists-trace)
+
+   Tightness witness: модель должна позволять K be derived under
+   double compromise (oба rng AND witness revealed). Если bizarre
+   model bug делает sequence невозможным, hedged lemma trivially
+   проходит — и поэтому она NOT substantive. Этот exists-trace
+   доказывает что есть trace где adversary recovers K через двойную
+   reveal — значит, predicate в hedged_encaps_unbreakable_with_partial_compromise
+   реально содержательный.
+
+   Tightness witness: the model must allow K to be derived under
+   double compromise (BOTH rng AND witness revealed). If a bizarre
+   model bug makes that sequence impossible, the hedged lemma would
+   trivially pass — and thus NOT be substantive. This exists-trace
+   proves there exists a trace where the adversary recovers K via
+   double reveal — so the predicate in
+   `hedged_encaps_unbreakable_with_partial_compromise` is genuinely
+   meaningful.
+
+   Note: this is exists-trace, so finding a single witness is enough.
+   We require that the adversary observes both reveals AND learns K
+   (`K(K)`).
+*/
+lemma hedged_lemma_is_tight_under_double_compromise: exists-trace
+    "Ex A K ct rng witness #i #r #w #k.
+        HedgedEncaps(A, K, ct) @ i
+        & RngCompromise(A, rng) @ r
+        & WitnessCompromise(A, witness) @ w
+        & K(K) @ k
+        & i < r & r < k
+        & i < w & w < k"
+
 end
