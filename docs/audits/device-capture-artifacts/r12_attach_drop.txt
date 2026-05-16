@@ -1,0 +1,22 @@
+(lldb) command source -s 0 '/tmp/r12_attach_drop.txt'
+Executing commands in '/tmp/r12_attach_drop.txt'.
+(lldb) process attach --pid 75431
+Process 75431 stopped
+* thread #1, name = 'main', queue = 'com.apple.main-thread', stop reason = signal SIGSTOP
+    frame #0: 0x000000019886d1c8 libsystem_kernel.dylib`__semwait_signal + 8
+libsystem_kernel.dylib`__semwait_signal:
+->  0x19886d1c8 <+8>:  b.lo   0x19886d1e8               ; <+40>
+    0x19886d1cc <+12>: pacibsp 
+    0x19886d1d0 <+16>: stp    x29, x30, [sp, #-0x10]!
+    0x19886d1d4 <+20>: mov    x29, sp
+Target 0: (r12_ratchet_lldb_target) stopped.
+Executable binary set to "/Users/daniel/Documents/Projects/Messenger/Umbrella Protocol/target/r6-release/examples/r12_ratchet_lldb_target".
+Architecture set to: arm64-apple-macosx-.
+(lldb) command script import /Users/daniel/Documents/Projects/Messenger/Umbrella\ Protocol/docs/audits/device-capture-artifacts/r12_lldb_script.py
+(lldb) r12_scan_drop
+[R12 lldb] MATCH AFTER_DROP base=0x16f0a0000 abs=0x16f895e30 name=
+[R12 lldb]   prev16=00000000000000003f00000000000000  match=5233fc1d9e582bc2f156c56eb40ef303ca2f8700da68063b1f5aa653be72f4e4
+[R12 lldb] SUMMARY AFTER_DROP: regions=72 chunks=665 bytes=685916160 app_secret_hits=1
+(lldb) detach
+Process 75431 detached
+(lldb) quit
