@@ -154,6 +154,18 @@ thiserror = "2.0"
 anyhow = "1.0.102"
 heapless = "0.9"
 
+# POSIX/Windows page-locking syscalls for `MlockedSecret<T>` (umbrella-crypto-primitives).
+# Used by the device-capture closure round 5 (F-PHD-DC-R11-1) to call
+# `libc::mlock` / `libc::munlock` so secrets cannot be paged out by the OS
+# memory manager. Pinned 0.2 — RustCrypto / ed25519-dalek already depend on
+# libc 0.2; adding the workspace dep does not pull in a new major version.
+# POSIX/Windows page-locking syscalls for `MlockedSecret<T>` (umbrella-crypto-primitives).
+# Used by the round-5 device-capture closure (F-PHD-DC-R11-1) to call
+# `libc::mlock` / `libc::munlock` so the OS memory manager cannot page
+# secrets out. Pinned 0.2 — RustCrypto / ed25519-dalek already depend on
+# libc 0.2, so adding it to the workspace does not introduce a new major.
+libc = "0.2"
+
 # ——— Async runtime (production design Решение 3) ———
 # ——— Async runtime (production design Decision 3) ———
 # Pinned 1.41: webrtc-rs и reqwest требуют tokio; features минимально необходимые.

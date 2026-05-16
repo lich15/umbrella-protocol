@@ -4099,6 +4099,7 @@ dependencies = [
  "tokio",
  "umbrella-backup",
  "umbrella-calls",
+ "umbrella-crypto-primitives",
  "umbrella-identity",
  "umbrella-kt",
  "umbrella-mls",
@@ -4125,6 +4126,7 @@ dependencies = [
  "chacha20poly1305",
  "ed25519-dalek",
  "hkdf 0.13.0",
+ "libc",
  "rand_core 0.6.4",
  "sha2 0.11.0",
  "subtle",
@@ -4308,6 +4310,7 @@ dependencies = [
  "secrecy",
  "sha2 0.11.0",
  "thiserror 2.0.18",
+ "umbrella-crypto-primitives",
  "umbrella-vectors",
  "zeroize",
 ]

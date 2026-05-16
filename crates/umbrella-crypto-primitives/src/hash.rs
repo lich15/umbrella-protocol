@@ -1,6 +1,8 @@
 //! SHA-256 и SHA-512 обёртки с domain-separated transcript hashing.
 //! SHA-256 and SHA-512 wrappers with domain-separated transcript hashing.
 
+#![forbid(unsafe_code)]
+
 use sha2::{Digest, Sha256, Sha512};
 
 /// Размер выхода SHA-256 в байтах.

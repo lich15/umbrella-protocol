@@ -1,6 +1,8 @@
 //! AEAD ChaCha20-Poly1305; RFC 8439. Nonce reuse prevention через типы.
 //! AEAD ChaCha20-Poly1305; RFC 8439. Nonce reuse prevention enforced via types.
 
+#![forbid(unsafe_code)]
+
 use chacha20poly1305::aead::{Aead, AeadInPlace, Payload};
 use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, Tag};
 use rand_core::{CryptoRng, RngCore};
