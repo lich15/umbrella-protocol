@@ -196,21 +196,73 @@ lemma joint_security_quantum_break_mlkem:
         | (Ex skx #x. RevealX25519(A, skx) @ x)"
 
 /*
-   Lemma: domain_separation
+   Lemma: domain_separation_label_simultaneity (deprecated — tautological)
 
-   Каждый XWingEncaps event имеет unique KDF input — биндинг K к
-   конкретному transcript (ss_x, ss_m, pkx, pkm, ek_x25519, ct_mlkem)
-   гарантируется тем что `KdfInput` action label фиксирует ровно те же
-   значения и в ровно том же event #i что `XWingEncaps`. Это исключает
-   related-key attacks: adversary не может trade transcript A на
-   transcript B сохраняя K.
+   F-PHD-PQ-2: HISTORICAL — этот lemma proves только что action labels
+   `XWingEncaps` и `KdfInput` emitted в одно и то же время #i = #j,
+   что **тривиально** потому что они emit'ятся в одном rule `xwing_encaps`
+   (single transition). НЕ proves что K is bound to the transcript.
+   Renamed для clarity; настоящая domain separation property —
+   в lemma `kdf_transcript_binding` ниже.
+
+   F-PHD-PQ-2: HISTORICAL — this lemma only proves that the action labels
+   `XWingEncaps` and `KdfInput` are emitted at the same #i = #j, which is
+   **trivial** because they are emitted from a single rule (single
+   transition). It does NOT prove that K is bound to the transcript.
+   Renamed for clarity; the real domain-separation property is in the
+   `kdf_transcript_binding` lemma below.
 */
-lemma domain_separation:
+lemma domain_separation_label_simultaneity:
     "All A K ct kdf_input #i #j.
         XWingEncaps(A, K, ct) @ i
         & KdfInput(A, K, kdf_input) @ j
         ==>
         #i = #j"
+
+/*
+   Lemma: kdf_transcript_binding (substantive — F-PHD-PQ-2 closure)
+
+   Substantive domain-separation property: если два distinct transcripts
+   (kdf_input1 ≠ kdf_input2) приводят к Bingual XWingEncaps events, то
+   их derived K values тоже distinct (K1 ≠ K2). Это формализует binding
+   K → transcript через hash function (random oracle assumption HKDF-SHA256).
+
+   Substantive domain-separation property: if two distinct transcripts
+   (kdf_input1 ≠ kdf_input2) lead to two XWingEncaps events, then their
+   derived K values are also distinct (K1 ≠ K2). This formalizes the
+   binding K → transcript via the hash function (random-oracle assumption
+   for HKDF-SHA256).
+*/
+lemma kdf_transcript_binding:
+    "All A1 A2 K1 K2 ct1 ct2 input1 input2 #i1 #i2 #j1 #j2.
+        XWingEncaps(A1, K1, ct1) @ i1
+        & XWingEncaps(A2, K2, ct2) @ i2
+        & KdfInput(A1, K1, input1) @ j1
+        & KdfInput(A2, K2, input2) @ j2
+        & not (input1 = input2)
+        ==>
+        not (K1 = K2)"
+
+/*
+   Lemma: adversarial_encaps_quantum_break_cannot_recover_K
+       (F-PHD-PQ-1 substantive closure)
+
+   Усиление joint_security_quantum_break_mlkem: даже если adversary
+   получил ML-KEM secret + observed honest encaps ciphertext + revealed
+   ML-KEM ss_m (через attacker_decaps_revealed_mlkem) — он всё равно не
+   может recover K без compromise X25519 (Diffie-Hellman over Curve25519
+   intact в classical model). Это активная атака: adversary observed
+   ciphertext, revealed mlkem secret, computed ss_m через abstract decap,
+   но K = h(ss_x, ss_m, pkx, pkm, ek_x25519, ct_mlkem) requires ss_x =
+   pkx^ephemeral_sk — для этого нужен ephemeral_sk либо skx (X25519 break).
+*/
+lemma adversarial_encaps_quantum_break_cannot_recover_K:
+    "All A K ek ct_mlkem skm #i #d.
+        XWingEncaps(A, K, <ek, ct_mlkem>) @ i
+        & MlkemDecapsWithRevealedSecret(skm, ct_mlkem) @ d
+        ==>
+        (not Ex #j. K(K) @ j)
+        | (Ex skx #x. RevealX25519(A, skx) @ x)"
 
 /*
    Lemma: honest_setup_executable (exists-trace)

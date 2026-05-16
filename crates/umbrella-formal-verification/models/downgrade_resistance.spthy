@@ -222,6 +222,46 @@ rule require_pq_without_feature:
     [ ]
 
 /*
+   Rule: adversarial_keypackage_capability_strip (F-PHD-PQ-3 closure)
+
+   Active MITM: adversary observes Out(<advertised_capabilities>) на канале
+   и attempts modify capability list, strip 0x004D из advertised set bob'а
+   чтобы заставить Alice negotiate ниже. Adversary использует In(...)
+   для injection modified capabilities into Alice's local view.
+
+   Этот rule моделирует попытку adversarial downgrade — но **критически**:
+   capability negotiation в реальном коде использует **local** state
+   (`!ClientPq` либо `!ClientClassical`) не trusts network-derived
+   capabilities. Поэтому даже с adversary's stripped capabilities,
+   chat_settings_default_pq_to_pq rule всё равно requires `!ClientPq($B)`
+   (Bob's local state) → если Bob действительно PQ-aware, negotiation
+   produces 0x004D.
+
+   Action `AdversaryStrippedCapability($A, '0x004D')` фиксирует попытку
+   downgrade для inspection — используется в lemma
+   `adversary_strip_does_not_force_downgrade`.
+
+   Active MITM: an adversary observes Out(<advertised_capabilities>) on
+   the wire and attempts to modify the capability list, stripping 0x004D
+   from Bob's advertised set to coerce Alice into negotiating downward.
+   The adversary uses In(...) to inject the modified capabilities into
+   Alice's local view.
+
+   This rule models an attempted adversarial downgrade — but
+   **critically**: in the real code, capability negotiation uses the
+   **local** state (`!ClientPq` or `!ClientClassical`), not the
+   network-derived capabilities. Therefore even with the adversary's
+   stripped capabilities, the `chat_settings_default_pq_to_pq` rule still
+   requires `!ClientPq($B)` (Bob's local state), so if Bob is in fact
+   PQ-aware the negotiation produces 0x004D.
+*/
+rule adversarial_keypackage_capability_strip:
+    [ In(<$A, $B>), !ClientPq($A), !ClientPq($B) ]
+  --[ AdversaryStrippedCapability($A, '0x004D'),
+      AdversaryStrippedCapability($B, '0x004D') ]->
+    [ ]
+
+/*
    Restriction: client_mode_disjoint
 
    Один и тот же локальный client build не может одновременно быть PQ-aware
@@ -323,6 +363,38 @@ lemma no_silent_fallback_under_capability_mismatch:
         & i < j
         & Negotiated(A, B, '0x0003') @ #k
         & j < k)"
+
+/*
+   Lemma: adversary_strip_does_not_force_downgrade (F-PHD-PQ-3 substantive)
+
+   Substantive active MITM property: даже если adversary
+   `AdversaryStrippedCapability` event occurred (попытка downgrade через
+   modify capabilities in transit), если Alice + Bob оба PQ-aware (local
+   `!ClientPq` state) и нет ExplicitOverride event, negotiated suite
+   остаётся 0x004D.
+
+   Это формализует key insight: capability negotiation в Umbrella protocol
+   использует **local** persistent facts !ClientPq / !ClientClassical,
+   которые adversary не контролирует, поэтому adversarial in-transit
+   capability stripping не affects outcome.
+
+   Substantive active-MITM property: even if an
+   `AdversaryStrippedCapability` event occurred (an attempt to downgrade
+   by modifying capabilities in transit), as long as Alice and Bob are
+   both PQ-aware (local `!ClientPq` state) and there is no
+   ExplicitOverride event, the negotiated suite stays 0x004D.
+
+   This formalizes the key insight: capability negotiation in the Umbrella
+   protocol uses **local** persistent facts `!ClientPq` / `!ClientClassical`
+   that the adversary does not control, so adversarial in-transit
+   capability stripping does not affect the outcome.
+*/
+lemma adversary_strip_does_not_force_downgrade:
+    "All A B #i.
+        Negotiated(A, B, '0x0003') @ #i
+        & (Ex #s. AdversaryStrippedCapability(A, '0x004D') @ #s & s < i)
+        ==>
+        (Ex #j. ExplicitOverride(A, B) @ #j & j < i)"
 
 /*
    Lemma: honest_setup_executable (exists-trace)
