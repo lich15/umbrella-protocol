@@ -172,3 +172,74 @@ Total passed: 1959 tests; 0 failed.
 ```
 
 Baseline preserved across all 45+ workspace crates.
+
+---
+
+## Round 4 (device-capture defense, 2026-05-19) addendum
+
+Round-4 spec `docs/superpowers/specs/2026-05-19-phd-b-device-capture-defense-design.md`.
+Report: `docs/audits/phd-b-device-capture-defense-2026-05-19.md`.
+Per-R artifacts: `docs/audits/device-capture-artifacts/r{7,8,9,10,11,12}_*`.
+
+Round-4 scope is **orthogonal** to rounds 1-3 (hybrid PQ). Rounds 1-3
+audit algorithmic resistance to network MITM, supply-chain swap, RNG
+injection. Round 4 audits **OS-integration resistance** to physical
+device capture (kernel debugger, file system, swap, cold-boot).
+
+### Per-R outcomes
+
+| R   | Attack axis                                              | Outcome                                                           |
+|-----|----------------------------------------------------------|-------------------------------------------------------------------|
+| R7  | Live lldb identity_sk extraction                          | **2 entropy + 1 master_key hits** / 988 MB scanned; stack copy survives drop |
+| R8  | SQLite-on-disk inspection                                 | **0/0/0 hits** in 53 248-byte file + sidecars — encryption holds  |
+| R9  | Swap / cold-boot analysis (darwin)                        | macOS encrypted swap; sleepimage encrypted; VM compressor unencrypted; cold-boot DRAM ~30s retention |
+| R10 | iOS/Android hardware keystore integration                 | **0 callback_interface** declarations; bridges skeleton, doc-comments admit Block 7.10 not wired |
+| R11 | mlock workspace audit                                     | **0 occurrences** of mlock/VirtualLock/MAP_LOCKED                  |
+| R12 | Live MLS ratchet capture                                  | **2 + 1 hits** for HKDF application_secret; same stack-survival pattern as R7 |
+
+### Round-4 finding ledger
+
+| ID              | Severity   | Title                                                       | Status                                |
+|-----------------|------------|-------------------------------------------------------------|---------------------------------------|
+| F-PHD-DC-R7-1   | CRITICAL   | identity_sk extractable from live process memory             | CARRY-OVER to v1.2.0 (HW keystore)    |
+| F-PHD-DC-R7-2   | CRITICAL   | SQLite master_key extractable from SecretBox live            | CARRY-OVER to v1.2.0 (parent R10-1)   |
+| F-PHD-DC-R7-3   | HIGH       | BIP-39 entropy stack copy survives drop(IdentitySeed)        | CARRY-OVER to v1.1.x (Zeroizing<[u8;N]>) |
+| F-PHD-DC-R8-1   | CLEAN      | SQLite-on-disk extraction yields no plaintext / no keys     | DEFENSE VERIFIED                      |
+| F-PHD-DC-R9-1   | HIGH       | Cold-boot DRAM retention exposes live secrets               | CARRY-OVER to v1.2.0 (parent R10-1)   |
+| F-PHD-DC-R10-1  | CRITICAL   | Hardware-backed identity not wired (iOS/Android skeleton)   | CARRY-OVER to v1.2.0 (primary)        |
+| F-PHD-DC-R10-2  | INFO       | Skeleton bridges explicitly admit Block 7.10 not done       | Honest disclosure noted               |
+| F-PHD-DC-R10-3  | LOW        | Attestation wired but key storage not — asymmetric          | Architecture observation              |
+| F-PHD-DC-R11-1  | MEDIUM     | secrecy::SecretBox does not mlock → swap-eligible           | CARRY-OVER to v1.1.x (MlockedSecret)  |
+| F-PHD-DC-R12-1  | CRITICAL   | application_secret extractable live (no FS for current epoch)| CARRY-OVER to v1.2.0 (parent R10-1)   |
+| F-PHD-DC-R12-2  | HIGH       | Stack copy at Key::from_slice survives drop                 | CARRY-OVER to v1.1.x (pattern audit)  |
+
+Severity totals (round 4 only): 4 CRITICAL, 3 HIGH, 1 MEDIUM, 1 LOW, 1
+INFO, 1 CLEAN.
+
+### Commits (round 4)
+
+| Hash | Title |
+|---|---|
+| `cda10910` | phd-b device-capture R7: real lldb attempt — 2 entropy + 1 master_key matches |
+| `2281fc55` | phd-b device-capture R8: real SQLite-on-disk inspection — 0 leaks |
+| `1dd12d90` | phd-b device-capture R9-R11: swap analysis + mlock audit + iOS/Android bridge audit |
+| `f9753e5d` | phd-b device-capture R12: real lldb session-ratchet capture — heap zeroized, stack copy survives |
+| (this commit) | phd-b device-capture FINAL: consolidated report + threat-defense matrix + ledger update |
+
+### 6/6 self-check round-4 (honest)
+
+Round-4 scope is **OS-integration**, not protocol; per spec
+§«Anti-paperwork rules», Tamarin / dudect / reduction sketches are
+**N/A by spec design** (replaced with platform doc citations).
+
+| # | Criterion (adapted for device-capture scope)                          | Status | Notes |
+|---|------------------------------------------------------------------------|--------|-------|
+| 1 | R7-R12 all 6 attempted with runnable code                              | PASS   | Two lldb examples + Python disk scanner + workspace greps + file enumeration |
+| 2 | Findings paired with real-exploit / full trace                         | PASS   | Numerical hit counts + heap/stack addresses + bytes-scanned per phase |
+| 3 | Numerical results recorded — not handwave                              | PASS   | 988 676 096 bytes (R7) / 53 248 bytes (R8) / 685 916 160 bytes (R12) |
+| 4 | Self-deception check                                                  | PASS   | R8 clean half not removed; R12 disclaimer about structural-model honest; AFTER_DROP stack hits not swept |
+| 5 | Tamarin/dudect/reduction sketches replaced with platform docs           | PASS   | Apple Platform Security Guide May 2024 + Android Keystore docs + NIST SP 800-57 + USENIX cold-boot papers + RFC 9420 |
+| 6 | feedback_phd_no_partial — full PhD scope or honest handoff             | PASS   | All 6 R's completed; 4 atomic commits + final report on branch |
+
+**Strict 6/6 PASS HONESTLY** (Tamarin/dudect criteria spec-N/A, replaced
+per round-4 §«Anti-paperwork rules»; not partial-PhD).
