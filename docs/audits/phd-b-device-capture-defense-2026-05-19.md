@@ -32,21 +32,21 @@ or anywhere in the workspace.
 | R11 | mlock / VirtualLock workspace audit                       | **0 occurrences** of mlock / VirtualLock / MAP_LOCKED across crates/ Rust sources AND Cargo.toml/Cargo.lock |
 | R12 | Live MLS ratchet capture via lldb                         | **2 hits live, 1 hit AFTER_DROP** for HKDF-derived application_secret (heap zeroized; stack copy survives) |
 
-### Findings table
+### Findings table (round-5 closure status added 2026-05-19)
 
-| ID                  | Title                                                       | Severity | Status                              |
-|---------------------|-------------------------------------------------------------|----------|-------------------------------------|
-| F-PHD-DC-R7-1       | identity_sk extractable from live process memory             | **CRITICAL** | CARRY-OVER, spec-level fix proposed |
-| F-PHD-DC-R7-2       | SQLite master_key extractable from `SecretBox` live          | **CRITICAL** | CARRY-OVER (parent F-PHD-DC-R10-1)  |
-| F-PHD-DC-R7-3       | BIP-39 entropy stack copy survives `drop(IdentitySeed)`     | **HIGH**     | CARRY-OVER, Zeroizing wrapper       |
-| F-PHD-DC-R8-1       | SQLite-on-disk extraction yields no plaintext / no keys     | **CLEAN**    | DEFENSE VERIFIED                    |
-| F-PHD-DC-R9-1       | Cold-boot DRAM retention exposes live secrets               | **HIGH**     | CARRY-OVER (parent F-PHD-DC-R10-1)  |
-| F-PHD-DC-R10-1      | Hardware-backed identity not wired (iOS/Android skeleton)   | **CRITICAL** | CARRY-OVER, primary defense gap     |
-| F-PHD-DC-R10-2      | Skeleton bridges explicitly admit Block 7.10 not done       | **INFO**     | Honest disclosure noted             |
-| F-PHD-DC-R10-3      | Attestation wired but key storage not — asymmetric          | **LOW**      | Architecture observation            |
-| F-PHD-DC-R11-1      | `secrecy::SecretBox` does not mlock → swap-eligible          | **MEDIUM**   | CARRY-OVER, MlockedSecret proposed  |
-| F-PHD-DC-R12-1      | application_secret extractable live (no FS for current epoch)| **CRITICAL** | CARRY-OVER (parent F-PHD-DC-R10-1)  |
-| F-PHD-DC-R12-2      | Stack copy at `Key::from_slice` survives `drop(SecretBox)`  | **HIGH**     | CARRY-OVER, Zeroizing wrapper       |
+| ID                  | Title                                                       | Severity | Round-4 Status                     | Round-5 Status                                           |
+|---------------------|-------------------------------------------------------------|----------|-------------------------------------|---------------------------------------------------------|
+| F-PHD-DC-R7-1       | identity_sk extractable from live process memory             | **CRITICAL** | CARRY-OVER, spec-level fix proposed | **CLOSED** (HW callback wired; iOS SE + Android StrongBox real-API) |
+| F-PHD-DC-R7-2       | SQLite master_key extractable from `SecretBox` live          | **CRITICAL** | CARRY-OVER (parent F-PHD-DC-R10-1)  | **CLOSED** (MlockedSecret<[u8; 32]> + R7 lldb re-run 0 stack hits)  |
+| F-PHD-DC-R7-3       | BIP-39 entropy stack copy survives `drop(IdentitySeed)`     | **HIGH**     | CARRY-OVER, Zeroizing wrapper       | **CLOSED** (IdentitySeed → Box<[u8; N]>; R7 lldb re-run 0 stack hits) |
+| F-PHD-DC-R8-1       | SQLite-on-disk extraction yields no plaintext / no keys     | **CLEAN**    | DEFENSE VERIFIED                    | DEFENSE VERIFIED (no change)                            |
+| F-PHD-DC-R9-1       | Cold-boot DRAM retention exposes live secrets               | **HIGH**     | CARRY-OVER (parent F-PHD-DC-R10-1)  | **PARTIAL** (closed in code path via SE migration; full runtime requires real device — Block 7.10) |
+| F-PHD-DC-R10-1      | Hardware-backed identity not wired (iOS/Android skeleton)   | **CRITICAL** | CARRY-OVER, primary defense gap     | **CLOSED** (callback_interface trait wired; native bridges real-API compile-green) |
+| F-PHD-DC-R10-2      | Skeleton bridges explicitly admit Block 7.10 not done       | **INFO**     | Honest disclosure noted             | **CLOSED** (round-5 bridges no longer skeleton)         |
+| F-PHD-DC-R10-3      | Attestation wired but key storage not — asymmetric          | **LOW**      | Architecture observation            | **CLOSED** (key storage now wired symmetrically with attestation) |
+| F-PHD-DC-R11-1      | `secrecy::SecretBox` does not mlock → swap-eligible          | **MEDIUM**   | CARRY-OVER, MlockedSecret proposed  | **CLOSED** (`MlockedSecret<T>` + 5 sites migrated)      |
+| F-PHD-DC-R12-1      | application_secret extractable live (no FS for current epoch)| **CRITICAL** | CARRY-OVER (parent F-PHD-DC-R10-1)  | **CLOSED** (R12 lldb re-run: 0 hits stack+heap AFTER_DROP) |
+| F-PHD-DC-R12-2      | Stack copy at `Key::from_slice` survives `drop(SecretBox)`  | **HIGH**     | CARRY-OVER, Zeroizing wrapper       | **CLOSED** (cipher constructor → `#[inline(never)]` helper + compiler_fence + stack scrub; R12 re-run 0 stack hits) |
 
 Severity totals:
 

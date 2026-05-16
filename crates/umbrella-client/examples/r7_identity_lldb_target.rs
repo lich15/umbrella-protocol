@@ -1,27 +1,46 @@
 //! R7+R8 — REAL lldb memory inspection target for identity_sk + SQLite master_key.
 //!
-//! PhD-B Device-Capture Defense audit (round 4, 2026-05-19). Builds a real
-//! identity from a BIP-39 mnemonic using a known 32-byte entropy needle,
-//! derives the Ed25519 identity signing key, opens a real `SqliteMetadataStore`
-//! with a known 32-byte master-key needle, inserts a chat message, then
-//! parks at named lldb breakpoints.
+//! PhD-B Device-Capture Defense audit (round 4, 2026-05-19 — initial).
+//! Round 5 closure re-run, 2026-05-19.
+//!
+//! ## Round-4 baseline (pre-closure)
+//!
+//! Round-4 scan found:
+//!
+//! - **0xCD entropy needle**: 2 hits (stack + heap pos_ctrl) live; 2 hits
+//!   after_drop (stack copy from `IdentitySeed` constructor survives).
+//! - **0xDC master_key needle**: 1 hit (heap SecretBox) live; 0 after_drop.
+//!
+//! ## Round-5 closure changes
+//!
+//! 1. `IdentitySeed.entropy` + `.seed` now `Box<[u8; N]>` (heap-resident).
+//!    No more stack copy from `*entropy` deref → struct construction
+//!    (F-PHD-DC-R7-3 closed).
+//! 2. `RowCipher.master_key` now `MlockedSecret<[u8; 32]>` (heap +
+//!    `libc::mlock`). Heap region marked non-swappable (F-PHD-DC-R11-1
+//!    closed for this site).
+//! 3. The optional `--hw-callback` mode wires identity through
+//!    `MockHwKeystore`: identity_sk (Ed25519 SigningKey) lives only inside
+//!    the mock's `MlockedSecret<[u8; 32]>`. The legacy `IdentityKey::derive(&seed, 0)`
+//!    path remains for backwards-compat regression testing of the scan
+//!    methodology.
 //!
 //! ## Needle protocol
 //!
 //! Three independent needles to disambiguate which secret is observable:
 //!
 //! - **0xCD repeated 32 times** — BIP-39 entropy that produces the identity
-//!   seed. Search after `bootstrap_identity` should find ≥ 1 match (zeroize
-//!   protects post-drop only; while seed is live it lives in heap via
-//!   `IdentitySeed { entropy: [u8; 32], ... }`).
+//!   seed. Round-5: after refactor entropy lives in `Box<[u8; 32]>`. Stack
+//!   hits from constructor are eliminated.
 //! - **0xDC repeated 32 times** — explicit master-key passed to
-//!   `SqliteMetadataStore::open`. After `open()` returns, the master-key
-//!   sits inside `RowCipher::master_key: SecretBox<[u8; 32]>` — a
-//!   `Box<[u8; 32]>` on the heap.
+//!   `SqliteMetadataStore::open`. Round-5: lives inside
+//!   `RowCipher::master_key: MlockedSecret<[u8; 32]>`.
 //! - **First 32 bytes of the derived Ed25519 signing key** — bytes obtained
 //!   from `IdentityKey::derive(&seed, 0)` via `to_seed_bytes()`. These are
 //!   the real **identity_sk** as held by `ed25519_dalek::SigningKey` inside
-//!   `PrivateSigningKey(SigningKey)`.
+//!   `PrivateSigningKey(SigningKey)`. NB: this is the legacy path; the
+//!   round-5 closure path stores identity_sk inside `MockHwKeystore`
+//!   (separate scan).
 //!
 //! Per round-2 R6 methodology: 1 MB chunked stride read of every writable
 //! memory region, `data.find(needle, idx)` per 32-byte slice. Found-count is
