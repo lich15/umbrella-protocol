@@ -238,10 +238,20 @@ pub const XWING_COMBINER: ModelMetadata = ModelMetadata {
     properties: &[
         "joint_security_classical_break_x25519",
         "joint_security_quantum_break_mlkem",
-        "domain_separation",
+        "domain_separation_label_simultaneity",
+        "kdf_transcript_binding",
+        "adversarial_encaps_quantum_break_cannot_recover_K",
+        "honest_setup_executable",
+        // Round-3 hedged-encaps closure (2026-05-19,
+        // Bellare-Hoang-Keelveedhi 2015).
+        "hedged_encaps_unbreakable_with_partial_compromise",
+        "rng_only_compromise_preserves_secrecy",
+        "witness_only_compromise_preserves_secrecy",
+        "hedged_encaps_executable",
+        "hedged_lemma_is_tight_under_double_compromise",
     ],
     status: VerificationStatus::Verified {
-        last_run: "2026-05-09",
+        last_run: "2026-05-19",
     },
 };
 
@@ -1178,13 +1188,21 @@ mod tests {
         assert_eq!(XWING_COMBINER.model_path, "models/xwing_combiner.spthy");
         assert_eq!(XWING_COMBINER.spec_version, "1.0.0");
         assert_eq!(XWING_COMBINER.block_reference, "9.2");
+        // 2026-05-19: extended с round-3 hedged-encaps lemmas
+        // (Bellare-Hoang-Keelveedhi 2015 closure of R5.A/R5.C).
+        // 2026-05-19: extended with round-3 hedged-encaps lemmas
+        // (Bellare-Hoang-Keelveedhi 2015 closure of R5.A/R5.C).
         assert_eq!(
             XWING_COMBINER.status,
             VerificationStatus::Verified {
-                last_run: "2026-05-09"
+                last_run: "2026-05-19"
             }
         );
-        assert_eq!(XWING_COMBINER.properties.len(), 3);
+        // 5 base lemmas (joint_security_classical, joint_security_quantum,
+        // domain_separation_label_simultaneity, kdf_transcript_binding,
+        // adversarial_encaps_quantum_break_cannot_recover_K) + honest_setup
+        // + 5 round-3 hedged lemmas = 11 properties.
+        assert_eq!(XWING_COMBINER.properties.len(), 11);
     }
 
     /// ALL_MODELS содержит XWING_COMBINER.

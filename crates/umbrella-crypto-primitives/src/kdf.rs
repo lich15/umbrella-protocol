@@ -7,6 +7,8 @@
 //! RFC 5869. Used everywhere we derive keys from a shared secret or master key.
 //! Every call requires an explicit `info` label like `"umbrellax-<purpose>-v1"`.
 
+#![forbid(unsafe_code)]
+
 use hkdf::Hkdf;
 use sha2::{Sha256, Sha512};
 

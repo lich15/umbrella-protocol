@@ -1,6 +1,16 @@
-#![cfg(feature = "ml-kem")]
+#![cfg(all(feature = "ml-kem", feature = "__internal-kat-hooks"))]
 
 //! X-Wing draft-connolly-cfrg-xwing-kem-10 Appendix C known-answer test.
+//!
+//! **`__internal-kat-hooks` feature gate (round-3 hedged-encaps closure
+//! 2026-05-19):** этот test использует `xwing_encaps_derand` с known
+//! eseed чтобы воспроизвести Appendix C vector. После round-3
+//! `xwing_encaps_derand` имеет видимость `pub(crate)` под обычной
+//! сборкой; интеграционный test требует pub доступа, получает его
+//! только через internal feature, который downstream production крейты
+//! не активируют. См. spec
+//! `docs/superpowers/specs/2026-05-19-phd-b-hybrid-pq-hedged-encaps-design.md`
+//! §Component 2.
 //!
 //! Source:
 //! https://raw.githubusercontent.com/dconnolly/draft-connolly-cfrg-xwing-kem/main/spec/test-vectors.json

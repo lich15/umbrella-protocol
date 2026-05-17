@@ -1,6 +1,8 @@
 //! X25519 Diffie-Hellman; RFC 7748. Shared secret обёрнут SecretBytes для zeroize.
 //! X25519 Diffie-Hellman; RFC 7748. Shared secret wrapped in SecretBytes for zeroize.
 
+#![forbid(unsafe_code)]
+
 use rand_core::{CryptoRng, RngCore};
 use x25519_dalek::{PublicKey, ReusableSecret, StaticSecret};
 use zeroize::ZeroizeOnDrop;

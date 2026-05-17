@@ -85,7 +85,11 @@ fn base_key_from_group(group: &UmbrellaGroup, provider: &UmbrellaProvider) -> Sf
         .exporter_secret(provider, MLS_EXPORTER_LABEL, &epoch_ctx, BASE_KEY_LEN)
         .expect("exporter_secret");
     let mut bytes = [0u8; BASE_KEY_LEN];
-    bytes.copy_from_slice(&secret.expose_secret()[..BASE_KEY_LEN]);
+    // Round-5 device-capture closure F-PHD-DC-R11-1: `secret` теперь
+    // `MlockedSecret<[u8; MAX_EXPORTER_LEN]>` → `.expose()` вместо `.expose_secret()`.
+    // Round-5 device-capture closure F-PHD-DC-R11-1: `secret` is now
+    // `MlockedSecret<[u8; MAX_EXPORTER_LEN]>` → `.expose()` instead of `.expose_secret()`.
+    bytes.copy_from_slice(&secret.expose()[..BASE_KEY_LEN]);
     SframeBaseKey::from_mls_exporter(bytes, SframeCiphersuite::Aes256GcmSha512, epoch)
 }
 

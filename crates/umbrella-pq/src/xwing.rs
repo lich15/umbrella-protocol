@@ -24,6 +24,7 @@
 
 use rand_core::{CryptoRng, RngCore};
 use secrecy::{ExposeSecret, SecretBox};
+use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
 use crate::constants::{
@@ -31,6 +32,9 @@ use crate::constants::{
     XWING_SECRET_SEED_LEN, XWING_SHARED_SECRET_LEN,
 };
 use crate::error::{PqError, Result};
+use crate::hedged::{
+    derive_hedged_encaps_seed, HedgedWitness, HEDGED_RNG_INPUT_LEN,
+};
 
 /// X-Wing публичный ключ (1216 байт = ML-KEM-768 pk 1184 || X25519 pk 32).
 /// X-Wing public key (1216 bytes = ML-KEM-768 pk 1184 || X25519 pk 32).
@@ -168,7 +172,7 @@ pub fn xwing_encaps<R: RngCore + CryptoRng>(
 )> {
     let mut seed = [0u8; XWING_ENCAPS_SEED_LEN];
     rng.fill_bytes(&mut seed);
-    let result = xwing_encaps_derand(pk, &seed);
+    let result = xwing_encaps_derand_internal(pk, &seed);
     // Очищаем временный buffer encaps seed (32 bytes ML-KEM + 32 bytes X25519 ephemeral)
     // через zeroize::Zeroize ДО возврата — независимо от success/error backend'а.
     // Wipe the temporary encaps seed buffer (32-byte ML-KEM + 32-byte X25519 ephemeral)
@@ -177,20 +181,156 @@ pub fn xwing_encaps<R: RngCore + CryptoRng>(
     result
 }
 
+/// X-Wing Encapsulation **hedged variant** (Bellare-Hoang-Keelveedhi 2015).
+///
+/// Defense-in-depth против compromised CSPRNG: seed для ML-KEM/X25519
+/// деривируется через HKDF-SHA512 над `rng.fill_bytes(64) || hedged_witness ||
+/// transcript || recipient_pk_hash`. Если adversary контролирует `rng`
+/// но не witness — ss остаётся uniform (HKDF-as-RO assumption); если
+/// контролирует witness но не rng — ss остаётся uniform. Single compromise
+/// → no break. Double compromise → fundamental unavoidable break (см.
+/// `attack_r5_double_compromise_unavoidable_break` test).
+///
+/// `transcript` — canonical AAD bytes для этой operation: сейчас вызывающий
+/// слой (cloud-wrap, sealed-sender) подаёт `CanonicalAad` либо аналог.
+/// Минимальный требования: byte-distinct для разных sessions/recipients,
+/// чтобы multi-session replay блокировался HKDF info domain separation.
+///
+/// **Wire format**: byte-identical с обычным [`xwing_encaps`]
+/// (`xwing_encaps_derand` внутри). Receivers не нуждаются в обновлении.
+///
+/// X-Wing Encapsulation **hedged variant** (Bellare-Hoang-Keelveedhi 2015).
+///
+/// Defense-in-depth against a compromised CSPRNG: the seed for
+/// ML-KEM/X25519 is derived via HKDF-SHA512 over `rng.fill_bytes(64) ||
+/// hedged_witness || transcript || recipient_pk_hash`. If the adversary
+/// controls `rng` but not the witness — ss remains uniform (HKDF-as-RO
+/// assumption); if they control the witness but not the rng — ss remains
+/// uniform. Single compromise → no break. Double compromise → fundamental
+/// unavoidable break (see `attack_r5_double_compromise_unavoidable_break`).
+///
+/// `transcript` — canonical AAD bytes for this operation: current callers
+/// (cloud-wrap, sealed-sender) pass `CanonicalAad` or equivalent. The
+/// minimum requirement is byte-distinctness across sessions/recipients,
+/// so multi-session replay is blocked via HKDF info domain separation.
+///
+/// **Wire format**: byte-identical with plain [`xwing_encaps`] (uses
+/// `xwing_encaps_derand` internally). Receivers do not need any update.
+pub fn xwing_encaps_hedged<R: RngCore + CryptoRng>(
+    rng: &mut R,
+    pk: &XWingPublicKey,
+    hedged_witness: &HedgedWitness,
+    transcript: &[u8],
+) -> Result<(
+    [u8; XWING_CIPHERTEXT_LEN],
+    SecretBox<[u8; XWING_SHARED_SECRET_LEN]>,
+)> {
+    // 1. Draw 64-byte rng_input (даже компрометированный CSPRNG обязан
+    // вернуть 64 bytes; если они attacker-known, HKDF над witness прячет
+    // их).
+    // 1. Draw 64-byte rng_input (even a compromised CSPRNG must return
+    // 64 bytes; if attacker-known, HKDF over the witness masks them).
+    let mut rng_input = [0u8; HEDGED_RNG_INPUT_LEN];
+    rng.fill_bytes(&mut rng_input);
+
+    // 2. Hash recipient_pk → 32 bytes (compact domain-separation против
+    // 1216-byte raw pk в HKDF info).
+    // 2. Hash recipient_pk → 32 bytes (compact domain separation versus
+    // the 1216-byte raw pk in the HKDF info).
+    let mut hasher = Sha256::new();
+    hasher.update(pk.as_bytes());
+    let pk_hash: [u8; 32] = hasher.finalize().into();
+
+    // 3. Hedged seed derivation — HKDF-SHA512 над (rng_input || witness)
+    // с info=(transcript || pk_hash).
+    // 3. Hedged seed derivation — HKDF-SHA512 over (rng_input || witness)
+    // with info=(transcript || pk_hash).
+    let mut seed =
+        derive_hedged_encaps_seed(&rng_input, hedged_witness, transcript, &pk_hash)?;
+
+    // 4. Очищаем rng_input — он скопирован в HKDF ikm, оригинал не нужен.
+    // 4. Wipe rng_input — it was copied into the HKDF ikm, the original is
+    // no longer needed.
+    rng_input.zeroize();
+
+    // 5. Standard derand encaps под получившийся seed.
+    // 5. Standard derand encaps using the resulting seed.
+    let result = xwing_encaps_derand_internal(pk, &seed);
+
+    // 6. Zeroize hedged seed после использования (содержит производный
+    // material из witness; ослабленный witness recovery возможен только
+    // через HKDF-SHA512 prf inverse что 2^256 hard).
+    // 6. Zeroize the hedged seed after use (contains material derived
+    // from the witness; weakened witness recovery requires HKDF-SHA512
+    // PRF inversion, which is 2^256 hard).
+    seed.zeroize();
+
+    result
+}
+
 /// Детерминированный X-Wing encapsulation с 64-байтовым `eseed` из интерфейса
 /// draft-connolly-cfrg-xwing-kem-10 `EncapsulateDerand(pk, eseed)`.
 ///
-/// Это hook для KAT-тестов и воспроизводимости. Боевой код должен предпочитать
-/// [`xwing_encaps`], который заполняет `eseed` из CSPRNG и очищает временный
-/// seed перед возвратом.
+/// **Видимость (round-3 hedged-encaps closure 2026-05-19):** `pub(crate)`
+/// под обычной сборкой; `pub` только под internal test-only feature
+/// `__internal-kat-hooks` (используется integration tests
+/// `tests/xwing_draft10_kat.rs` и `tests/r5_rng_injection_real_exploit.rs`).
+/// Это физическое закрытие R5.B: downstream production крейты не могут
+/// активировать `__internal-kat-hooks`, потому что workspace это не
+/// делает (compile-fail из downstream при попытке вызова). Round 2 R5
+/// reality-pass показал что `pub` API + adversary-known seed →
+/// предсказуемый ss; round 3 закрыл это через `xwing_encaps_hedged` +
+/// pub(crate) на сам derand path.
+///
+/// Это hook для KAT-тестов, KAT-вектора Appendix C draft-10, и
+/// adversarial-documentation tests. Боевой код должен использовать
+/// [`xwing_encaps_hedged`] (защита от compromised CSPRNG через
+/// hedged-encryption pattern Bellare-Hoang-Keelveedhi 2015) либо
+/// [`xwing_encaps`] (legacy non-hedged path для тестов и MLS HPKE
+/// integration где hedged-API не подходит).
 ///
 /// Deterministic X-Wing encapsulation using the 64-byte `eseed` from the
 /// draft-connolly-cfrg-xwing-kem-10 `EncapsulateDerand(pk, eseed)` interface.
 ///
-/// This is primarily a KAT/reproducibility hook. Production callers should
-/// prefer [`xwing_encaps`], which fills `eseed` from a CSPRNG and zeroizes the
-/// temporary seed before returning.
+/// **Visibility (round-3 hedged-encaps closure 2026-05-19):** `pub(crate)`
+/// under the normal build; `pub` only under the internal test-only feature
+/// `__internal-kat-hooks` (used by the integration tests
+/// `tests/xwing_draft10_kat.rs` and `tests/r5_rng_injection_real_exploit.rs`).
+/// This is the physical closure of R5.B: downstream production crates
+/// cannot activate `__internal-kat-hooks` because the workspace does not
+/// do so (compile-fail from downstream when attempting to call). Round 2
+/// R5 reality-pass demonstrated that the `pub` API + adversary-known seed
+/// → predictable ss; round 3 closed that via `xwing_encaps_hedged` plus
+/// pub(crate) on the derand path.
+///
+/// Production callers should use [`xwing_encaps_hedged`] (defense against
+/// compromised CSPRNG via the Bellare-Hoang-Keelveedhi 2015 hedged-encryption
+/// pattern) or [`xwing_encaps`] (legacy non-hedged path retained for tests
+/// and the MLS HPKE integration where the hedged API is not a fit).
+#[cfg(feature = "__internal-kat-hooks")]
 pub fn xwing_encaps_derand(
+    pk: &XWingPublicKey,
+    eseed: &[u8; XWING_ENCAPS_SEED_LEN],
+) -> Result<(
+    [u8; XWING_CIPHERTEXT_LEN],
+    SecretBox<[u8; XWING_SHARED_SECRET_LEN]>,
+)> {
+    xwing_encaps_derand_internal(pk, eseed)
+}
+
+/// Implementation detail of `xwing_encaps_derand` — same logic, single source
+/// of truth regardless of the `__internal-kat-hooks` feature.
+///
+/// Used by `xwing_encaps` and `xwing_encaps_hedged` directly; under
+/// `__internal-kat-hooks` it is additionally exposed via the wrapper
+/// above as `pub xwing_encaps_derand`.
+///
+/// Implementation detail of `xwing_encaps_derand` — same logic, single
+/// source of truth regardless of the `__internal-kat-hooks` feature. Used
+/// by `xwing_encaps` and `xwing_encaps_hedged` directly; under
+/// `__internal-kat-hooks` it is additionally exposed via the wrapper
+/// above as `pub xwing_encaps_derand`.
+pub(crate) fn xwing_encaps_derand_internal(
     pk: &XWingPublicKey,
     eseed: &[u8; XWING_ENCAPS_SEED_LEN],
 ) -> Result<(
@@ -277,14 +417,35 @@ pub fn xwing_decaps_raw(
 
 /// X-Wing Decapsulation.
 ///
-/// Восстанавливает shared secret из ciphertext через secret seed. При
-/// corrupted ciphertext возвращает `XWingDecapsulationFailed` (X-Wing
-/// combiner отвергает invalid X25519 части явно — не implicit rejection
-/// как в pure ML-KEM).
+/// Восстанавливает shared secret из ciphertext через secret seed.
 ///
-/// Recovers shared secret from ciphertext using secret seed. On corrupted
-/// ciphertext returns `XWingDecapsulationFailed` (X-Wing combiner explicitly
-/// rejects invalid X25519 parts — not implicit rejection like in pure ML-KEM).
+/// **Rejection semantics (F-PHD-PQ-7, 2026-05-19 audit closure):** X-Wing
+/// inherits ML-KEM-768's **implicit rejection** at the combiner level per
+/// draft-connolly-cfrg-xwing-kem-10 §5.4. На tamper в ML-KEM половине ct
+/// decapsulate чаще всего возвращает `Ok(ss')` где `ss'` — pseudo-random
+/// shared secret, отличный от sender's (FIPS 203 §7.3 design). X25519
+/// half проверяется unconditionally — invalid X25519 ephemeral public
+/// возвращает all-zero shared secret вместо отдельного Err. Wrapper
+/// возвращает `XWingDecapsulationFailed` только когда libcrux backend
+/// reports decode/structural error (ct_len mismatch и т.п.), что редко
+/// в production wire — caller обязан опираться на AEAD tag binding (V2
+/// envelope + AEAD AAD coverage) для detection mismatch, **не** на
+/// XWingDecapsulationFailed error path.
+///
+/// Recovers shared secret from ciphertext using secret seed.
+///
+/// **Rejection semantics (F-PHD-PQ-7, 2026-05-19 audit closure):**
+/// X-Wing inherits ML-KEM-768 **implicit rejection** at the combiner per
+/// draft-connolly-cfrg-xwing-kem-10 §5.4. For ML-KEM-half tampering, the
+/// decapsulate path most often returns `Ok(ss')` where `ss'` is a
+/// pseudo-random shared secret distinct from the sender's (FIPS 203 §7.3
+/// design). The X25519 half is checked unconditionally — an invalid X25519
+/// ephemeral public produces an all-zero shared secret rather than a
+/// separate `Err`. The wrapper returns `XWingDecapsulationFailed` only when
+/// libcrux reports a structural / decode error (length mismatch and so on),
+/// which is rare on production wire — callers must rely on AEAD tag binding
+/// (V2 envelope + AAD coverage) to detect a mismatch, **not** on the
+/// `XWingDecapsulationFailed` error path.
 pub fn xwing_decaps(
     seed: &XWingSecretSeed,
     ct: &[u8; XWING_CIPHERTEXT_LEN],

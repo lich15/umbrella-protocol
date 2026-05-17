@@ -110,6 +110,23 @@ pub enum ClientError {
     /// Invariant violation — should never happen in correct code; a crate bug.
     #[error("internal: {0}")]
     Internal(String),
+
+    /// Round-6 distributed identity: low-level cryptographic failure
+    /// (Argon2id parameters invalid, HKDF expand failure, etc.). Used by
+    /// `keystore::distributed_identity_client`.
+    #[error("crypto: {0}")]
+    Crypto(String),
+
+    /// Round-6: PIN verification rejected by ≥3 servers. UX must escalate
+    /// to 24-word recovery prompt per spec §«Universal entry rule».
+    #[error("wrong PIN")]
+    WrongPin,
+
+    /// Round-6: account permanently deleted (UNRECOVERABLE_DELETE; duress
+    /// PIN, dead-man fire, 5 wrong emergency-12). Subsequent operations
+    /// fail with this — same UX as never-registered.
+    #[error("account permanently deleted")]
+    AccountDeleted,
 }
 
 /// Результат операций клиента.

@@ -1,6 +1,8 @@
 //! Обёртка для секретного байтового материала: zeroize при Drop, constant-time сравнение.
 //! Wrapper for secret byte material: zeroize on Drop, constant-time comparison.
 
+#![forbid(unsafe_code)]
+
 use core::fmt;
 
 use subtle::{Choice, ConstantTimeEq};

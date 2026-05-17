@@ -54,7 +54,7 @@ use openmls::prelude::tls_codec::Deserialize as TlsDeserialize;
 use openmls::prelude::tls_codec::Serialize as TlsSerialize;
 use openmls::prelude::{LeafNodeIndex, LeafNodeParameters, ProcessMessageError};
 use openmls_traits::{crypto::OpenMlsCrypto, OpenMlsProvider};
-use secrecy::SecretBox;
+use umbrella_crypto_primitives::MlockedSecret;
 use zeroize::Zeroize;
 
 use umbrella_identity::KeyStore;
@@ -659,15 +659,20 @@ impl UmbrellaGroup {
     /// context = `epoch_number_u64_be`; also available to any extension that
     /// needs a group-scoped secret with label-based domain separation.
     ///
-    /// Вывод оборачивается в [`SecretBox<[u8; MAX_EXPORTER_LEN]>`]: остаток
-    /// буфера (при `len < MAX_EXPORTER_LEN`) заполнен нулями и будет
-    /// zeroize'нут на drop. Caller должен использовать ровно первые `len`
-    /// байт через `.expose_secret()[..len]`.
+    /// Вывод оборачивается в [`MlockedSecret<[u8; MAX_EXPORTER_LEN]>`]:
+    /// остаток буфера (при `len < MAX_EXPORTER_LEN`) заполнен нулями и
+    /// будет zeroize'нут на drop. Round-5 device-capture closure
+    /// F-PHD-DC-R11-1: MlockedSecret заменил `secrecy::SecretBox` чтобы
+    /// добавить `libc::mlock` поверх baseline zeroize-on-drop. Caller
+    /// должен использовать ровно первые `len` байт через `.expose()[..len]`.
     ///
-    /// The output is wrapped in [`SecretBox<[u8; MAX_EXPORTER_LEN]>`]: the
-    /// tail of the buffer (for `len < MAX_EXPORTER_LEN`) is zero-filled and
-    /// will be zeroized on drop. The caller must use exactly the first `len`
-    /// bytes via `.expose_secret()[..len]`.
+    /// The output is wrapped in [`MlockedSecret<[u8; MAX_EXPORTER_LEN]>`]:
+    /// the tail of the buffer (for `len < MAX_EXPORTER_LEN`) is zero-
+    /// filled and will be zeroized on drop. Round-5 device-capture
+    /// closure F-PHD-DC-R11-1: MlockedSecret replaced `secrecy::SecretBox`
+    /// to add `libc::mlock` on top of baseline zeroize-on-drop. The
+    /// caller must use exactly the first `len` bytes via
+    /// `.expose()[..len]`.
     ///
     /// # Ошибки / Errors
     ///
@@ -684,7 +689,7 @@ impl UmbrellaGroup {
         label: &str,
         context: &[u8],
         len: usize,
-    ) -> Result<SecretBox<[u8; MAX_EXPORTER_LEN]>> {
+    ) -> Result<MlockedSecret<[u8; MAX_EXPORTER_LEN]>> {
         if !(1..=MAX_EXPORTER_LEN).contains(&len) {
             return Err(MlsError::GroupOperation {
                 kind: "exporter_secret length out of range (1..=64)",
@@ -701,7 +706,9 @@ impl UmbrellaGroup {
         let mut buf = [0u8; MAX_EXPORTER_LEN];
         buf[..len].copy_from_slice(&raw);
         raw.zeroize();
-        Ok(SecretBox::new(Box::new(buf)))
+        let wrapped = MlockedSecret::new(buf);
+        buf.zeroize();
+        Ok(wrapped)
     }
 }
 
@@ -1648,7 +1655,6 @@ mod tests {
 
     #[test]
     fn exporter_secret_deterministic_same_group_state() {
-        use secrecy::ExposeSecret;
         let (alice, _bob, alice_g, _bob_g) = make_dyadic_group();
         let ex1 = alice_g
             .exporter_secret(&alice.provider, SFRAME_BASE_KEY_LABEL, &[0u8; 8], 64)
@@ -1656,13 +1662,14 @@ mod tests {
         let ex2 = alice_g
             .exporter_secret(&alice.provider, SFRAME_BASE_KEY_LABEL, &[0u8; 8], 64)
             .expect("exporter call 2");
-        assert_eq!(ex1.expose_secret(), ex2.expose_secret());
-        assert_eq!(ex1.expose_secret().len(), 64);
+        // Round-5 device-capture closure F-PHD-DC-R11-1: MlockedSecret<T>.expose().
+        // Round-5 device-capture closure F-PHD-DC-R11-1: MlockedSecret<T>.expose().
+        assert_eq!(ex1.expose(), ex2.expose());
+        assert_eq!(ex1.expose().len(), 64);
     }
 
     #[test]
     fn exporter_secret_different_context_different_bytes() {
-        use secrecy::ExposeSecret;
         let (alice, _bob, alice_g, _bob_g) = make_dyadic_group();
         let ex_ep0 = alice_g
             .exporter_secret(&alice.provider, SFRAME_BASE_KEY_LABEL, &[0u8; 8], 64)
@@ -1672,12 +1679,11 @@ mod tests {
         let ex_ep1 = alice_g
             .exporter_secret(&alice.provider, SFRAME_BASE_KEY_LABEL, &ep1_bytes, 64)
             .unwrap();
-        assert_ne!(ex_ep0.expose_secret(), ex_ep1.expose_secret());
+        assert_ne!(ex_ep0.expose(), ex_ep1.expose());
     }
 
     #[test]
     fn exporter_secret_both_peers_agree() {
-        use secrecy::ExposeSecret;
         let (alice, bob, alice_g, bob_g) = make_dyadic_group();
         let ex_a = alice_g
             .exporter_secret(&alice.provider, SFRAME_BASE_KEY_LABEL, &[0u8; 8], 64)
@@ -1685,12 +1691,11 @@ mod tests {
         let ex_b = bob_g
             .exporter_secret(&bob.provider, SFRAME_BASE_KEY_LABEL, &[0u8; 8], 64)
             .unwrap();
-        assert_eq!(ex_a.expose_secret(), ex_b.expose_secret());
+        assert_eq!(ex_a.expose(), ex_b.expose());
     }
 
     #[test]
     fn exporter_secret_different_label_different_bytes() {
-        use secrecy::ExposeSecret;
         let (alice, _bob, alice_g, _bob_g) = make_dyadic_group();
         let ex_a = alice_g
             .exporter_secret(&alice.provider, SFRAME_BASE_KEY_LABEL, &[0u8; 8], 64)
@@ -1699,8 +1704,8 @@ mod tests {
             .exporter_secret(&alice.provider, "some-other-label-v1", &[0u8; 8], 64)
             .unwrap();
         assert_ne!(
-            ex_a.expose_secret(),
-            ex_b.expose_secret(),
+            ex_a.expose(),
+            ex_b.expose(),
             "domain separation: разные labels должны давать разные secrets"
         );
     }
@@ -1721,12 +1726,11 @@ mod tests {
 
     #[test]
     fn exporter_secret_len_32_zero_tail() {
-        use secrecy::ExposeSecret;
         let (alice, _bob, alice_g, _bob_g) = make_dyadic_group();
         let ex = alice_g
             .exporter_secret(&alice.provider, SFRAME_BASE_KEY_LABEL, &[0u8; 8], 32)
             .unwrap();
-        let bytes = ex.expose_secret();
+        let bytes = ex.expose();
         assert_eq!(bytes.len(), MAX_EXPORTER_LEN);
         for (i, &b) in bytes[32..].iter().enumerate() {
             assert_eq!(b, 0u8, "tail byte {i} must be zero after len=32 export");

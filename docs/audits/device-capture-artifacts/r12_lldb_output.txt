@@ -1,0 +1,33 @@
+(lldb) command source -s 0 '/tmp/r12_lldb_commands.txt'
+Executing commands in '/tmp/r12_lldb_commands.txt'.
+(lldb) target create target/r6-release/examples/r12_ratchet_lldb_target
+Current executable set to '/Users/daniel/Documents/Projects/Messenger/Umbrella Protocol/target/r6-release/examples/r12_ratchet_lldb_target' (arm64).
+(lldb) command script import /tmp/r12_lldb_script.py
+(lldb) breakpoint set -n r12_phase_session_live
+Breakpoint 1: where = r12_ratchet_lldb_target`r12_ratchet_lldb_target::r12_phase_session_live::hf5a8fb0fe7471313 + 12 at r12_ratchet_lldb_target.rs:49:5, address = 0x00000001000008ac
+(lldb) breakpoint command add 1
+(lldb) breakpoint set -n r12_phase_after_drop
+Breakpoint 2: where = r12_ratchet_lldb_target`r12_ratchet_lldb_target::r12_phase_after_drop::hb4061849d4951d46 + 12 at r12_ratchet_lldb_target.rs:55:5, address = 0x000000010000087c
+(lldb) breakpoint command add 2
+(lldb) run
+[R12] Process pid 97061 starting
+[R12] application_secret needle written to /var/folders/m6/7wwhjqbn6bj367wwqj9bc28m0000gn/T/r12_needle.bin
+[R12] needle prefix: 5233fc1d9e582bc2
+[R12] encrypted (ct prefix): d661df8f
+[R12 lldb] MATCH SESSION_LIVE base=0x600003e64000 abs=0x600003e64000 name=
+[R12 lldb]   prev16=  match=5233fc1d9e582bc2f156c56eb40ef303ca2f8700da68063b1f5aa653be72f4e4
+[R12 lldb] SUMMARY SESSION_LIVE: regions=83 chunks=678 bytes=697450496 app_secret_hits=1
+(lldb)  r12_scan_live
+(lldb)  continue
+Process 97061 resuming
+Command #2 'continue' continued the target.
+[R12] PHASE SESSION LIVE (application_secret in MlockedSecret)
+[R12 lldb] SUMMARY AFTER_DROP: regions=81 chunks=676 bytes=697450496 app_secret_hits=0
+(lldb)  r12_scan_drop
+(lldb)  continue
+Process 97061 resuming
+Command #2 'continue' continued the target.
+[R12] PHASE AFTER session drop
+[R12] done
+Process 97061 launched: '/Users/daniel/Documents/Projects/Messenger/Umbrella Protocol/target/r6-release/examples/r12_ratchet_lldb_target' (arm64)
+Process 97061 exited with status = 0 (0x00000000)

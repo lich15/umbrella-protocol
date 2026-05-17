@@ -1,6 +1,8 @@
 //! Ed25519 подписи: только Ed25519, никакого ECDSA (митигация ETK eprint 2025/229).
 //! Ed25519 signatures: Ed25519 only, no ECDSA (ETK eprint 2025/229 mitigation).
 
+#![forbid(unsafe_code)]
+
 use ed25519_dalek::{Signature as DalekSig, Signer, SigningKey, Verifier, VerifyingKey};
 use rand_core::{CryptoRng, RngCore};
 use zeroize::{Zeroize, ZeroizeOnDrop};

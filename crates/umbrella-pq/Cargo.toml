@@ -21,6 +21,20 @@ slh-dsa = ["dep:fips205"]
 # Зонтичный — все три, типичный production scenario.
 # Umbrella — all three, typical production scenario.
 full = ["ml-kem", "ml-dsa", "slh-dsa"]
+# Внутренний test-only hook: открывает `xwing_encaps_derand` как `pub`
+# исключительно для integration tests `tests/xwing_draft10_kat.rs` +
+# `tests/r5_rng_injection_real_exploit.rs` (KAT vectors + adversarial
+# documentation). НИКОГДА не включается в production builds; downstream
+# крейты НЕ имеют права activate'ить этот feature. Закрытие физическое
+# (compile-fail из downstream) — см. spec round-3 §Component 2.
+#
+# Internal test-only hook: exposes `xwing_encaps_derand` as `pub` solely
+# for the integration tests `tests/xwing_draft10_kat.rs` and
+# `tests/r5_rng_injection_real_exploit.rs` (KAT vectors + adversarial
+# documentation). NEVER enabled in production builds; downstream crates
+# MUST NOT activate this feature. Physical closure (compile-fail from
+# downstream) — see round-3 spec §Component 2.
+__internal-kat-hooks = []
 
 [dependencies]
 zeroize = { workspace = true }
@@ -28,9 +42,33 @@ secrecy = { workspace = true }
 rand_core = { workspace = true }
 thiserror = { workspace = true }
 
+# umbrella-crypto-primitives нужен для `MlockedSecret<T>` (round-5
+# device-capture closure F-PHD-DC-R11-1) в `hedged::HedgedWitness` —
+# раньше хранил `SecretBox<[u8; 32]>` без mlock'а; round-5 закрытие
+# мигрирует на `MlockedSecret<[u8; 32]>` для swap-resistance.
+# umbrella-crypto-primitives provides `MlockedSecret<T>` (round-5
+# device-capture closure F-PHD-DC-R11-1) for `hedged::HedgedWitness` —
+# previously stored a `SecretBox<[u8; 32]>` without mlock; the round-5
+# closure migrates to `MlockedSecret<[u8; 32]>` for swap-resistance.
+umbrella-crypto-primitives = { workspace = true }
+
 # Ed25519 нужен для hybrid signature (Ed25519 + ML-DSA-65 AND-mode).
 # Ed25519 is needed for hybrid signature (Ed25519 + ML-DSA-65 AND-mode).
 ed25519-dalek = { workspace = true }
+
+# HKDF / SHA-2 нужны для hedged-encaps seed derivation
+# (см. `hedged.rs`, Bellare-Hoang-Keelveedhi 2015) — production-side defense
+# против compromised CSPRNG. Не optional: hedged path в lib API всегда
+# доступен независимо от features (witness-derivation pure-Rust, без PQ
+# backend).
+#
+# HKDF / SHA-2 are required for hedged-encaps seed derivation (see
+# `hedged.rs`, Bellare-Hoang-Keelveedhi 2015) — production-side defense
+# against a compromised CSPRNG. Not optional: the hedged path is always
+# available in the lib API regardless of features (witness derivation is
+# pure-Rust, no PQ backend involved).
+hkdf  = { workspace = true }
+sha2  = { workspace = true }
 
 # PQ backends — optional через feature gates. Pinned exact через "=X.Y.Z" в workspace.dependencies.
 # PQ backends — optional via feature gates. Pinned exact via "=X.Y.Z" in workspace.dependencies.

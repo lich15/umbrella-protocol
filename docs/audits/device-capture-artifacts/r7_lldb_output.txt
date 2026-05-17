@@ -1,0 +1,62 @@
+(lldb) command source -s 0 '/tmp/r7_lldb_commands.txt'
+Executing commands in '/tmp/r7_lldb_commands.txt'.
+(lldb) target create target/r6-release/examples/r7_identity_lldb_target
+Current executable set to '/Users/daniel/Documents/Projects/Messenger/Umbrella Protocol/target/r6-release/examples/r7_identity_lldb_target' (arm64).
+(lldb) command script import /tmp/r7_lldb_script.py
+(lldb) breakpoint set -n r7_break_after_needle_alive
+Breakpoint 1: where = r7_identity_lldb_target`r7_identity_lldb_target::r7_break_after_needle_alive::hefac2e5df8d79c03 + 8 [inlined] core::hint::black_box::h2b8e1def77737dfa at hint.rs:491:5, address = 0x0000000100000ff4
+(lldb) breakpoint command add 1
+(lldb) breakpoint set -n r7_phase_before_bootstrap
+Breakpoint 2: where = r7_identity_lldb_target`r7_identity_lldb_target::r7_phase_before_bootstrap::hca68486971e0cd2c + 12 at r7_identity_lldb_target.rs:68:5, address = 0x0000000100000fc8
+(lldb) breakpoint command add 2
+(lldb) breakpoint set -n r7_phase_live_identity
+Breakpoint 3: where = r7_identity_lldb_target`r7_identity_lldb_target::r7_phase_live_identity::h5dffde8b1f820e54 + 12 at r7_identity_lldb_target.rs:77:5, address = 0x0000000100000f98
+(lldb) breakpoint command add 3
+(lldb) breakpoint set -n r7_phase_after_drop
+Breakpoint 4: where = r7_identity_lldb_target`r7_identity_lldb_target::r7_phase_after_drop::h50fbd10e09738391 + 12 at r7_identity_lldb_target.rs:85:5, address = 0x0000000100000f68
+(lldb) breakpoint command add 4
+(lldb) run
+[R7] Process pid 96742 starting
+[R7] POSITIVE CONTROL: holding 32 bytes 0xCD at 0x6000035e9840
+[R7 lldb] MATCH POSITIVE_CONTROL/ENTROPY base=0x600000000000 abs=0x6000035e9840 name=
+[R7 lldb]   prev16=0000000000000000d0928e0602000000  match+next=cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd00000000000000000000000000000000
+[R7 lldb] SUMMARY POSITIVE_CONTROL: regions=81 chunks=673 bytes=694321152 entropy_hits=1 master_key_hits=0
+(lldb)  r7_scan_pos
+(lldb)  continue
+Process 96742 resuming
+Command #2 'continue' continued the target.
+[R7 lldb] MATCH BEFORE_BOOTSTRAP/ENTROPY base=0x600000000000 abs=0x6000035e9840 name=
+[R7 lldb]   prev16=0000000000000000d0928e0602000000  match+next=cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd00000000000000000000000000000000
+[R7 lldb] SUMMARY BEFORE_BOOTSTRAP: regions=81 chunks=673 bytes=694321152 entropy_hits=1 master_key_hits=0
+(lldb)  r7_scan_before
+(lldb)  continue
+Process 96742 resuming
+Command #2 'continue' continued the target.
+[R7] PHASE BEFORE bootstrap
+[R7] BIP-39 mnemonic from 0xCD-entropy: first 3 words = soccer hover inflict
+[R7] identity_pubkey first 4 bytes = 62ecd4b9
+[R7] sqlite store opened + 1 message stored at /var/folders/m6/7wwhjqbn6bj367wwqj9bc28m0000gn/T/r7_identity_capture.sqlite
+[R7 lldb] MATCH LIVE_IDENTITY/ENTROPY base=0x6000035e4000 abs=0x6000035e4020 name=
+[R7 lldb]   prev16=90007e03006000000000000000000000  match+next=cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd01000000000000002428050001000000
+[R7 lldb] MATCH LIVE_IDENTITY/MASTER_KEY base=0x6000035e4000 abs=0x6000035e4280 name=
+[R7 lldb]   prev16=6f6e7300000000000000000000000000  match+next=dcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdca042c2b84b460000fb07000000000000
+[R7 lldb] MATCH LIVE_IDENTITY/ENTROPY base=0x6000035e8000 abs=0x6000035e9840 name=
+[R7 lldb]   prev16=0000000000000000d0928e0602000000  match+next=cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd00000000000000000000000000000000
+[R7 lldb] SUMMARY LIVE_IDENTITY: regions=106 chunks=963 bytes=990511104 entropy_hits=2 master_key_hits=1
+(lldb)  r7_scan_live
+(lldb)  continue
+Process 96742 resuming
+Command #2 'continue' continued the target.
+[R7] PHASE LIVE identity (seed, identity_sk, master_key all live)
+[R7 lldb] MATCH AFTER_DROP/ENTROPY base=0x600000000000 abs=0x6000035e9840 name=
+[R7 lldb]   prev16=0000000000000000d0928e0602000000  match+next=cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd00000000000000000000000000000000
+[R7 lldb] SUMMARY AFTER_DROP: regions=104 chunks=961 bytes=990511104 entropy_hits=1 master_key_hits=0
+(lldb)  r7_scan_drop
+(lldb)  continue
+Process 96742 resuming
+Command #2 'continue' continued the target.
+[R7] PHASE AFTER drop
+[R7] DB file kept at /var/folders/m6/7wwhjqbn6bj367wwqj9bc28m0000gn/T/r7_identity_capture.sqlite
+[R7] (intentionally NOT deleted; R8 scanner reads it)
+Process 96742 launched: '/Users/daniel/Documents/Projects/Messenger/Umbrella Protocol/target/r6-release/examples/r7_identity_lldb_target' (arm64)
+Process 96742 exited with status = 0 (0x00000000)

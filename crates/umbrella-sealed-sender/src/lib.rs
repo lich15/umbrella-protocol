@@ -61,6 +61,7 @@
 
 #[cfg(feature = "pq")]
 pub mod hybrid_envelope;
+pub mod self_destruct;
 pub mod version;
 
 #[cfg(feature = "pq")]
