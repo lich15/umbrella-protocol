@@ -1,6 +1,6 @@
 # Боевые атакующие ворота ядра протокола
 
-Дата: 2026-05-16
+Дата: 2026-05-18 (обновлено после PR #6 — добавлены строки R20-R27 + MlockedSecret)
 
 ## Русский
 
@@ -56,6 +56,16 @@
 | Локальная база | временная копия открытого текста строки живёт дольше нужного при шифровании или расшифровании | закрыто тестом | `decrypt_row_zeroizing_returns_zeroizing_plaintext`, `row_cipher_sensitive_temporaries_are_zeroizing` |
 | Секреты | `Debug` и отладочные журналы раскрывают plaintext, token, server nonce, подписи, QR payload, TURN password или routing identifiers | закрыто тестами и локальным аудитом | redaction-тесты в `umbrella-backup`, `umbrella-oprf`, `umbrella-client`, `umbrella-ffi`, `umbrella-mls`, `umbrella-calls`, `umbrella-platform-verifier`, `umbrella-sealed-sender`, `umbrella-padding`, `umbrella-server-blind-postman`; `scripts/audit-local-release-hardening.sh` |
 | Недоделанное | отладочный вывод и недоделанные пути выглядят боевыми | закрыто локальным аудитом | `scripts/audit-local-release-hardening.sh`, `scripts/audit-test-only-production-boundary.sh` |
+| Изъятие устройства | identity_sk извлекается из памяти процесса при DKG | закрыто переделкой раунда 6 | R20 lldb: identity_sk_hits=0 в 3 фазах, ~2.22 GB просканировано (`docs/audits/device-capture-artifacts/r20_lldb_output.txt`) |
+| Изъятие устройства | swap-eligible heap для master_key / exporter_secret / hedged witness | закрыто тестом | `MlockedSecret<T>` + 7 production storage sites; `umbrella-crypto-primitives::mlocked` тесты |
+| Изъятие устройства | stack-spill BIP-39 entropy после drop(IdentitySeed) | закрыто тестом | `r7_closure_entropy_and_seed_are_heap_resident`; R7 lldb scan AFTER_DROP stack hits = 0 |
+| Идентичность | jurisdiction subpoena → принудительное раскрытие PIN | закрыто тестом | `attack_r21_duress_pin_deletes_account`: reverse-PIN запускает `UNRECOVERABLE_DELETE` параллельно на 5 серверах |
+| Идентичность | новое устройство принимается без задержки и push-отмены | закрыто тестом | `attack_r22_time_lock_recovery`: 24h time-lock, primary-push cancel |
+| Идентичность | подделанный установочный пакет проходит обновление | закрыто тестом | `attack_r23_5_registry_detects_fake_version`: ≥4-of-5 registries должны совпасть |
+| Чаты | secret-чат не маскируется при захвате экрана | закрыто тестом | `attack_r24_screen_recording_detected`: 100/100 сообщений замаскированы под Block policy |
+| Чаты | PIN-экран не блокирует системные сервисы (Siri, AutoFill, ...) | закрыто тестом | `attack_r25_system_services_disabled`: 7/7 ограничений применены |
+| Транспорт | DPI-блокировка единственного канала делает unlock невозможным | закрыто тестом | `attack_r26_dos_fallback_channels`: TLS → AltIP → Tor → Mixnet fallback chain |
+| Производительность | сервер в критическом пути отправки сообщения | закрыто тестом | `attack_r27_speed_local_operations`: 1000 сообщений 42 ns/msg, 0 server RPC; локальная доставка через Sealed Sender |
 
 ## Внешний реестр
 

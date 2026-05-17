@@ -1,6 +1,6 @@
 # Current Status
 
-Дата: 2026-05-16
+Дата: 2026-05-18
 
 [English](#english) | [Русский](#русский)
 
@@ -9,6 +9,31 @@
 Umbrella Protocol 1.1.0 is a source-available Rust protocol package under
 security hardening. It contains real cryptographic crates, test
 harnesses, formal models, fuzzing entry points, and local verification scripts.
+
+On 2026-05-18 the PhD-B six-round audit (rounds 1-6) was merged into `main`
+via PR #6 (commit `84b4d576`). The audit added the `umbrella-threshold-identity`
+crate (FROST-Ed25519 DKG, threshold sign, PIN/Argon2id KDF, duress detection,
+lifecycle modules), a `MlockedSecret<T>` wrapper migrated across seven
+production storage sites, hedged-encaps in three production callers
+(`umbrella-backup`, `umbrella-sealed-sender`, `umbrella-mls`), iOS Secure
+Enclave and Android StrongBox real-API bridges, anti-forensic chat modules
+(screen-capture overlay + TTL self-destruct), and eight R20-R27 attack tests
+with measured numerical outcomes. The independent reviewer verdict
+(`docs/audits/phd-b-final-independent-review-2026-05-19.md`) returned
+0 BLOCKER + 1 MAJOR (M-FINAL-1) + 3 MINOR. Workspace baseline after merge
+is **2080 release-mode tests** (`cargo test --release --workspace
+--all-features`), up from 1977 pre round-6.
+
+The 1 MAJOR finding M-FINAL-1 is a scope-of-closure caveat:
+`ClientCore::new_with_hw_callback` still synthesises an ephemeral signing
+seed via `IdentitySeed::generate` for backwards compatibility. The seed is
+heap-resident, zeroize-on-drop, and the window of existence is microseconds.
+The round-6 R20 lldb claim "0 identity_sk hits in 2.2 GB process memory"
+applies to the `distributed_identity_client::bootstrap_account` flow only,
+not to `new_with_hw_callback`. The disclosure is recorded in
+`docs/audits/phd-b-distributed-identity-closure-2026-05-19.md` §1.1 and in
+the code comment at `crates/umbrella-client/src/core.rs:407-422`. Removal
+is tracked for v1.2.x.
 
 The full public client bootstrap is not open for production use yet. Public FFI
 bootstrap fails closed until platform verifiers, mobile bridges, and server
@@ -93,6 +118,32 @@ Umbrella Protocol 1.1.0 — набор Rust-крейтов протокола с
 исходным кодом. Сейчас проект проходит усиление безопасности и честное описание
 боевых границ. В репозитории есть настоящие криптографические крейты, стенды
 проверки, формальные модели, входы для фаззинга и локальные скрипты проверки.
+
+2026-05-18 в `main` влит PR #6 (коммит `84b4d576`) — PhD-B аудит из шести
+раундов на кодовой базе 1.1.0. Аудит добавил крейт
+`umbrella-threshold-identity` (FROST-Ed25519 DKG, threshold sign, PIN +
+Argon2id KDF, обнаружение duress, lifecycle), обёртку `MlockedSecret<T>` —
+смигрировано семь production-мест хранения секретов, hedged-encaps в трёх
+production-вызовах (`umbrella-backup`, `umbrella-sealed-sender`,
+`umbrella-mls`), мосты к iOS Secure Enclave и Android StrongBox через
+настоящий API, анти-форенсик модули чата (overlay при захвате экрана +
+TTL self-destruct), и восемь атакующих тестов R20-R27 с измеренными
+результатами. Заключение независимого ревьюера
+(`docs/audits/phd-b-final-independent-review-2026-05-19.md`) — 0 BLOCKER +
+1 MAJOR (M-FINAL-1) + 3 MINOR. Базовая линия рабочей области после слияния
+— **2080 release-mode тестов** (`cargo test --release --workspace
+--all-features`), плюс 103 теста к 1977 базовой линии до раунда 6.
+
+Одна MAJOR-находка M-FINAL-1 — граница покрытия:
+`ClientCore::new_with_hw_callback` всё ещё синтезирует эфемерный seed для
+подписания через `IdentitySeed::generate` для обратной совместимости. Seed
+лежит в heap, zeroize-on-drop, окно жизни — микросекунды. Заявление R20
+lldb «0 identity_sk hits в 2.2 GB» применимо только к
+`distributed_identity_client::bootstrap_account`, не к
+`new_with_hw_callback`. Раскрытие записано в
+`docs/audits/phd-b-distributed-identity-closure-2026-05-19.md` §1.1 и в
+комментарии кода `crates/umbrella-client/src/core.rs:407-422`. Удаление
+вынесено в v1.2.x.
 
 Полный публичный запуск клиента ещё не открыт для боевого применения.
 Публичный FFI-запуск закрыто отказывает, пока не связаны платформенные

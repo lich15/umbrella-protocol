@@ -1,10 +1,17 @@
 # Production Readiness Boundaries
 
-Дата: 2026-05-15
+Дата: 2026-05-18 (обновлено после PR #6 — PhD-B шесть раундов)
 
 Summary status: [`current-status.md`](current-status.md).
 
 Сводный статус: [`current-status.md`](current-status.md).
+
+Audit chain: PhD-B rounds 1-6 closed on 2026-05-18 (PR #6, commit
+`84b4d576`). Consolidated summary:
+[`../audits/ROUND-1-TO-6-SUMMARY.md`](../audits/ROUND-1-TO-6-SUMMARY.md).
+Independent reviewer verdict: 0 BLOCKER + 1 MAJOR (M-FINAL-1, tracked for
+v1.2.x removal of `ClientCore::new_with_hw_callback` ephemeral seed
+synthesis) + 3 MINOR. Workspace baseline: 2080 release-mode tests.
 
 ## English
 

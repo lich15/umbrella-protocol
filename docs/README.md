@@ -22,6 +22,12 @@ verify, and test the protocol without exposing private working material.
   `audits/security-hardening-audit-2026-05-16.md`.
 - External crypto release audit:
   `audits/external-crypto-release-audit-status-2026-05-14.md`.
+- PhD-B rounds 1-6 consolidated summary:
+  `audits/ROUND-1-TO-6-SUMMARY.md`.
+- PhD-B round 6 distributed-identity closure:
+  `audits/phd-b-distributed-identity-closure-2026-05-19.md`.
+- PhD-B independent reviewer verdict:
+  `audits/phd-b-final-independent-review-2026-05-19.md`.
 - `WORKING_RULES.md` - рабочие постулаты проекта.
 - `superpowers/specs/` - утверждённые рабочие планы крупных изменений.
 - root-level `UmbrellaX_protocol_public_en.pdf` and
@@ -38,6 +44,21 @@ Umbrella Protocol 1.1.0 is a source-available package under security
 hardening. The repository is published for transparency,
 non-commercial security testing, cryptographic testing, reproducible builds,
 and responsible vulnerability disclosure.
+
+A six-round PhD-B level security audit (rounds 1-6, merged 2026-05-18 via
+commit `84b4d576`, PR #6) was completed against the 1.1.0 codebase. The
+audit covered hybrid post-quantum encapsulation hardening, reality-pass
+attack regressions (R1-R6), hedged-encaps closure, device-capture defense
+(R7-R12), and a round-6 distributed-identity architectural redesign with
+attack tests R20-R27. The independent reviewer verdict in
+[`audits/phd-b-final-independent-review-2026-05-19.md`](audits/phd-b-final-independent-review-2026-05-19.md)
+returned 0 BLOCKER + 1 MAJOR (M-FINAL-1, scope-of-closure caveat on the
+legacy hw-callback bootstrap, tracked for v1.2.x removal) + 3 MINOR. The
+consolidated summary lives in
+[`audits/ROUND-1-TO-6-SUMMARY.md`](audits/ROUND-1-TO-6-SUMMARY.md). After
+the audit chain the workspace baseline is 2080 release-mode tests
+(`cargo test --release --workspace --all-features`), up from 1977 pre
+round-6.
 
 The public FFI/client production bootstrap is gated until every required
 transport and verifier is wired end to end. Cryptographic crates and test
@@ -123,6 +144,12 @@ exit code 0 for the exact command.
   `audits/security-hardening-audit-2026-05-16.md`.
 - Внешний крипто-аудит выпуска:
   `audits/external-crypto-release-audit-status-2026-05-14.md`.
+- Сводка PhD-B раундов 1-6:
+  `audits/ROUND-1-TO-6-SUMMARY.md`.
+- PhD-B раунд 6 закрытие распределённой идентичности:
+  `audits/phd-b-distributed-identity-closure-2026-05-19.md`.
+- PhD-B независимая проверка финал:
+  `audits/phd-b-final-independent-review-2026-05-19.md`.
 - `WORKING_RULES.md` - рабочие постулаты проекта.
 - `superpowers/specs/` - утверждённые рабочие планы крупных изменений.
 - корневые `UmbrellaX_protocol_public_en.pdf` и
@@ -140,6 +167,21 @@ Umbrella Protocol 1.1.0 — пакет с доступным для чтения
 сейчас проходит усиление безопасности. Репозиторий опубликован для
 прозрачности, некоммерческой проверки безопасности, криптографических
 испытаний, воспроизводимых сборок и ответственного раскрытия уязвимостей.
+
+На кодовой базе 1.1.0 проведён аудит уровня PhD-B из шести раундов (раунды
+1-6, влиты в `main` 2026-05-18 коммитом `84b4d576`, PR #6). Аудит покрывает
+гибридную постквантовую инкапсуляцию, regression-проверки атак R1-R6,
+закрытие hedged-encaps, защиту от изъятия устройства (R7-R12) и
+архитектурную переделку распределённой идентичности раунда 6 с атакующими
+тестами R20-R27. Заключение независимого ревьюера в
+[`audits/phd-b-final-independent-review-2026-05-19.md`](audits/phd-b-final-independent-review-2026-05-19.md)
+— 0 BLOCKER + 1 MAJOR (M-FINAL-1, граница покрытия для устаревшего
+hw-callback bootstrap, удаление вынесено в v1.2.x) + 3 MINOR. Сводный отчёт
+по раундам:
+[`audits/ROUND-1-TO-6-SUMMARY.md`](audits/ROUND-1-TO-6-SUMMARY.md). После
+аудита базовая линия рабочей области — 2080 release-mode тестов
+(`cargo test --release --workspace --all-features`), плюс 103 теста к
+1977 базовой линии до раунда 6.
 
 Публичный боевой запуск клиента через внешний интерфейс для мобильных привязок
 закрыт до полной связки транспортов и боевых проверок. Криптографические крейты
