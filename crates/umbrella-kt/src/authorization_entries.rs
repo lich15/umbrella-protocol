@@ -243,6 +243,20 @@ pub struct KtLogState {
     identity_rotation: Option<IdentityRotationRecord>,
     last_verified_epoch: u64,
     last_verified_root: [u8; NODE_HASH_LEN],
+    /// **F-PHD-RETRO-3-E mitigation**: stored 32-байтовое
+    /// `code_recovery_public_half_proof` (HKDF-SHA512 от 12-словной энтропии,
+    /// см. `CodeRecoveryMnemonic::public_half_proof`). `None` пока не было
+    /// первого bootstrap'а (bootstrap path принимает любой proof и сохраняет);
+    /// `Some(stored)` после bootstrap'а — все последующие rotation записи
+    /// сравниваются bit-equal с этим значением.
+    ///
+    /// **F-PHD-RETRO-3-E mitigation**: stored 32-byte
+    /// `code_recovery_public_half_proof` (HKDF-SHA512 of the 12-word entropy,
+    /// see `CodeRecoveryMnemonic::public_half_proof`). `None` until the first
+    /// bootstrap (bootstrap path accepts any proof and records it);
+    /// `Some(stored)` after bootstrap — all subsequent rotation records are
+    /// compared bit-equal against this value.
+    code_recovery_public_half_proof: Option<[u8; 32]>,
 }
 
 impl KtLogState {
@@ -389,6 +403,41 @@ impl KtLogState {
     #[must_use]
     pub fn identity_rotation(&self) -> Option<&IdentityRotationRecord> {
         self.identity_rotation.as_ref()
+    }
+
+    /// Stored `code_recovery_public_half_proof` для F-PHD-RETRO-3-E gate.
+    /// `None` до первого bootstrap'а; `Some(stored)` после — все последующие
+    /// rotation записи bit-equal сравниваются с этим значением.
+    ///
+    /// Stored `code_recovery_public_half_proof` for the F-PHD-RETRO-3-E
+    /// gate. `None` until the first bootstrap; `Some(stored)` afterwards —
+    /// all subsequent rotation records are compared bit-equal against it.
+    #[must_use]
+    pub fn code_recovery_public_half_proof(&self) -> Option<&[u8; 32]> {
+        self.code_recovery_public_half_proof.as_ref()
+    }
+
+    /// Установить stored `code_recovery_public_half_proof` извне (например
+    /// при bootstrap'е аккаунта когда клиент опубликовал proof в KT). Один
+    /// раз — повторный set даже с тем же значением допустим (idempotent), но
+    /// смена value запрещена без полной ротации identity.
+    ///
+    /// Set the stored `code_recovery_public_half_proof` externally (e.g. at
+    /// account bootstrap when the client published the proof to KT). One-shot —
+    /// a repeated set even with the same value is allowed (idempotent), but
+    /// changing the value is forbidden without a full identity rotation.
+    ///
+    /// # Errors
+    /// - [`KtError::CodeRecoveryProofMismatch`] если stored value уже
+    ///   установлен и не равен `proof`.
+    pub fn set_code_recovery_public_half_proof(&mut self, proof: [u8; 32]) -> Result<()> {
+        if let Some(existing) = self.code_recovery_public_half_proof.as_ref() {
+            if existing != &proof {
+                return Err(KtError::CodeRecoveryProofMismatch);
+            }
+        }
+        self.code_recovery_public_half_proof = Some(proof);
+        Ok(())
     }
 
     /// Номер последней проверенной эпохи (монотонно не-убывает).
@@ -768,6 +817,26 @@ pub fn apply_identity_rotation(
         }
     }
 
+    // F-PHD-RETRO-3-E gate: bit-equal compare с stored
+    // `code_recovery_public_half_proof`. Bootstrap path (когда mirror только
+    // что создан и proof ещё не был зарегистрирован) принимает любой proof и
+    // сохраняет его. Все последующие rotation записи обязаны нести точно тот
+    // же proof — adversary без 12 слов не может пересчитать HKDF-SHA512.
+    //
+    // F-PHD-RETRO-3-E gate: bit-equal compare with the stored
+    // `code_recovery_public_half_proof`. The bootstrap path (mirror just
+    // created and no proof recorded yet) accepts any proof and records it.
+    // All subsequent rotation records must carry exactly the same proof —
+    // an adversary without the 12 words cannot recompute the HKDF-SHA512.
+    let incoming_proof = rotation.code_recovery_public_half_proof();
+    if let Some(stored) = log_state.code_recovery_public_half_proof.as_ref() {
+        if stored != incoming_proof {
+            return Err(KtError::CodeRecoveryProofMismatch);
+        }
+    }
+    // Else: bootstrap path — record the proof for future rotation gating
+    // (stored unconditionally below).
+
     // Cascade revoke всех non-revoked entries под старым identity.
     for state in log_state.device_entries.values_mut() {
         if state.identity_pubkey_at_publish == rotation.old_identity_pubkey
@@ -781,6 +850,7 @@ pub fn apply_identity_rotation(
 
     log_state.current_identity_pubkey = Some(rotation.new_identity_pubkey);
     log_state.identity_rotation = Some(rotation.clone());
+    log_state.code_recovery_public_half_proof = Some(*incoming_proof);
     commit_epoch(log_state, signed_epoch_root);
     Ok(())
 }
@@ -966,6 +1036,16 @@ mod tests {
         .expect("seal revocation")
     }
 
+    /// Свежий 32-байтовый `code_recovery_public_half_proof` для тестов
+    /// (см. `CodeRecoveryMnemonic::public_half_proof` в production коде).
+    /// Fresh 32-byte `code_recovery_public_half_proof` for tests.
+    fn fresh_code_recovery_proof() -> [u8; 32] {
+        let mut proof = [0u8; 32];
+        OsRng.fill_bytes(&mut proof);
+        proof[0] |= 0x01; // защита от all-zero (вероятность 2⁻²⁵⁶, но defensive)
+        proof
+    }
+
     fn make_rotation(
         old_sk: &PrivateSigningKey,
         old_pk: [u8; DEVICE_PUBKEY_LEN],
@@ -974,11 +1054,32 @@ mod tests {
         timestamp: u64,
         reason: RotationReason,
     ) -> IdentityRotationRecord {
+        make_rotation_with_proof(
+            old_sk,
+            old_pk,
+            new_sk,
+            new_pk,
+            timestamp,
+            reason,
+            fresh_code_recovery_proof(),
+        )
+    }
+
+    fn make_rotation_with_proof(
+        old_sk: &PrivateSigningKey,
+        old_pk: [u8; DEVICE_PUBKEY_LEN],
+        new_sk: &PrivateSigningKey,
+        new_pk: [u8; DEVICE_PUBKEY_LEN],
+        timestamp: u64,
+        reason: RotationReason,
+        code_recovery_public_half_proof: [u8; 32],
+    ) -> IdentityRotationRecord {
         seal_identity_rotation_record(
             old_pk,
             new_pk,
             timestamp,
             reason,
+            code_recovery_public_half_proof,
             sign_with(old_sk),
             sign_with(new_sk),
         )
@@ -1737,6 +1838,7 @@ mod tests {
             rotation_reason: RotationReason::PlannedRotation,
             old_identity_signature: [0u8; 64],
             new_identity_signature: [0u8; 64],
+            code_recovery_public_half_proof: [0u8; 32],
         };
         let _ = old_sk; // не используется, подпись уже инвалидная + old == new.
         let signed = env.signed_epoch(EPOCH_BASELINE, &random_root());
@@ -1856,6 +1958,168 @@ mod tests {
         apply_identity_rotation(&rotation, &mut log, &env.set, &signed, WITNESS_THRESHOLD).unwrap();
         assert_eq!(log.device_count(), 0);
         assert_eq!(log.current_identity_pubkey(), Some(&new_identity));
+    }
+
+    // ======================================================================
+    // F-PHD-RETRO-3-E: apply_identity_rotation gate on code_recovery_public_half_proof
+    // ======================================================================
+
+    #[test]
+    fn rotation_records_proof_on_bootstrap_path() {
+        // Bootstrap path: log_state.code_recovery_public_half_proof = None.
+        // Первая ротация принимает любой proof и сохраняет его.
+        let env = TestEnv::fresh();
+        let (old_sk, old_identity) = gen_keypair();
+        let (new_sk, new_identity) = gen_keypair();
+        let mut log = KtLogState::with_identity(old_identity);
+        let bootstrap_proof = fresh_code_recovery_proof();
+
+        let rotation = make_rotation_with_proof(
+            &old_sk,
+            old_identity,
+            &new_sk,
+            new_identity,
+            TIMESTAMP_BASELINE + 1,
+            RotationReason::PlannedRotation,
+            bootstrap_proof,
+        );
+        let signed = env.signed_epoch(EPOCH_BASELINE, &random_root());
+        apply_identity_rotation(&rotation, &mut log, &env.set, &signed, WITNESS_THRESHOLD).unwrap();
+        assert_eq!(
+            log.code_recovery_public_half_proof(),
+            Some(&bootstrap_proof),
+            "proof must be recorded on first rotation"
+        );
+    }
+
+    #[test]
+    fn rotation_with_matching_proof_after_bootstrap_succeeds() {
+        // Bootstrap-then-rotate: log_state.code_recovery_public_half_proof = Some(stored).
+        // Вторая ротация с тем же proof'ом принимается.
+        let env = TestEnv::fresh();
+        let (old_sk, old_identity) = gen_keypair();
+        let (mid_sk, mid_identity) = gen_keypair();
+        let (new_sk, new_identity) = gen_keypair();
+        let stored_proof = fresh_code_recovery_proof();
+
+        let mut log = KtLogState::with_identity(old_identity);
+        let r1 = make_rotation_with_proof(
+            &old_sk,
+            old_identity,
+            &mid_sk,
+            mid_identity,
+            TIMESTAMP_BASELINE + 1,
+            RotationReason::PlannedRotation,
+            stored_proof,
+        );
+        let signed1 = env.signed_epoch(EPOCH_BASELINE, &random_root());
+        apply_identity_rotation(&r1, &mut log, &env.set, &signed1, WITNESS_THRESHOLD).unwrap();
+
+        // Вторая ротация с тем же proof'ом.
+        let r2 = make_rotation_with_proof(
+            &mid_sk,
+            mid_identity,
+            &new_sk,
+            new_identity,
+            TIMESTAMP_BASELINE + 2,
+            RotationReason::PlannedRotation,
+            stored_proof,
+        );
+        let signed2 = env.signed_epoch(EPOCH_BASELINE + 1, &random_root());
+        apply_identity_rotation(&r2, &mut log, &env.set, &signed2, WITNESS_THRESHOLD).unwrap();
+        assert_eq!(log.current_identity_pubkey(), Some(&new_identity));
+        assert_eq!(log.code_recovery_public_half_proof(), Some(&stored_proof));
+    }
+
+    #[test]
+    fn rotation_with_mismatched_proof_rejected_post_bootstrap() {
+        // F-PHD-RETRO-3-E: после bootstrap'а вторая ротация с другим
+        // proof'ом блокируется → KtError::CodeRecoveryProofMismatch.
+        let env = TestEnv::fresh();
+        let (old_sk, old_identity) = gen_keypair();
+        let (mid_sk, mid_identity) = gen_keypair();
+        let (new_sk, new_identity) = gen_keypair();
+        let bootstrap_proof = fresh_code_recovery_proof();
+        let mut adversary_proof = bootstrap_proof;
+        adversary_proof[0] ^= 0xFF; // явно другой
+
+        let mut log = KtLogState::with_identity(old_identity);
+        let r1 = make_rotation_with_proof(
+            &old_sk,
+            old_identity,
+            &mid_sk,
+            mid_identity,
+            TIMESTAMP_BASELINE + 1,
+            RotationReason::PlannedRotation,
+            bootstrap_proof,
+        );
+        let signed1 = env.signed_epoch(EPOCH_BASELINE, &random_root());
+        apply_identity_rotation(&r1, &mut log, &env.set, &signed1, WITNESS_THRESHOLD).unwrap();
+
+        // Adversary attempts second rotation с другим proof.
+        let r2 = make_rotation_with_proof(
+            &mid_sk,
+            mid_identity,
+            &new_sk,
+            new_identity,
+            TIMESTAMP_BASELINE + 2,
+            RotationReason::PlannedRotation,
+            adversary_proof,
+        );
+        let signed2 = env.signed_epoch(EPOCH_BASELINE + 1, &random_root());
+        let err = apply_identity_rotation(&r2, &mut log, &env.set, &signed2, WITNESS_THRESHOLD)
+            .unwrap_err();
+        assert_eq!(err, KtError::CodeRecoveryProofMismatch);
+        // Идентичность не должна меняться при отказе.
+        assert_eq!(log.current_identity_pubkey(), Some(&mid_identity));
+    }
+
+    #[test]
+    fn set_code_recovery_public_half_proof_idempotent_then_mismatch() {
+        let mut log = KtLogState::new();
+        let proof_a = [0xAAu8; 32];
+        let proof_b = [0xBBu8; 32];
+        log.set_code_recovery_public_half_proof(proof_a).unwrap();
+        // Idempotent set с тем же value.
+        log.set_code_recovery_public_half_proof(proof_a).unwrap();
+        // Несовместимое value отклоняется.
+        let err = log
+            .set_code_recovery_public_half_proof(proof_b)
+            .unwrap_err();
+        assert_eq!(err, KtError::CodeRecoveryProofMismatch);
+    }
+
+    #[test]
+    fn rotation_with_pre_set_proof_rejected_on_mismatch() {
+        // Альтернативная inject-форма bootstrap'а через
+        // set_code_recovery_public_half_proof — сценарий когда proof
+        // зарегистрирован параллельно (например через IdentityAnnounce
+        // entry в KT) перед первой rotation.
+        let env = TestEnv::fresh();
+        let (old_sk, old_identity) = gen_keypair();
+        let (new_sk, new_identity) = gen_keypair();
+        let stored_proof = fresh_code_recovery_proof();
+        let mut wrong_proof = stored_proof;
+        wrong_proof[10] ^= 0x55;
+
+        let mut log = KtLogState::with_identity(old_identity);
+        log.set_code_recovery_public_half_proof(stored_proof)
+            .unwrap();
+
+        let rotation = make_rotation_with_proof(
+            &old_sk,
+            old_identity,
+            &new_sk,
+            new_identity,
+            TIMESTAMP_BASELINE + 1,
+            RotationReason::PlannedRotation,
+            wrong_proof,
+        );
+        let signed = env.signed_epoch(EPOCH_BASELINE, &random_root());
+        let err =
+            apply_identity_rotation(&rotation, &mut log, &env.set, &signed, WITNESS_THRESHOLD)
+                .unwrap_err();
+        assert_eq!(err, KtError::CodeRecoveryProofMismatch);
     }
 
     // ======================================================================

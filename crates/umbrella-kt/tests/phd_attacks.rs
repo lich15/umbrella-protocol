@@ -667,6 +667,7 @@ fn attack_replay_old_signed_epoch_blocked_by_monotonic_epoch_check() {
         new_identity_pk,
         TIMESTAMP_BASELINE + 8,
         RotationReason::PlannedRotation,
+        [0xC1u8; 32], // F-PHD-RETRO-3-E: stub code_recovery_public_half_proof
         signer(&identity_sk),
         signer(&new_identity_sk),
     )

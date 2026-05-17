@@ -25,7 +25,7 @@
 
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha512;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use umbrella_crypto_primitives::sig::PrivateSigningKey;
 
@@ -117,16 +117,17 @@ impl MasterKey {
         let mut mac =
             Hmac::<Sha512>::new_from_slice(MASTER_HMAC_KEY).expect("HMAC accepts any key");
         mac.update(seed);
-        let i = mac.finalize().into_bytes();
+        let mut i = mac.finalize().into_bytes();
 
-        let mut secret = [0u8; EXTENDED_SECRET_LEN];
-        let mut chain_code = [0u8; CHAIN_CODE_LEN];
+        let mut secret = Zeroizing::new([0u8; EXTENDED_SECRET_LEN]);
+        let mut chain_code = Zeroizing::new([0u8; CHAIN_CODE_LEN]);
         secret.copy_from_slice(&i[..EXTENDED_SECRET_LEN]);
         chain_code.copy_from_slice(&i[EXTENDED_SECRET_LEN..EXTENDED_SECRET_LEN + CHAIN_CODE_LEN]);
+        i.zeroize();
 
         Self {
-            secret: ExtendedSecret(secret),
-            chain_code: ChainCode(chain_code),
+            secret: ExtendedSecret(*secret),
+            chain_code: ChainCode(*chain_code),
         }
     }
 
@@ -156,24 +157,25 @@ impl MasterKey {
         mac.update(&[0x00]);
         mac.update(self.secret.as_bytes());
         mac.update(&raw_index.to_be_bytes());
-        let i = mac.finalize().into_bytes();
+        let mut i = mac.finalize().into_bytes();
 
         // Явное копирование 64 байт результата HMAC-SHA512 в фиксированный массив
         // защищает от неявных трюков с GenericArray и slicing.
         // Explicit copy of HMAC-SHA512's 64 result bytes into a fixed array
         // guards against subtle GenericArray slicing issues.
-        let mut full = [0u8; 64];
+        let mut full = Zeroizing::new([0u8; 64]);
         full.copy_from_slice(i.as_slice());
+        i.zeroize();
 
-        let mut secret = [0u8; EXTENDED_SECRET_LEN];
-        let mut chain_code = [0u8; CHAIN_CODE_LEN];
+        let mut secret = Zeroizing::new([0u8; EXTENDED_SECRET_LEN]);
+        let mut chain_code = Zeroizing::new([0u8; CHAIN_CODE_LEN]);
         secret.copy_from_slice(&full[..EXTENDED_SECRET_LEN]);
         chain_code
             .copy_from_slice(&full[EXTENDED_SECRET_LEN..EXTENDED_SECRET_LEN + CHAIN_CODE_LEN]);
 
         Self {
-            secret: ExtendedSecret(secret),
-            chain_code: ChainCode(chain_code),
+            secret: ExtendedSecret(*secret),
+            chain_code: ChainCode(*chain_code),
         }
     }
 
@@ -544,6 +546,32 @@ mod tests {
         let s = format!("{m:?}");
         assert!(s.contains("redacted"));
         assert!(!s.contains("2b4be7f1"));
+    }
+
+    #[test]
+    fn slip10_derivation_temporaries_are_zeroized() {
+        let source = include_str!("derive.rs");
+        let hmac_zeroize = ["i.", "zeroize()"].concat();
+        let full_zeroizing = ["Zeroizing::new(", "[0u8; 64])"].concat();
+        let secret_zeroizing = ["Zeroizing::new(", "[0u8; EXTENDED_SECRET_LEN])"].concat();
+        let chain_code_zeroizing = ["Zeroizing::new(", "[0u8; CHAIN_CODE_LEN])"].concat();
+
+        assert!(
+            source.contains(&hmac_zeroize),
+            "SLIP-0010 HMAC output must be zeroized after copying"
+        );
+        assert!(
+            source.contains(&full_zeroizing),
+            "SLIP-0010 fixed 64-byte copy must be zeroizing"
+        );
+        assert!(
+            source.contains(&secret_zeroizing),
+            "SLIP-0010 secret temporary must be zeroizing"
+        );
+        assert!(
+            source.contains(&chain_code_zeroizing),
+            "SLIP-0010 chain-code temporary must be zeroizing"
+        );
     }
 
     proptest! {

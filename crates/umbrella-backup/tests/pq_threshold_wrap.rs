@@ -29,7 +29,13 @@ use umbrella_backup::cloud_wrap::version::WrappingCiphersuite;
 use umbrella_backup::cloud_wrap::wire::{CanonicalAad, ED25519_PUB_LEN};
 use umbrella_backup::cloud_wrap::wrap::wrap_message_key;
 use umbrella_backup::cloud_wrap::WrappingParams;
-use umbrella_pq::xwing_keygen;
+use umbrella_pq::{xwing_keygen, HedgedWitness};
+
+/// Тестовый `HedgedWitness` (zero-byte; sound только в тестах где RNG honest).
+/// Test-only `HedgedWitness` (zero-byte; sound only when test RNG is honest).
+fn test_hedged_witness() -> HedgedWitness {
+    HedgedWitness::zeroed_for_tests_only()
+}
 
 /// Утилита: построить V1 params + Shamir split for testing.
 fn make_v1_params_and_shares() -> (WrappingParams, Scalar, Vec<(WitnessIndex, Scalar)>) {
@@ -90,7 +96,7 @@ fn v2_full_roundtrip_alice_to_bob_3_of_5() {
     let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
 
     // Alice: V2 wrap (X-Wing envelope under Bob's recovery pubkey).
-    let v2_wrapped = wrap_v1_into_v2(&bob_xwing_pk, &v1_wrapped, &aad, &mut rng).unwrap();
+    let v2_wrapped = wrap_v1_into_v2(&bob_xwing_pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
     // ── Wire через облако (1218 bytes) ──
     let wire_bytes = v2_wrapped.to_bytes();
@@ -129,7 +135,7 @@ fn v2_unwrap_then_all_ten_3_of_5_subsets_succeed() {
 
     let (bob_pk, bob_sk) = xwing_keygen(&mut rng).unwrap();
     let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
-    let v2_wrapped = wrap_v1_into_v2(&bob_pk, &v1_wrapped, &aad, &mut rng).unwrap();
+    let v2_wrapped = wrap_v1_into_v2(&bob_pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
     let v1_recovered = unwrap_v2_to_v1(&bob_sk, &bob_pk, &v2_wrapped, &aad).unwrap();
 
@@ -170,7 +176,7 @@ fn v2_below_threshold_reject() {
 
     let (pk, sk) = xwing_keygen(&mut rng).unwrap();
     let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
-    let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+    let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
     let v1_recovered = unwrap_v2_to_v1(&sk, &pk, &v2_wrapped, &aad).unwrap();
 
     // 2 < threshold 3 → reject.
@@ -199,7 +205,7 @@ fn v2_xwing_failure_isolates_v1_layer() {
     let (pk, _correct_sk) = xwing_keygen(&mut rng).unwrap();
     let (_, eve_sk) = xwing_keygen(&mut rng).unwrap();
     let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
-    let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+    let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
     // Eve пытается unwrap своим seed → X-Wing decaps возможно вернёт другой
     // shared, тогда AEAD decrypt fails (либо decaps fails первым).
@@ -225,8 +231,8 @@ fn v2_multiple_wraps_distinct_wires() {
     let (pk, _) = xwing_keygen(&mut rng).unwrap();
     let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
 
-    let w1 = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
-    let w2 = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+    let w1 = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
+    let w2 = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
     assert_ne!(
         w1.to_bytes(),
@@ -246,7 +252,7 @@ fn v2_byte_channel_roundtrip_simulated() {
 
     let (bob_pk, bob_sk) = xwing_keygen(&mut rng).unwrap();
     let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
-    let v2_wrapped = wrap_v1_into_v2(&bob_pk, &v1_wrapped, &aad, &mut rng).unwrap();
+    let v2_wrapped = wrap_v1_into_v2(&bob_pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
     // Wire через some byte channel.
     let wire = v2_wrapped.to_bytes();
@@ -280,7 +286,7 @@ fn v2_wire_size_constant_independent_of_v1_state() {
         let mk = [mk_byte; MESSAGE_KEY_LEN];
         let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
         let (pk, _) = xwing_keygen(&mut rng).unwrap();
-        let v2 = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+        let v2 = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
         assert_eq!(v2.to_bytes().len(), WRAPPED_KEY_V2_LEN);
         assert_eq!(WRAPPED_KEY_V2_LEN, 1218);
     }
@@ -303,7 +309,7 @@ fn v2_works_with_distinct_recipients() {
     // 3 различных recipients.
     for _ in 0..3 {
         let (pk, sk) = xwing_keygen(&mut rng).unwrap();
-        let v2 = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+        let v2 = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
         let v1_back = unwrap_v2_to_v1(&sk, &pk, &v2, &aad).unwrap();
 
         let partials: Vec<ServerUnwrapShare> = shares
@@ -330,7 +336,7 @@ fn v2_then_v1_retry_alternate_subset_on_one_malicious() {
 
     let (pk, sk) = xwing_keygen(&mut rng).unwrap();
     let v1_wrapped = wrap_message_key(&v1_params, &mk, &aad, &mut rng).unwrap();
-    let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &mut rng).unwrap();
+    let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
     let v1_recovered = unwrap_v2_to_v1(&sk, &pk, &v2_wrapped, &aad).unwrap();
 
     // 4 valid + 1 malicious (random k').
@@ -371,7 +377,7 @@ fn v2_isolates_recipients_even_with_public_v1() {
     let (bob_pk, _bob_sk) = xwing_keygen(&mut rng).unwrap();
     // Eve — attacker который знает V1 params (public Y).
     let (_eve_pk, eve_sk) = xwing_keygen(&mut rng).unwrap();
-    let v2_wrapped = wrap_v1_into_v2(&bob_pk, &v1_wrapped, &aad, &mut rng).unwrap();
+    let v2_wrapped = wrap_v1_into_v2(&bob_pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
     let result = unwrap_v2_to_v1(&eve_sk, &bob_pk, &v2_wrapped, &aad);
     assert!(

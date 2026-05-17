@@ -1,0 +1,34 @@
+(lldb) command source -s 0 '/tmp/r6_lldb_commands.txt'
+Executing commands in '/tmp/r6_lldb_commands.txt'.
+(lldb) target create target/r6-release/examples/r6_zeroize_lldb_target
+Current executable set to '/Users/daniel/Documents/Projects/Messenger/Umbrella Protocol/target/r6-release/examples/r6_zeroize_lldb_target' (arm64).
+(lldb) command script import /tmp/r6_lldb_script.py
+(lldb) breakpoint set -n r6_break_after_fill --auto-continue true --command r6_scan_pos
+Breakpoint 1: where = r6_zeroize_lldb_target`r6_zeroize_lldb_target::r6_break_after_fill::h412deebd46bfd4f7 + 8 [inlined] core::hint::black_box::h65d64dcfb3e4bf8d at hint.rs:491:5, address = 0x00000001000008a8
+(lldb) breakpoint set -n r6_phase_before_keygen --auto-continue true --command r6_scan_before
+Breakpoint 2: where = r6_zeroize_lldb_target`r6_zeroize_lldb_target::r6_phase_before_keygen::h4a9ccbdc578c5ce5 + 12 at r6_zeroize_lldb_target.rs:46:5, address = 0x0000000100000924
+(lldb) breakpoint set -n r6_phase_after_keygen --auto-continue true --command r6_scan_after
+Breakpoint 3: where = r6_zeroize_lldb_target`r6_zeroize_lldb_target::r6_phase_after_keygen::hde0900e9f222c0e6 + 12 at r6_zeroize_lldb_target.rs:75:5, address = 0x00000001000008f4
+(lldb) breakpoint set -n r6_phase_after_drop --auto-continue true --command r6_scan_drop
+Breakpoint 4: where = r6_zeroize_lldb_target`r6_zeroize_lldb_target::r6_phase_after_drop::hf9771b8cb5e6a181 + 12 at r6_zeroize_lldb_target.rs:82:5, address = 0x00000001000008c4
+(lldb) run
+[R6] Process pid 36108 starting
+[R6] PHASE positive_control_filled: holding 32 bytes 0xAA at 0x600003991240
+[R6 lldb] MATCH POSITIVE_CONTROL base=0x600000000000 abs=0x600003991240 name=
+[R6 lldb]   prev16=108a5a9801000000cbd2431302000000  match+next=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000
+[R6 lldb] SUMMARY POSITIVE_CONTROL: regions_walked=76 chunks_with_data=665 bytes_scanned=685916160 matches_32-byte-AA=1
+(lldb)  r6_scan_pos
+[R6 lldb] SUMMARY BEFORE_KEYGEN: regions_walked=76 chunks_with_data=665 bytes_scanned=685916160 matches_32-byte-AA=0
+(lldb)  r6_scan_before
+[R6] PHASE BEFORE keygen
+[R6] xwing_keygen complete, pk[0..4] = f408bdc8
+[R6 lldb] MATCH AFTER_KEYGEN base=0x600000000000 abs=0x600003998020 name=
+[R6 lldb]   prev16=00000000000000000000000000000000  match+next=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000
+[R6 lldb] SUMMARY AFTER_KEYGEN: regions_walked=77 chunks_with_data=673 bytes_scanned=694304768 matches_32-byte-AA=1
+(lldb)  r6_scan_after
+[R6] PHASE AFTER keygen
+[R6 lldb] SUMMARY AFTER_DROP: regions_walked=77 chunks_with_data=673 bytes_scanned=694304768 matches_32-byte-AA=0
+(lldb)  r6_scan_drop
+[R6] PHASE AFTER drop
+Process 36108 launched: '/Users/daniel/Documents/Projects/Messenger/Umbrella Protocol/target/r6-release/examples/r6_zeroize_lldb_target' (arm64)
+Process 36108 exited with status = 0 (0x00000000)

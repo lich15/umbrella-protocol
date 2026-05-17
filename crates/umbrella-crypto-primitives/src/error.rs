@@ -1,6 +1,8 @@
 //! Ошибки крипто-операций; завёрнуты так чтобы не утекать секреты в Display.
 //! Crypto operation errors; wrapped to avoid leaking secrets in Display.
 
+#![forbid(unsafe_code)]
+
 use thiserror::Error;
 
 /// Result alias для крейта; по умолчанию `CryptoError`.

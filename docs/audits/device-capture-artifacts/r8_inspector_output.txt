@@ -1,0 +1,56 @@
+R8: sqlite3 .schema:
+R8:   CREATE TABLE schema_version (
+R8:       version INTEGER PRIMARY KEY
+R8:   );
+R8:   CREATE TABLE kt_log_mirror (
+R8:       device_pubkey            BLOB PRIMARY KEY,  -- 32 bytes Ed25519 public
+R8:       entry_state              INTEGER NOT NULL,  -- 0 Pending, 1 Active, 2 Revoked, 3 BootstrapActive
+R8:       authorized_since_millis  INTEGER NOT NULL,
+R8:       history_cutoff_millis    INTEGER NOT NULL,
+R8:       identity_pubkey          BLOB NOT NULL,     -- identity_pubkey at time of publish
+R8:       enc_payload              BLOB NOT NULL,     -- encrypted auxiliary state
+R8:       enc_nonce                BLOB NOT NULL,     -- 12 bytes
+R8:       enc_tag                  BLOB NOT NULL      -- 16 bytes
+R8:   );
+R8:   CREATE TABLE mls_groups (
+R8:       chat_id            BLOB PRIMARY KEY,        -- 32 bytes
+R8:       snapshot_version   INTEGER NOT NULL,
+R8:       enc_payload        BLOB NOT NULL,           -- encrypted openmls group state
+R8:       enc_nonce          BLOB NOT NULL,
+R8:       enc_tag            BLOB NOT NULL,
+R8:       last_epoch         INTEGER NOT NULL,
+R8:       updated_at_millis  INTEGER NOT NULL
+R8:   );
+R8:   CREATE TABLE messages (
+R8:       message_id    BLOB PRIMARY KEY,             -- 16 bytes (UUID-like)
+R8:       chat_id       BLOB NOT NULL,                -- 32 bytes
+R8:       timestamp_ms  INTEGER NOT NULL,             -- sender-clock ms since epoch
+R8:       sender        BLOB NOT NULL,                -- sender identity_pubkey (32 bytes)
+R8:       enc_text      BLOB NOT NULL,                -- encrypted plaintext
+R8:       enc_nonce     BLOB NOT NULL,                -- 12 bytes
+R8:       enc_tag       BLOB NOT NULL                 -- 16 bytes
+R8:   );
+R8:   CREATE INDEX idx_messages_chat_ts
+R8:       ON messages(chat_id, timestamp_ms DESC);
+R8:   CREATE TABLE contacts (
+R8:       oprf_label        BLOB PRIMARY KEY,         -- deterministic OPRF label
+R8:       identity_pubkey   BLOB NOT NULL,            -- Ed25519 pub (32 bytes)
+R8:       enc_display_name  BLOB NOT NULL,            -- encrypted user-provided name
+R8:       enc_nonce         BLOB NOT NULL,
+R8:       enc_tag           BLOB NOT NULL
+R8:   );
+R8:   CREATE TABLE device_attestations (
+R8:       peer_pubkey    BLOB NOT NULL,               -- peer identity_pubkey (32 bytes)
+R8:       device_index   INTEGER NOT NULL,            -- 0..=15
+R8:       attestation    BLOB NOT NULL,               -- DeviceAttestation wire bytes (public)
+R8:       fetched_at_ms  INTEGER NOT NULL,
+R8:       PRIMARY KEY (peer_pubkey, device_index)
+R8:   );
+R8: scanning /var/folders/m6/7wwhjqbn6bj367wwqj9bc28m0000gn/T/r7_identity_capture.sqlite (size=53248 bytes)
+R8: needle MASTER_KEY_0xDC_x_32                         -> hits=0
+R8: needle ENTROPY_0xCD_x_32                            -> hits=0
+R8: needle PLAINTEXT_R7_LLDB_PLAINTEXT_NEEDLE           -> hits=0
+R8: sqlite3 .dump of messages table:
+R8:   5EDD774858D9DEC38A419C971D56C7D3C57BF6C25FF2E9FEAEA51DE6BF44F020D79B4D95BA1B6C7150B1CB36ED034FDF8A07A78EC5267B77B06C61BA004C9619|FBED7CE8EDBC47A6693A60A1|45ADD0C8E685347A64875F5158ED0BA3
+R8:   plaintext canary NOT in enc_text column (expected)
+R8: VERDICT — no plaintext/keys on disk (0 needle matches across .sqlite, -wal, -shm)

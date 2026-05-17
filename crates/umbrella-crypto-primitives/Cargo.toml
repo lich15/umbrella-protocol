@@ -9,7 +9,16 @@ repository.workspace = true
 description = "Обёртка над RustCrypto/dalek с zeroize и constant-time. RustCrypto/dalek wrappers with zeroize and constant-time."
 
 [lints.rust]
-unsafe_code = "forbid"
+# unsafe_code разрешён только в `mlocked.rs` (round-5 device-capture closure
+# F-PHD-DC-R11-1: `libc::mlock` / `libc::munlock` syscalls — единственный
+# путь сказать ядру «не выгружай эти страницы в swap»). Все остальные
+# модули остаются под локальным `#![forbid(unsafe_code)]` атрибутом.
+#
+# unsafe_code allowed only in `mlocked.rs` (round-5 device-capture closure
+# F-PHD-DC-R11-1: `libc::mlock` / `libc::munlock` syscalls — the only way to
+# tell the kernel «do not page these out to swap»). All other modules keep
+# `#![forbid(unsafe_code)]` via a module-level attribute.
+unsafe_code = "deny"
 
 [dependencies]
 ed25519-dalek = { workspace = true }
@@ -21,3 +30,14 @@ zeroize = { workspace = true }
 subtle = { workspace = true }
 rand_core = { workspace = true }
 thiserror = { workspace = true }
+
+# libc::mlock / munlock для MlockedSecret<T> (round-5 device-capture closure
+# F-PHD-DC-R11-1). Доступен через unix-семейство syscalls (mlock(2)
+# POSIX.1-2001 + Darwin/Linux); Windows path использует VirtualLock через
+# windows-sys в будущей итерации (см. mlocked.rs §«Windows fallback»).
+#
+# libc::mlock / munlock for `MlockedSecret<T>` (round-5 device-capture
+# closure F-PHD-DC-R11-1). Available through the UNIX syscall family
+# (mlock(2) POSIX.1-2001 + Darwin/Linux); Windows path uses VirtualLock via
+# windows-sys in a future iteration (see mlocked.rs §«Windows fallback»).
+libc = { workspace = true }

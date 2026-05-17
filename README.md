@@ -35,8 +35,19 @@ boundaries.
 Supply-chain hardening for 1.1.0 removes the unused optional `hpke-rs` libcrux
 HPKE backend from the root and fuzz lockfiles, so `RUSTSEC-2026-0124` is closed
 in the checked dependency graph instead of being ignored.
+The 2026-05-16 memory-hygiene pass zeroizes key-derivation, recovery-code,
+backup unwrap, and SQLite row temporaries, returns Sealed Sender opened
+plaintext through a zeroizing wrapper, and uses the system RNG for retry jitter.
 External crypto release audit:
 [`docs/audits/external-crypto-release-audit-status-2026-05-14.md`](docs/audits/external-crypto-release-audit-status-2026-05-14.md).
+PhD-B six-round audit (rounds 1-6) on the 1.1.0 codebase was merged on
+2026-05-18 in commit `84b4d576` (PR #6). The consolidated summary lives at
+[`docs/audits/ROUND-1-TO-6-SUMMARY.md`](docs/audits/ROUND-1-TO-6-SUMMARY.md);
+the independent reviewer verdict is in
+[`docs/audits/phd-b-final-independent-review-2026-05-19.md`](docs/audits/phd-b-final-independent-review-2026-05-19.md).
+Post-audit workspace baseline is 2080 release-mode tests (up from 1977
+pre round-6); one MAJOR scope-of-closure caveat (M-FINAL-1) is tracked for
+v1.2.x.
 
 This repository is public for transparency, reproducible builds, non-commercial
 security testing, cryptographic testing, and responsible vulnerability reports.
@@ -333,6 +344,8 @@ The current status of formal verification and local lint gates is recorded in
 [`docs/audits/formal-lint-status-2026-05-13.md`](docs/audits/formal-lint-status-2026-05-13.md).
 Local release hardening status is recorded in
 [`docs/audits/local-release-hardening-status-2026-05-14.md`](docs/audits/local-release-hardening-status-2026-05-14.md).
+Memory-hygiene hardening status is recorded in
+[`docs/audits/security-hardening-audit-2026-05-16.md`](docs/audits/security-hardening-audit-2026-05-16.md).
 A command counts as a current release gate only when that status file shows
 exit code 0 for the exact command.
 
@@ -406,6 +419,8 @@ Start here:
   public notes for the current release.
 - [`docs/security/release-manifest-v1.1.0.txt`](docs/security/release-manifest-v1.1.0.txt):
   release verification notes.
+- [`docs/audits/ROUND-1-TO-6-SUMMARY.md`](docs/audits/ROUND-1-TO-6-SUMMARY.md):
+  consolidated PhD-B audit summary for rounds 1-6 (merged 2026-05-18).
 - [`SECURITY.md`](SECURITY.md): vulnerability reporting process.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): contribution rules.
 
@@ -449,8 +464,19 @@ Play Integrity всё ещё закрыто отказывают, пока не 
 Усиление цепочки зависимостей в 1.1.0 убирает неиспользуемый optional
 libcrux-бэкенд HPKE из `hpke-rs` в корневом и fuzz lockfile, поэтому
 `RUSTSEC-2026-0124` закрыт в проверяемом графе зависимостей, а не игнорируется.
+Проход гигиены памяти от 2026-05-16 затирает временные значения вывода ключей,
+возвращает раскрытый plaintext Sealed Sender через очищаемую обёртку и
+использует системный генератор для задержки повторов.
 Внешний крипто-аудит выпуска:
 [`docs/audits/external-crypto-release-audit-status-2026-05-14.md`](docs/audits/external-crypto-release-audit-status-2026-05-14.md).
+PhD-B аудит из шести раундов (раунды 1-6) на кодовой базе 1.1.0 влит в
+`main` 2026-05-18 коммитом `84b4d576` (PR #6). Сводный отчёт:
+[`docs/audits/ROUND-1-TO-6-SUMMARY.md`](docs/audits/ROUND-1-TO-6-SUMMARY.md);
+заключение независимого ревьюера —
+[`docs/audits/phd-b-final-independent-review-2026-05-19.md`](docs/audits/phd-b-final-independent-review-2026-05-19.md).
+После аудита базовая линия — 2080 release-mode тестов (плюс 103 теста к
+1977 базовой линии до раунда 6); одна MAJOR-граница покрытия (M-FINAL-1)
+вынесена в v1.2.x.
 
 Репозиторий открыт для прозрачности, воспроизводимых сборок, некоммерческих
 проверок безопасности, криптографических испытаний и ответственных сообщений об
@@ -825,6 +851,8 @@ umbrella-client = { path = "crates/umbrella-client" }
   публичные заметки текущего выпуска.
 - [`docs/security/release-manifest-v1.1.0.txt`](docs/security/release-manifest-v1.1.0.txt):
   заметки для проверки выпуска.
+- [`docs/audits/ROUND-1-TO-6-SUMMARY.md`](docs/audits/ROUND-1-TO-6-SUMMARY.md):
+  сводный отчёт PhD-B аудита из шести раундов (влит 2026-05-18).
 - [`SECURITY.md`](SECURITY.md): порядок сообщения об уязвимости.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): правила участия.
 

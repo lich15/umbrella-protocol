@@ -15,6 +15,8 @@ members = [
     "crates/umbrella-calls",
     "crates/umbrella-client",
     "crates/umbrella-server-blind-postman",
+    "crates/umbrella-threshold-identity",
+    "crates/umbrella-discovery",
     "crates/umbrella-ffi",
     "crates/umbrella-ffi-swift",
     "crates/umbrella-ffi-kotlin",
@@ -69,6 +71,8 @@ umbrella-backup = { path = "crates/umbrella-backup", version = "1.1.0" }
 umbrella-calls = { path = "crates/umbrella-calls", version = "1.1.0" }
 umbrella-client = { path = "crates/umbrella-client", version = "1.1.0" }
 umbrella-server-blind-postman = { path = "crates/umbrella-server-blind-postman", version = "1.1.0" }
+umbrella-threshold-identity = { path = "crates/umbrella-threshold-identity", version = "1.1.0" }
+umbrella-discovery = { path = "crates/umbrella-discovery", version = "1.1.0" }
 umbrella-ffi = { path = "crates/umbrella-ffi", version = "1.1.0" }
 umbrella-vectors = { path = "crates/umbrella-vectors", version = "1.1.0" }
 
@@ -154,6 +158,18 @@ thiserror = "2.0"
 anyhow = "1.0.102"
 heapless = "0.9"
 
+# POSIX/Windows page-locking syscalls for `MlockedSecret<T>` (umbrella-crypto-primitives).
+# Used by the device-capture closure round 5 (F-PHD-DC-R11-1) to call
+# `libc::mlock` / `libc::munlock` so secrets cannot be paged out by the OS
+# memory manager. Pinned 0.2 — RustCrypto / ed25519-dalek already depend on
+# libc 0.2; adding the workspace dep does not pull in a new major version.
+# POSIX/Windows page-locking syscalls for `MlockedSecret<T>` (umbrella-crypto-primitives).
+# Used by the round-5 device-capture closure (F-PHD-DC-R11-1) to call
+# `libc::mlock` / `libc::munlock` so the OS memory manager cannot page
+# secrets out. Pinned 0.2 — RustCrypto / ed25519-dalek already depend on
+# libc 0.2, so adding it to the workspace does not introduce a new major.
+libc = "0.2"
+
 # ——— Async runtime (production design Решение 3) ———
 # ——— Async runtime (production design Decision 3) ———
 # Pinned 1.41: webrtc-rs и reqwest требуют tokio; features минимально необходимые.
@@ -227,6 +243,14 @@ proptest = "1.11"
 # ——— Deterministic RNG for KAT tests (v1.1.0 release, dev-only) ———
 rand_chacha = "0.3"
 
+# ——— Round 6 distributed identity (umbrella-threshold-identity) ———
+# FROST-Ed25519 DKG: Zcash Foundation formally-audited 3-round Pedersen DKG +
+# threshold signing for any t-of-n. Produces Ed25519-compatible public keys.
+# Argon2id PIN-KDF: memory=64MiB, iterations=3, parallelism=4 — mobile-friendly,
+# expensive for brute-force per Biryukov-Khovratovich 2016.
+frost-ed25519 = { version = "3.0.0", default-features = false, features = ["serialization"] }
+argon2 = { version = "0.5", default-features = false, features = ["std", "alloc"] }
+
 [profile.release]
 lto = "fat"
 codegen-units = 1
@@ -239,6 +263,13 @@ lto = "fat"
 codegen-units = 1
 opt-level = 3
 debug = true
+
+# R6 reality-pass profile: release-style codegen but symbols/debug preserved
+# so lldb can scan post-keygen memory at named function breakpoints.
+[profile.r6-release]
+inherits = "release"
+strip = "none"
+debug = "full"
 
 [patch.crates-io]
 # Umbrella v1.1.0 release gate:

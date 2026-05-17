@@ -81,12 +81,12 @@ use umbrella_crypto_primitives::sig::{
 use umbrella_identity::{IdentityKeyPublic, KeyStore};
 use umbrella_padding::{pad_to_bucket, strip_padding};
 use umbrella_pq::{
-    xwing_decaps, xwing_encaps, XWingPublicKey, XWingSecretSeed, XWING_CIPHERTEXT_LEN,
+    xwing_decaps, xwing_encaps_hedged, XWingPublicKey, XWingSecretSeed, XWING_CIPHERTEXT_LEN,
     XWING_PUBLIC_KEY_LEN, XWING_SHARED_SECRET_LEN,
 };
 
 use crate::version::SealedSenderVersion;
-use crate::{OpenedEnvelope, Result, SealedSenderError, INNER_HEADER_LEN};
+use crate::{OpenedEnvelope, OpenedMessage, Result, SealedSenderError, INNER_HEADER_LEN};
 
 /// Domain separator для V2 KDF info, AEAD AAD и inner-signature payload.
 /// ASCII literal; смена ломает совместимость, требует ADR-amendment.
@@ -145,10 +145,29 @@ pub fn seal_v2<R: CryptoRng + RngCore>(
         });
     }
 
-    // 1. X-Wing encaps под recipient pubkey → (ct, shared_secret).
-    // 1. X-Wing encaps under recipient pubkey → (ct, shared_secret).
-    let (xwing_ct, shared_secret) = xwing_encaps(rng, recipient_xwing_pubkey)
-        .map_err(|_| SealedSenderError::InvalidV2Envelope("xwing_encaps_failed"))?;
+    // 1. X-Wing **hedged** encaps под recipient pubkey → (ct, shared_secret).
+    // Round-3 hedged-encaps closure 2026-05-19 (Bellare-Hoang-Keelveedhi 2015).
+    // Transcript = sender_identity (32) || recipient_pubkey (1216) ||
+    //              version_byte (1) — byte-distinct per (sender, recipient,
+    // version) tuple; даже compromised RNG не даст attacker'у возможности
+    // replicate ss без secret hedged_witness.
+    //
+    // 1. X-Wing **hedged** encaps under recipient pubkey → (ct, shared_secret).
+    // Round-3 hedged-encaps closure 2026-05-19 (Bellare-Hoang-Keelveedhi 2015).
+    // Transcript = sender_identity (32) || recipient_pubkey (1216) ||
+    //              version_byte (1) — byte-distinct per (sender, recipient,
+    // version) tuple; a compromised RNG cannot let the attacker replicate
+    // ss without the secret hedged_witness.
+    let sender_identity_bytes = keystore.identity_public().to_bytes();
+    let mut transcript = Vec::with_capacity(32 + XWING_PUBLIC_KEY_LEN + 1);
+    transcript.extend_from_slice(&sender_identity_bytes);
+    transcript.extend_from_slice(recipient_xwing_pubkey.as_bytes());
+    transcript.push(SealedSenderVersion::V2HybridXWing.as_u8());
+
+    let hedged_witness = keystore.hedged_encaps_witness();
+    let (xwing_ct, shared_secret) =
+        xwing_encaps_hedged(rng, recipient_xwing_pubkey, hedged_witness, &transcript)
+            .map_err(|_| SealedSenderError::InvalidV2Envelope("xwing_encaps_failed"))?;
 
     // 2. Derive AEAD key + nonce из shared_secret (HKDF-SHA256).
     // 2. Derive AEAD key + nonce from shared_secret (HKDF-SHA256).
@@ -158,7 +177,7 @@ pub fn seal_v2<R: CryptoRng + RngCore>(
     // 3. Inner payload: sender_pub || ed25519_sig(DOMAIN_SEP_V2 || ct || message) || message.
     let sender_identity = keystore.identity_public();
     let sig_payload = signature_payload_v2(&xwing_ct, message);
-    let sig = keystore.sign_with_identity(&sig_payload);
+    let sig = keystore.sign_with_identity(sig_payload.as_slice());
 
     // SPEC-08 §5.2 step 9 — `inner_plaintext` + `padded_blob` zeroize on
     // drop через `Zeroizing<Vec<u8>>` (row 11 cold-boot mitigation,
@@ -284,18 +303,19 @@ pub fn unseal_v2(
     sig_bytes.copy_from_slice(&inner[PUBLIC_KEY_LEN..INNER_HEADER_LEN]);
     let sig = Ed25519Signature::from_bytes(&sig_bytes);
 
-    let message = inner[INNER_HEADER_LEN..].to_vec();
+    let mut message = Zeroizing::new(Vec::with_capacity(inner.len() - INNER_HEADER_LEN));
+    message.extend_from_slice(&inner[INNER_HEADER_LEN..]);
 
     // Verify inner signature над DOMAIN_SEP_V2 || ct || message.
-    let sig_payload = signature_payload_v2(&ct_buf, &message);
+    let sig_payload = signature_payload_v2(&ct_buf, message.as_slice());
     let vk = PublicVerifyingKey::from_bytes(&sender_id_bytes)
         .map_err(|_| SealedSenderError::MalformedSenderKey)?;
-    vk.verify(&sig_payload, &sig)
+    vk.verify(sig_payload.as_slice(), &sig)
         .map_err(|_| SealedSenderError::InvalidSignature)?;
 
     Ok(OpenedEnvelope {
         sender_identity,
-        message,
+        message: OpenedMessage::from_zeroizing(message),
     })
 }
 
@@ -344,9 +364,13 @@ fn derive_v2_keys(
 ///
 /// V2 inner-signature payload: `DOMAIN_SEP_V2 || xwing_ct || message`.
 /// The sender's signature covers the specific envelope (via ct) — anti-replay.
-fn signature_payload_v2(xwing_ct: &[u8; XWING_CIPHERTEXT_LEN], message: &[u8]) -> Vec<u8> {
-    let mut payload =
-        Vec::with_capacity(V2_DOMAIN_SEP.len() + XWING_CIPHERTEXT_LEN + message.len());
+fn signature_payload_v2(
+    xwing_ct: &[u8; XWING_CIPHERTEXT_LEN],
+    message: &[u8],
+) -> Zeroizing<Vec<u8>> {
+    let mut payload = Zeroizing::new(Vec::with_capacity(
+        V2_DOMAIN_SEP.len() + XWING_CIPHERTEXT_LEN + message.len(),
+    ));
     payload.extend_from_slice(V2_DOMAIN_SEP);
     payload.extend_from_slice(xwing_ct);
     payload.extend_from_slice(message);
@@ -509,8 +533,14 @@ mod tests {
         let mut rng = OsRng;
         let message = b"forged-inner-signature";
 
+        // Test-only: use legacy xwing_encaps (still in API for tests where
+        // hedged witness не нужен). Production использует
+        // xwing_encaps_hedged via seal_v2.
+        // Test-only: use legacy xwing_encaps (still in API for tests where
+        // the hedged witness is not needed). Production uses
+        // xwing_encaps_hedged via seal_v2.
         let (xwing_ct, shared_secret) =
-            xwing_encaps(&mut rng, &bob_xwing_pk).expect("xwing encaps");
+            umbrella_pq::xwing_encaps(&mut rng, &bob_xwing_pk).expect("xwing encaps");
         let (aead_key, aead_nonce) =
             derive_v2_keys(&shared_secret, &xwing_ct, &bob_xwing_pk).expect("v2 keys");
 

@@ -238,10 +238,20 @@ pub const XWING_COMBINER: ModelMetadata = ModelMetadata {
     properties: &[
         "joint_security_classical_break_x25519",
         "joint_security_quantum_break_mlkem",
-        "domain_separation",
+        "domain_separation_label_simultaneity",
+        "kdf_transcript_binding",
+        "adversarial_encaps_quantum_break_cannot_recover_K",
+        "honest_setup_executable",
+        // Round-3 hedged-encaps closure (2026-05-19,
+        // Bellare-Hoang-Keelveedhi 2015).
+        "hedged_encaps_unbreakable_with_partial_compromise",
+        "rng_only_compromise_preserves_secrecy",
+        "witness_only_compromise_preserves_secrecy",
+        "hedged_encaps_executable",
+        "hedged_lemma_is_tight_under_double_compromise",
     ],
     status: VerificationStatus::Verified {
-        last_run: "2026-05-09",
+        last_run: "2026-05-19",
     },
 };
 
@@ -1099,6 +1109,46 @@ pub const OPRF_RISTRETTO255: ModelMetadata = ModelMetadata {
     },
 };
 
+/// Round-7 discovery model: PSI + @username lookup + KT-bind security.
+///
+/// Доказывает 5 lemma + 1 sanity (всё 6/6 verified локально 2026-05-18):
+/// - `server_never_learns_plaintext_phone` (D-1): сервер не получает
+///   plaintext input.
+/// - `intersection_cardinality_only_disclosed` (D-8): server learns
+///   intersection cardinality only (а не сам plaintext).
+/// - `kt_bind_prevents_silent_swap` (D-3): KT inclusion proof обязательно
+///   совпадает с claimed_root → silent swap impossible.
+/// - `anon_id_unlinkable_across_queries` (D-2 / D-6): два запроса одного
+///   клиента имеют distinct anon_ids.
+/// - `replay_protection_enforced` (D-5): один и тот же server response
+///   не появляется дважды.
+/// - `honest_discovery_executable`: existence-trace.
+///
+/// # Constant: DISCOVERY (English)
+///
+/// Round-7 discovery model: PSI + @username lookup + KT-bind security.
+/// Proves 5 lemmas + 1 sanity (all 6/6 verified locally on 2026-05-18).
+pub const DISCOVERY: ModelMetadata = ModelMetadata {
+    name: "umbrella_discovery",
+    spec_reference:
+        "Round-7 design `docs/superpowers/specs/2026-05-18-phd-b-discovery-design.md` + RFC 9497 + RFC 6962",
+    spec_version: "0.0.1",
+    block_reference: "round-7",
+    tool: ProtocolType::Tamarin,
+    model_path: "models/discovery.spthy",
+    properties: &[
+        "server_never_learns_plaintext_phone",
+        "intersection_cardinality_only_disclosed",
+        "kt_bind_prevents_silent_swap",
+        "anon_id_unlinkable_across_queries",
+        "replay_protection_enforced",
+        "honest_discovery_executable",
+    ],
+    status: VerificationStatus::Verified {
+        last_run: "2026-05-18",
+    },
+};
+
 /// Полный список всех моделей в крейте.
 ///
 /// Updated при добавлении каждой новой модели в blocks 9.3 / 9.4 / 9.5.
@@ -1126,6 +1176,7 @@ pub const ALL_MODELS: &[ModelMetadata] = &[
     SFRAME_RFC9605,
     TYPE_SAFE_ENFORCEMENT,
     OPRF_RISTRETTO255,
+    DISCOVERY,
 ];
 
 #[cfg(test)]
@@ -1178,13 +1229,21 @@ mod tests {
         assert_eq!(XWING_COMBINER.model_path, "models/xwing_combiner.spthy");
         assert_eq!(XWING_COMBINER.spec_version, "1.0.0");
         assert_eq!(XWING_COMBINER.block_reference, "9.2");
+        // 2026-05-19: extended с round-3 hedged-encaps lemmas
+        // (Bellare-Hoang-Keelveedhi 2015 closure of R5.A/R5.C).
+        // 2026-05-19: extended with round-3 hedged-encaps lemmas
+        // (Bellare-Hoang-Keelveedhi 2015 closure of R5.A/R5.C).
         assert_eq!(
             XWING_COMBINER.status,
             VerificationStatus::Verified {
-                last_run: "2026-05-09"
+                last_run: "2026-05-19"
             }
         );
-        assert_eq!(XWING_COMBINER.properties.len(), 3);
+        // 5 base lemmas (joint_security_classical, joint_security_quantum,
+        // domain_separation_label_simultaneity, kdf_transcript_binding,
+        // adversarial_encaps_quantum_break_cannot_recover_K) + honest_setup
+        // + 5 round-3 hedged lemmas = 11 properties.
+        assert_eq!(XWING_COMBINER.properties.len(), 11);
     }
 
     /// ALL_MODELS содержит XWING_COMBINER.
@@ -1299,10 +1358,11 @@ mod tests {
 
     /// Tamarin/ProVerif counts в ALL_MODELS после block 10.23 (snapshot).
     /// Tamarin/ProVerif counts in ALL_MODELS after block 10.23 (snapshot).
+    /// After round 7 discovery model added: 10 Tamarin + 4 ProVerif.
     #[test]
     fn all_models_tool_counts_after_block_9_4_snapshot() {
-        // Snapshot test — после block 10.23 counts: 9 Tamarin + 4 ProVerif.
-        // Snapshot test — after block 10.23 counts: 9 Tamarin + 4 ProVerif.
+        // Snapshot test — after round 7 discovery model added: 10 Tamarin +
+        // 4 ProVerif.
         let tamarin = ALL_MODELS
             .iter()
             .filter(|m| m.tool == ProtocolType::Tamarin)
@@ -1311,8 +1371,8 @@ mod tests {
             .iter()
             .filter(|m| m.tool == ProtocolType::ProVerif)
             .count();
-        assert_eq!(tamarin, 9, "expected 9 Tamarin models after block 10.23");
-        assert_eq!(proverif, 4, "expected 4 ProVerif models after block 10.23");
+        assert_eq!(tamarin, 10, "expected 10 Tamarin models after round 7");
+        assert_eq!(proverif, 4, "expected 4 ProVerif models after round 7");
     }
 
     /// KT_V1_SELF_MONITORING metadata имеет ожидаемую форму (block 9.5 Tamarin).
@@ -1357,17 +1417,18 @@ mod tests {
         assert_eq!(MLS_ED25519.properties.len(), 3);
     }
 
-    /// ALL_MODELS содержит все три block-9.5 модели и итого имеет 13 элементов
-    /// после block 10.23 formal models expansion.
-    /// ALL_MODELS contains all three block-9.5 models and has 13 elements
-    /// total after block 10.23 formal models expansion.
+    /// ALL_MODELS содержит все три block-9.5 модели и итого имеет 14 элементов
+    /// после round 7 discovery model addition.
+    /// ALL_MODELS contains all three block-9.5 models and has 14 elements
+    /// total after round 7 discovery model addition.
     #[test]
     fn all_models_contains_block_9_5_models() {
         let names: Vec<&str> = ALL_MODELS.iter().map(|m| m.name).collect();
         assert!(names.contains(&"umbrella_kt_v1_self_monitoring"));
         assert!(names.contains(&"umbrella_sealed_sender_v1"));
         assert!(names.contains(&"umbrella_mls_ed25519"));
-        assert_eq!(ALL_MODELS.len(), 13);
+        assert!(names.contains(&"umbrella_discovery"));
+        assert_eq!(ALL_MODELS.len(), 14);
     }
 
     /// MULTI_DEVICE_AUTHORIZATION metadata имеет ожидаемую форму (block 10.23

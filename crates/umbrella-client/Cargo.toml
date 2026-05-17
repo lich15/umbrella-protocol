@@ -50,6 +50,25 @@ umbrella-padding = { workspace = true }
 umbrella-backup = { workspace = true }
 umbrella-calls = { workspace = true }
 
+# Round-6 distributed identity backend.
+umbrella-threshold-identity = { workspace = true }
+
+# umbrella-crypto-primitives нужен для `MlockedSecret<T>` (round-5
+# device-capture closure F-PHD-DC-R11-1): RowCipher.master_key + MockHwKeystore.
+# umbrella-crypto-primitives provides `MlockedSecret<T>` (round-5 device-
+# capture closure F-PHD-DC-R11-1): RowCipher.master_key + MockHwKeystore.
+umbrella-crypto-primitives = { workspace = true }
+
+# Ed25519 + CSPRNG для `MockHwKeystore` (round-5 device-capture closure
+# F-PHD-DC-R10-1 Component 1). Раньше в [dev-dependencies] (attestation
+# tests); теперь main dep для keystore::hw_callback.
+# Ed25519 + CSPRNG for `MockHwKeystore` (round-5 device-capture closure
+# F-PHD-DC-R10-1 Component 1). Was [dev-dependencies] (attestation
+# tests); now a main dep for keystore::hw_callback.
+ed25519-dalek = { workspace = true }
+rand_core = { workspace = true }
+
+
 # Async runtime (production design Решение 3) и async-trait для UnwrapTransport impls.
 # Async runtime (production design Decision 3) and async-trait for UnwrapTransport impls.
 tokio = { workspace = true }
@@ -100,6 +119,10 @@ sha2 = { workspace = true }
 
 # Errors + structured logs.
 thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# Round-6 deterministic CSPRNG для bootstrap test rigs.
+rand_chacha = { workspace = true }
 
 # Serde для config/metadata marshalling и hex-encoding для REST path-сегментов
 # (account_id, message_id, peer_id в Http2KtTransport / Http2PostmanTransport /
@@ -119,9 +142,30 @@ tempfile = { workspace = true }
 wiremock = { workspace = true }
 rcgen = { workspace = true }
 
-# Ed25519 device-signing в тестах attestation flow (production release): используется
-# реальный keypair для seal_unwrap_request_with_async_attestation + verify.
-# Ed25519 device signing in attestation-flow tests (Release milestone): real keypair
-# used for seal_unwrap_request_with_async_attestation + verify.
-ed25519-dalek = { workspace = true }
-rand_core = { workspace = true }
+# Ed25519 / rand_core теперь main deps (round-5 device-capture closure
+# F-PHD-DC-R10-1 Component 1 — MockHwKeystore). [dev-dependencies] больше
+# их не дублирует.
+# Ed25519 / rand_core are now main deps (round-5 device-capture closure
+# F-PHD-DC-R10-1 Component 1 — MockHwKeystore). No longer duplicated under
+# [dev-dependencies].
+
+# BIP-39 mnemonic for R7 device-capture lldb example (round 4 PhD-B audit).
+# Reads a 32-byte entropy needle, builds the canonical IdentitySeed, then
+# parks at named breakpoints so an lldb Python scanner can search process
+# memory for the needle bytes.
+bip39 = { workspace = true }
+
+# umbrella-threshold-identity для round-6 attack tests (R20-R27).
+# Already main dep — also needed as dev-dep for `attack_*` test direct use.
+
+[[example]]
+name = "r7_identity_lldb_target"
+required-features = []
+
+[[example]]
+name = "r12_ratchet_lldb_target"
+required-features = []
+
+[[example]]
+name = "r20_distributed_identity_lldb_target"
+required-features = []

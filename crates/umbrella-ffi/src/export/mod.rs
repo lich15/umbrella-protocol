@@ -17,9 +17,11 @@
 pub mod call;
 pub mod client;
 pub mod cloud_chat;
+pub mod onboarding;
 pub mod secret_chat;
 
 pub use call::{CallSessionHandle, CallStateFfi};
 pub use client::{ClientConfigFfi, UmbrellaClientHandle};
 pub use cloud_chat::CloudChatHandle;
+pub use onboarding::{BootstrapOutputFfi, OnboardingHandle, UnlockResultFfi};
 pub use secret_chat::SecretChatHandle;

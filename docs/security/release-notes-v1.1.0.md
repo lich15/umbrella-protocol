@@ -50,6 +50,8 @@ fail-closed.
 - Sensitive protocol structs now redact `Debug` output for plaintext, media
   frames, attestation tokens, server nonces, device keys, signatures, shares,
   QR payloads, TURN credentials, and routing identifiers.
+- Memory hygiene now covers BIP-39 and SLIP-0010 derivation temporaries, Sealed
+  Sender opened plaintext via `OpenedMessage`, and system-RNG retry jitter.
 - Full workspace tests and local audit scripts were rerun after merging to
   `main`.
 
@@ -122,6 +124,11 @@ These are not hidden as "done". They remain release boundaries.
 - Чувствительные структуры протокола теперь скрывают `Debug` для plaintext,
   media frames, attestation token, server nonce, device key, подписей, долей,
   QR payload, TURN password и routing identifiers.
+- Гигиена памяти теперь покрывает временные значения вывода BIP-39,
+  SLIP-0010, 12 слов восстановления, внутренний ключ резервной копии после
+  V2-распаковки, очищаемый путь расшифрования строки SQLite, раскрытый
+  plaintext Sealed Sender через `OpenedMessage` и системный генератор для
+  задержки повторов.
 - Полный прогон всей рабочей области и локальные аудит-скрипты были запущены
   после слияния в `main`.
 

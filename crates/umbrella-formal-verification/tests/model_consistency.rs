@@ -21,7 +21,7 @@ use std::fs;
 use std::path::Path;
 
 use umbrella_formal_verification::{
-    ModelMetadata, ProtocolType, VerificationStatus, ALL_MODELS, BACKUP_WRAP_V2,
+    ModelMetadata, ProtocolType, VerificationStatus, ALL_MODELS, BACKUP_WRAP_V2, DISCOVERY,
     DOWNGRADE_RESISTANCE, HYBRID_SIGNATURE_AND_MODE, KT_V1_SELF_MONITORING, KT_V2_SELF_MONITORING,
     MLS_ED25519, MULTI_DEVICE_AUTHORIZATION, OPRF_RISTRETTO255, SEALED_SENDER_V1, SEALED_SENDER_V2,
     SFRAME_RFC9605, TYPE_SAFE_ENFORCEMENT, XWING_COMBINER,
@@ -201,12 +201,17 @@ fn xwing_combiner_metadata_block_reference_is_9_2() {
 
 /// X-Wing combiner has a fresh completed Tamarin proof run.
 /// X-Wing combiner имеет свежий завершённый Tamarin proof run.
+///
+/// 2026-05-19: re-run после round-3 hedged-encaps closure
+/// (Bellare-Hoang-Keelveedhi 2015 extension); all 11 lemmas verified.
+/// 2026-05-19: re-run after round-3 hedged-encaps closure
+/// (Bellare-Hoang-Keelveedhi 2015 extension); all 11 lemmas verified.
 #[test]
 fn xwing_combiner_status_is_verified_after_fresh_tamarin_run() {
     assert_eq!(
         XWING_COMBINER.status,
         VerificationStatus::Verified {
-            last_run: "2026-05-09"
+            last_run: "2026-05-19"
         }
     );
 }
@@ -973,14 +978,14 @@ fn block_9_5_models_have_correct_block_reference() {
     }
 }
 
-/// ALL_MODELS после block 10.23 имеет 13 моделей (9 Tamarin + 4 ProVerif).
-/// ALL_MODELS after block 10.23 has 13 models (9 Tamarin + 4 ProVerif).
+/// ALL_MODELS после round 7 имеет 14 моделей (10 Tamarin + 4 ProVerif).
+/// ALL_MODELS after round 7 has 14 models (10 Tamarin + 4 ProVerif).
 #[test]
 fn all_models_count_after_block_9_5() {
     assert_eq!(
         ALL_MODELS.len(),
-        13,
-        "expected 13 models after block 10.23 (9 Tamarin + 4 ProVerif)"
+        14,
+        "expected 14 models after round 7 (10 Tamarin + 4 ProVerif)"
     );
     let tamarin = ALL_MODELS
         .iter()
@@ -990,8 +995,8 @@ fn all_models_count_after_block_9_5() {
         .iter()
         .filter(|m| m.tool == ProtocolType::ProVerif)
         .count();
-    assert_eq!(tamarin, 9, "expected 9 Tamarin models after block 10.23");
-    assert_eq!(proverif, 4, "expected 4 ProVerif models after block 10.23");
+    assert_eq!(tamarin, 10, "expected 10 Tamarin models after round 7");
+    assert_eq!(proverif, 4, "expected 4 ProVerif models after round 7");
 }
 
 // ---------------------------------------------------------------------------
@@ -1153,6 +1158,81 @@ fn block_10_23_entries_have_correct_block_reference() {
             );
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Round-7 — discovery model consistency tests.
+// Round-7 — discovery model consistency tests.
+// ---------------------------------------------------------------------------
+
+/// `theory NAME` header in discovery.spthy matches metadata.
+#[test]
+fn discovery_theory_header_matches_metadata() {
+    let body = read_model(&DISCOVERY);
+    let needle = format!("theory {}", DISCOVERY.name);
+    assert!(
+        body.contains(&needle),
+        "Tamarin theory header does not match metadata.name = {:?} (model {:?})",
+        DISCOVERY.name,
+        DISCOVERY.model_path
+    );
+}
+
+/// Each property in DISCOVERY metadata has a matching `lemma NAME:`.
+#[test]
+fn discovery_lemma_names_match_metadata_properties() {
+    let body = read_model(&DISCOVERY);
+    for prop in DISCOVERY.properties {
+        let needle = format!("lemma {prop}:");
+        assert!(
+            body.contains(&needle),
+            "lemma {:?} declared in metadata.properties but not found in {:?}",
+            prop,
+            DISCOVERY.model_path
+        );
+    }
+}
+
+/// Discovery model status is Verified after fresh 2026-05-18 Tamarin run.
+#[test]
+fn discovery_status_is_verified_2026_05_18() {
+    assert_eq!(
+        DISCOVERY.status,
+        VerificationStatus::Verified {
+            last_run: "2026-05-18"
+        }
+    );
+}
+
+/// Discovery model is a Tamarin (`spthy`) model.
+#[test]
+fn discovery_tool_is_tamarin() {
+    assert_eq!(DISCOVERY.tool, ProtocolType::Tamarin);
+    assert!(DISCOVERY.model_path.ends_with(".spthy"));
+}
+
+/// Discovery model has block_reference = "round-7".
+#[test]
+fn discovery_block_reference_is_round_7() {
+    assert_eq!(DISCOVERY.block_reference, "round-7");
+}
+
+/// Discovery model exposes all 5 D-series lemmas + 1 sanity.
+#[test]
+fn discovery_has_all_five_d_series_lemmas_plus_sanity() {
+    let names: Vec<&str> = DISCOVERY.properties.iter().copied().collect();
+    let expected = [
+        "server_never_learns_plaintext_phone",
+        "intersection_cardinality_only_disclosed",
+        "kt_bind_prevents_silent_swap",
+        "anon_id_unlinkable_across_queries",
+        "replay_protection_enforced",
+        "honest_discovery_executable",
+    ];
+    for e in &expected {
+        assert!(names.contains(e), "missing lemma {e:?} in DISCOVERY.properties");
+    }
+    assert_eq!(names.len(), expected.len());
 }
 
 /// Json round-trip metadata через serde_json — sanity check для serialization

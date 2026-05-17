@@ -1,0 +1,56 @@
+(lldb) command source -s 0 '/tmp/r20_lldb_commands.txt'
+Executing commands in '/tmp/r20_lldb_commands.txt'.
+(lldb) target create target/r6-release/examples/r20_distributed_identity_lldb_target
+Current executable set to '/Users/daniel/Documents/Projects/Messenger/Umbrella Protocol/target/r6-release/examples/r20_distributed_identity_lldb_target' (arm64).
+(lldb) command script import /tmp/r20_lldb_script.py
+(lldb) breakpoint set -n r20_phase_before_bootstrap
+Breakpoint 1: where = r20_distributed_identity_lldb_target`r20_distributed_identity_lldb_target::r20_phase_before_bootstrap::h376e47d53bfab67d + 12 at r20_distributed_identity_lldb_target.rs:74:5, address = 0x0000000100000dd0
+(lldb) breakpoint command add 1
+(lldb) breakpoint set -n r20_phase_after_bootstrap
+Breakpoint 2: where = r20_distributed_identity_lldb_target`r20_distributed_identity_lldb_target::r20_phase_after_bootstrap::h1c6e789080eb29cd + 12 at r20_distributed_identity_lldb_target.rs:86:5, address = 0x0000000100000da0
+(lldb) breakpoint command add 2
+(lldb) breakpoint set -n r20_phase_after_unlock
+Breakpoint 3: where = r20_distributed_identity_lldb_target`r20_distributed_identity_lldb_target::r20_phase_after_unlock::h3978d024f0a20402 + 12 at r20_distributed_identity_lldb_target.rs:95:5, address = 0x0000000100000d70
+(lldb) breakpoint command add 3
+(lldb) run
+[R20] starting round-6 distributed identity bootstrap-and-unlock target
+[R20] negative-control needle (identity_sk pattern): 0xDB × 32 — must yield 0 hits
+[R20] positive-control needle (identity_pk): 0xCA × 32 — should yield ≥1 hit
+[R20 lldb] SUMMARY BEFORE_BOOTSTRAP: regions=81 chunks=673 bytes=694304768 sk_hits=0 pk_hits=0
+(lldb)  r20_scan_before
+(lldb)  continue
+Process 20899 resuming
+Command #2 'continue' continued the target.
+[R20] PHASE BEFORE bootstrap — no round-6 state on device
+[R20] bootstrap output:
+  identity_pk = 0xcacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacaca
+  account_local_salt = 0xdcee9e8ff34a93c0bc18b0f7407d4198
+  device_random_handle = 0xa9df65f4e5a47b1ee167d486bc435f18d960b982ea08d4c28d070eaa8dd89f1a
+  anon_id[0] = 0x08e09b39a0209c588352262aa9760b59a4d849ec12ea0d34d7cd3c8a8c66585c
+[R20 lldb] POS_CTRL AFTER_BOOTSTRAP/IDENTITY_PK base=0x16f608000 abs=0x16fdfda50 name=
+[R20 lldb]   prev16=0000000000000000e0d55c0602000000  match+next=cacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacaa9df65f4e5a47b1ee167d486bc435f18
+[R20 lldb] SUMMARY AFTER_BOOTSTRAP: regions=83 chunks=738 bytes=761430016 sk_hits=0 pk_hits=1
+(lldb)  r20_scan_after_bootstrap
+(lldb)  continue
+Process 20899 resuming
+Command #2 'continue' continued the target.
+[R20] PHASE AFTER bootstrap — identity_pk + handles on device, no identity_sk
+[R20] session keys re-derived (in MlockedSecret):
+  device_key (first 8 bytes) = 0x0bda7a891ccc556f
+  master_key (first 8 bytes) = 0x8b944cd0bd1f26aa
+[R20] note: identity_sk does NOT exist as bytes anywhere in this process.
+[R20 lldb] POS_CTRL AFTER_UNLOCK/IDENTITY_PK base=0x16f608000 abs=0x16fdfda50 name=
+[R20 lldb]   prev16=0000000000000000e0d55c0602000000  match+next=cacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacaa9df65f4e5a47b1ee167d486bc435f18
+[R20 lldb] POS_CTRL AFTER_UNLOCK/IDENTITY_PK base=0x16f608000 abs=0x16fdfdf50 name=
+[R20 lldb]   prev16=089238f9ed93e3ca0100000000000000  match+next=cacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacaca0040a203006000000155555555555555
+[R20 lldb] SUMMARY AFTER_UNLOCK: regions=89 chunks=743 bytes=762478592 sk_hits=0 pk_hits=2
+(lldb)  r20_scan_after_unlock
+(lldb)  continue
+Process 20899 resuming
+Command #2 'continue' continued the target.
+[R20] PHASE AFTER unlock — session keys held in MlockedSecret
+[R20] target parked at r20_phase_after_unlock — scan now via lldb.
+[R20] expected lldb scan result: 0 hits for 0xDB × 32 (identity_sk needle), ≥1 hit for 0xCA × 32 (identity_pk needle)
+Process 20899 launched: '/Users/daniel/Documents/Projects/Messenger/Umbrella Protocol/target/r6-release/examples/r20_distributed_identity_lldb_target' (arm64)
+Process 20899 exited with status = 0 (0x00000000)
+(lldb) quit

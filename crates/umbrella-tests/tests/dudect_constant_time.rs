@@ -366,6 +366,110 @@ fn xwing_decaps_valid_vs_invalid_ciphertext_timing() {
     report("umbrella_pq::xwing_decaps valid-vs-invalid", &result);
 }
 
+// =============================================================================
+// Site 11: V2 backup-wrap unwrap_v2_to_v1 end-to-end timing
+// (PhD-B Hybrid PQ audit 2026-05-19, F-PHD-PQ-8 carry-over)
+// =============================================================================
+
+/// `unwrap_v2_to_v1` valid envelope vs tampered envelope CT measurement.
+/// Fixed class: valid V2 envelope with correct AAD; Random class: tampered
+/// envelope variants (bit-flips inside aead_payload). Function timing should
+/// not distinguish — both paths run through xwing_decaps + HKDF +
+/// ChaCha20-Poly1305 decrypt. Invalid runs return Err early at AEAD MAC
+/// verification; the CT invariant is that **AEAD MAC verification is
+/// constant-time**, which Poly1305 guarantees by design (universal hash).
+#[cfg(feature = "pq")]
+#[test]
+#[ignore = "dudect bench requires --release; run via cargo test --release -- --ignored"]
+fn unwrap_v2_to_v1_valid_vs_tampered_envelope_timing() {
+    use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+    use curve25519_dalek::scalar::Scalar;
+    use umbrella_backup::cloud_wrap::{
+        unwrap_v2_to_v1, wrap_message_key, wrap_v1_into_v2, CanonicalAad, ThresholdConfig,
+        WrappingParams, ED25519_PUB_LEN, MESSAGE_KEY_LEN, POINT_LEN, PROTOCOL_VERSION,
+    };
+    use umbrella_pq::{xwing_keygen, HedgedWitness};
+
+    let samples = sample_budget();
+    let mut rng = OsRng;
+
+    // Build baseline V2 envelope.
+    let k = Scalar::from(7u64);
+    let y = RISTRETTO_BASEPOINT_POINT * k;
+    let v1_params = WrappingParams {
+        version: PROTOCOL_VERSION,
+        main_pubkey: y.compress().to_bytes(),
+        server_pubkeys: [[0u8; POINT_LEN]; 5],
+        config: ThresholdConfig::default(),
+    };
+    let mk = [0xAB; MESSAGE_KEY_LEN];
+    let aad = CanonicalAad {
+        sender_identity_pubkey: [0xAA; ED25519_PUB_LEN],
+        recipient_device_pubkey: [0xBB; ED25519_PUB_LEN],
+        chat_id: [0xCC; 32],
+        msg_seq: 13,
+    };
+    let v1 = wrap_message_key(&v1_params, &mk, &aad, &mut rng).expect("v1 wrap");
+    let (pk, sk) = xwing_keygen(&mut rng).expect("xwing keygen");
+    let test_witness = HedgedWitness::zeroed_for_tests_only();
+    let valid_v2 =
+        wrap_v1_into_v2(&pk, &v1, &aad, &test_witness, &mut rng).expect("v2 wrap");
+
+    // Pool of tampered envelopes (mutate aead_payload at different offsets).
+    let tampered_pool: Vec<_> = (0..32)
+        .map(|i| {
+            let mut v = valid_v2.clone();
+            let pos = i % v.aead_payload.len();
+            v.aead_payload[pos] ^= 0x55;
+            v
+        })
+        .collect();
+
+    let result = run_dudect(
+        samples,
+        |_idx| {
+            // Valid: must succeed.
+            let recovered = unwrap_v2_to_v1(
+                black_box(&sk),
+                black_box(&pk),
+                black_box(&valid_v2),
+                black_box(&aad),
+            )
+            .expect("valid unwrap");
+            let _ = black_box(recovered);
+        },
+        |idx| {
+            // Tampered: must fail; either AeadDecryptFailed or XWingDecapsFailed.
+            let v = &tampered_pool[idx % tampered_pool.len()];
+            let r = unwrap_v2_to_v1(black_box(&sk), black_box(&pk), black_box(v), black_box(&aad));
+            let _ = black_box(r);
+        },
+    );
+
+    // PhD-B audit F-PHD-PQ-8 finding: the valid vs tampered distinction is
+    // **already adversary-observable** from the Result variant (`Ok(...)`
+    // vs `Err(BackupError::AeadDecryptFailed)`). The function timing
+    // unsurprisingly differs by ~hundreds of nanoseconds — valid path
+    // completes the full inner V1 WrappedKey parse, while tampered path
+    // exits at AEAD MAC verification or X-Wing decaps failure. This is NOT
+    // a CT-secret-bit leak (no SECRET KEY material distinguishes the two
+    // classes); the distinguishing input — the envelope wire bytes —
+    // is public per protocol. Same classification as `ml_dsa_65_verify`
+    // (site 9): security-relevant magnitude observation, not a strict CT
+    // assertion.
+    //
+    // The actual CT invariant for V2 unwrap — that AEAD MAC verification
+    // is constant-time — is enforced by the underlying chacha20poly1305
+    // crate's `Poly1305` (universal hash, secret-independent comparison).
+    // That invariant is exercised by site 6 (`RowCipher::decrypt_row`).
+    report_public_observation(
+        "umbrella_backup::unwrap_v2_to_v1 valid-vs-tampered",
+        &result,
+        "NOT a CT assertion: success vs error variant is adversary-observable from Result; \
+         AEAD MAC constant-time invariant is exercised separately at site 6",
+    );
+}
+
 /// Pre-генерирует pool из `n` 32-byte random secrets ВНЕ timing loop
 /// для dudect Random class — критично для accurate measurement (без
 /// этого OsRng overhead доминирует над секретно-зависимой операцией).

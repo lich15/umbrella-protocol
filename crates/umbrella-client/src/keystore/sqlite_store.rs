@@ -257,14 +257,14 @@ impl SqliteMetadataStore {
             let tag_arr = fixed_array::<16>(&enc_tag, "enc_tag")?;
             let sender_arr = fixed_array::<32>(&sender, "sender")?;
 
-            let text_bytes = self.cipher.decrypt_row(
+            let text_bytes = self.cipher.decrypt_row_zeroizing(
                 "messages.text",
                 &mid_arr,
                 &enc_text,
                 nonce_arr,
                 tag_arr,
             )?;
-            let text = String::from_utf8(text_bytes)
+            let text = String::from_utf8(text_bytes.to_vec())
                 .map_err(|e| ClientError::Storage(format!("utf-8 decode text: {e}")))?;
 
             out.push(StoredMessage {

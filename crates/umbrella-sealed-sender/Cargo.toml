@@ -32,7 +32,7 @@ unsafe_code = "forbid"
 # Hybrid post-quantum sealed-sender envelope opt-in (v1.1.0 release, production design Decision 4
 # extension for production release).
 default = []
-pq = ["dep:umbrella-pq", "umbrella-pq/ml-kem", "dep:secrecy"]
+pq = ["dep:umbrella-pq", "umbrella-pq/ml-kem", "umbrella-identity/pq", "dep:secrecy"]
 
 [dependencies]
 umbrella-crypto-primitives = { workspace = true }

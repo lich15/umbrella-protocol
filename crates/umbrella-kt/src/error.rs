@@ -163,6 +163,21 @@ pub enum KtError {
     #[error("identity rotation old and new pubkeys are identical")]
     RotationIdenticalPubkeys,
 
+    /// **F-PHD-RETRO-3-E mitigation**: `code_recovery_public_half_proof`
+    /// в `IdentityRotationRecord` не совпадает с stored `public_half_proof`
+    /// сохранённым в log mirror при предыдущем bootstrap'е. Adversary с
+    /// одной утечкой 24 слов не может пересчитать HKDF-SHA512 от 12-словной
+    /// энтропии, поэтому подмена proof'а блокируется на bit-equal compare.
+    ///
+    /// **F-PHD-RETRO-3-E mitigation**: `code_recovery_public_half_proof`
+    /// in `IdentityRotationRecord` does not match the `public_half_proof`
+    /// recorded in the log mirror at a prior bootstrap. An adversary with
+    /// only a 24-words leak cannot recompute the HKDF-SHA512 over the
+    /// 12-word entropy, so a proof substitution is blocked at bit-equal
+    /// compare.
+    #[error("identity rotation code_recovery_public_half_proof mismatch with stored value")]
+    CodeRecoveryProofMismatch,
+
     // Этап 8 расширения (блок 8.5). KT v2 schema (design.md §8 + ADR-011 Решение 6).
     // Stage 8 extensions (block 8.5). KT v2 schema (design.md §8 + ADR-011 Decision 6).
     /// Первый байт wire-format entry не соответствует ни одной известной

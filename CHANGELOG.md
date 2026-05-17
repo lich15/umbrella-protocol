@@ -4,6 +4,52 @@
 
 ## English
 
+### Post-1.1.0 PhD-B six-round audit closure - 2026-05-18
+
+Audit:
+
+- Merged PR #6 (`84b4d576`): rounds 1-6 of PhD-B level security audit
+  against the 1.1.0 codebase.
+  - Round 1: hybrid post-quantum PhD audit (8 findings F-PHD-PQ-1..8).
+  - Round 2: reality pass (R1-R6 — KyberSlash, MITM, supply-chain,
+    offline decrypt, RNG injection, zeroize lldb).
+  - Round 3: hedged-encaps closure (Bellare-Hoang-Keelveedhi 2015 pattern).
+  - Round 4: device-capture PhD audit (R7-R12; 4 CRITICAL + 3 HIGH).
+  - Round 5: device-capture closure (HW keystore callback +
+    `MlockedSecret<T>` migration + `IdentitySeed` heap refactor).
+  - Round 6: distributed-identity architectural redesign (FROST-Ed25519
+    DKG + PIN model + duress + 8 R20-R27 attack tests).
+- Independent reviewer verdict: 0 BLOCKER + 1 MAJOR + 3 MINOR.
+- 1 MAJOR finding M-FINAL-1: `ClientCore::new_with_hw_callback` still
+  synthesises an ephemeral `IdentityKey` via `IdentitySeed::generate`
+  for backwards compatibility. The seed is heap-resident, zeroize-on-drop,
+  microseconds-wide window. R20 lldb claim "0 identity_sk hits in 2.2 GB"
+  applies only to the round-6 `bootstrap_account` flow. Tracked for
+  v1.2.x removal.
+- Workspace baseline now 2080 release-mode tests (+103 vs 1977 pre-round-6).
+
+Consolidated summary: `docs/audits/ROUND-1-TO-6-SUMMARY.md`.
+
+### Post-1.1.0 memory hygiene hardening - 2026-05-16
+
+Changed:
+
+- BIP-39 and SLIP-0010 derivation now zeroize intermediate entropy, PBKDF2
+  seed, HMAC output, fixed 64-byte copies, temporary extended secrets, and
+  temporary chain codes after use.
+- Sealed Sender `OpenedEnvelope.message` now uses `OpenedMessage`, a
+  zeroizing plaintext wrapper, instead of returning a plain `Vec<u8>`.
+- Retry backoff jitter now uses the system RNG (`OsRng`) for consistency with
+  the rest of the protocol code.
+
+Verification:
+
+- `bip39_derivation_temporaries_are_zeroizing`
+- `slip10_derivation_temporaries_are_zeroized`
+- `opened_envelope_message_is_zeroizing_wrapper`
+- `retry_jitter_uses_system_rng_not_thread_rng`
+- `cargo test -p umbrella-identity -p umbrella-client -p umbrella-sealed-sender --all-features --locked`
+
 ### Post-1.1.0 dependency monitoring - 2026-05-15
 
 Added:
@@ -118,6 +164,57 @@ Security:
 ---
 
 ## Русский
+
+### Закрытие PhD-B аудита из шести раундов после 1.1.0 - 2026-05-18
+
+Аудит:
+
+- Влит PR #6 (`84b4d576`): шесть раундов аудита уровня PhD-B по кодовой
+  базе 1.1.0.
+  - Раунд 1: гибридный постквантовый PhD-аудит (8 находок
+    F-PHD-PQ-1..8).
+  - Раунд 2: реальная проверка атак (R1-R6 — KyberSlash, MITM, цепочка
+    поставок, оффлайн-расшифрование, RNG-инъекция, lldb-zeroize).
+  - Раунд 3: закрытие hedged-encaps (паттерн
+    Bellare-Hoang-Keelveedhi 2015).
+  - Раунд 4: PhD-аудит изъятия устройства (R7-R12; 4 CRITICAL + 3 HIGH).
+  - Раунд 5: закрытие изъятия устройства (HW keystore callback +
+    миграция `MlockedSecret<T>` + heap-перевод `IdentitySeed`).
+  - Раунд 6: архитектурная переделка распределённой идентичности
+    (FROST-Ed25519 DKG + PIN-модель + duress + 8 атакующих тестов
+    R20-R27).
+- Заключение независимого ревьюера: 0 BLOCKER + 1 MAJOR + 3 MINOR.
+- 1 MAJOR-находка M-FINAL-1: `ClientCore::new_with_hw_callback` всё
+  ещё синтезирует эфемерный `IdentityKey` через `IdentitySeed::generate`
+  для обратной совместимости. Seed лежит в heap, zeroize-on-drop, окно
+  жизни — микросекунды. Заявление R20 lldb «0 identity_sk hits в 2.2 GB»
+  применимо только к round-6 `bootstrap_account`. Удаление вынесено в
+  v1.2.x.
+- Базовая линия рабочей области теперь 2080 release-mode тестов
+  (плюс 103 теста к 1977 базовой линии до раунда 6).
+
+Сводный отчёт: `docs/audits/ROUND-1-TO-6-SUMMARY.md`.
+
+### Гигиена памяти после 1.1.0 - 2026-05-16
+
+Изменено:
+
+- Вывод BIP-39 и SLIP-0010 теперь затирает промежуточную энтропию, PBKDF2 seed,
+  HMAC-выход, фиксированные 64-байтовые копии, временные расширенные секреты и
+  временные chain code после использования.
+- Sealed Sender `OpenedEnvelope.message` теперь возвращает `OpenedMessage` —
+  обёртку над расшифрованным текстом, которая затирает память при удалении, а
+  не обычный `Vec<u8>`.
+- Случайная задержка повторов теперь использует системный генератор (`OsRng`),
+  как остальные чувствительные части протокола.
+
+Проверка:
+
+- `bip39_derivation_temporaries_are_zeroizing`
+- `slip10_derivation_temporaries_are_zeroized`
+- `opened_envelope_message_is_zeroizing_wrapper`
+- `retry_jitter_uses_system_rng_not_thread_rng`
+- `cargo test -p umbrella-identity -p umbrella-client -p umbrella-sealed-sender --all-features --locked`
 
 ### Мониторинг зависимостей после 1.1.0 - 2026-05-15
 

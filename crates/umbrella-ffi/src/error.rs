@@ -117,6 +117,21 @@ pub enum UmbrellaError {
     /// Invariant violation — a crate bug.
     #[error("internal: {0}")]
     Internal(String),
+
+    /// Round-6 distributed identity: PIN-derived re-derivation failure.
+    /// Round-6: PIN-derived re-derivation failure.
+    #[error("crypto: {0}")]
+    Crypto(String),
+
+    /// Round-6: wrong PIN; UX must escalate to 24-word recovery.
+    /// Round-6: wrong PIN.
+    #[error("wrong PIN")]
+    WrongPin,
+
+    /// Round-6: account permanently deleted (duress / dead-man / 5×emergency).
+    /// Round-6: account permanently deleted.
+    #[error("account permanently deleted")]
+    AccountDeleted,
 }
 
 impl From<ClientError> for UmbrellaError {
@@ -137,6 +152,9 @@ impl From<ClientError> for UmbrellaError {
             ClientError::Cancelled => UmbrellaError::Cancelled,
             ClientError::ModeViolation(s) => UmbrellaError::ModeViolation(s.to_string()),
             ClientError::Internal(s) => UmbrellaError::Internal(s),
+            ClientError::Crypto(s) => UmbrellaError::Crypto(s),
+            ClientError::WrongPin => UmbrellaError::WrongPin,
+            ClientError::AccountDeleted => UmbrellaError::AccountDeleted,
         }
     }
 }

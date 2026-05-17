@@ -54,6 +54,12 @@ reject_prod_todo_unimplemented() {
 }
 
 require_pattern "crates/umbrella-identity/src/seed.rs" "debug_does_not_leak_seed"
+require_pattern "crates/umbrella-identity/src/seed.rs" "bip39_derivation_temporaries_are_zeroizing"
+require_pattern "crates/umbrella-identity/src/derive.rs" "slip10_derivation_temporaries_are_zeroized"
+require_pattern "crates/umbrella-identity/src/code_recovery.rs" "code_recovery_temporaries_are_zeroizing"
+require_pattern "crates/umbrella-backup/src/cloud_wrap/pq_wrap.rs" "v2_inner_wrapped_key_plaintext_is_zeroizing"
+require_pattern "crates/umbrella-client/src/keystore/row_cipher.rs" "decrypt_row_zeroizing_returns_zeroizing_plaintext"
+require_pattern "crates/umbrella-client/src/keystore/row_cipher.rs" "row_cipher_sensitive_temporaries_are_zeroizing"
 require_pattern "crates/umbrella-kt/src/observation.rs" "does not store account id"
 require_pattern "crates/umbrella-kt/tests/split_view_exchange.rs" "public_observation_encoding_round_trips_without_private_account_data"
 require_pattern "crates/umbrella-kt/tests/split_view_exchange.rs" "witness_signing_ledger_rejects_second_different_root_for_same_epoch"
@@ -69,6 +75,8 @@ require_pattern "crates/umbrella-client/src/transport/http2_client.rs" "producti
 require_pattern "crates/umbrella-tests/tests/stage2_milestone.rs" "rate_limited_unique_messages_do_not_fill_replay_window"
 require_pattern "crates/umbrella-server-blind-postman/src/envelope.rs" "parsed_envelope_debug_redacts_routing_identifiers"
 require_pattern "crates/umbrella-sealed-sender/src/lib.rs" "opened_envelope_debug_redacts_message_plaintext"
+require_pattern "crates/umbrella-sealed-sender/src/lib.rs" "opened_envelope_message_is_zeroizing_wrapper"
+require_pattern "crates/umbrella-client/src/transport/retry.rs" "retry_jitter_uses_system_rng_not_thread_rng"
 require_pattern "crates/umbrella-mls/src/group.rs" "incoming_message_debug_redacts_application_payload"
 require_pattern "crates/umbrella-oprf/src/attestation.rs" "signed_oprf_request_debug_redacts_replayable_request_material"
 require_pattern "crates/umbrella-backup/src/cloud_wrap/signed_request.rs" "signed_unwrap_request_debug_redacts_replayable_request_material"
