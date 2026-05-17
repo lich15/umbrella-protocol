@@ -404,19 +404,20 @@ impl ClientCore {
         let (handle, _verifying_key_placeholder) =
             bootstrap_hw_identity(&callback, label).map_err(ClientError::from)?;
 
-        // Legacy `identity: Arc<IdentityKey>` slot — we synthesize a
-        // throwaway IdentityKey from an ephemeral seed for backwards-
-        // compat with downstream code that still reads `core.identity`.
-        // The seed is `Box<[u8; 32]>` heap-resident, zeroized on drop;
-        // production code is expected to migrate the readers to
-        // `core.hw_identity_handle + core.hw_callback` over v1.2.x.
+        // M-FINAL-1 (independent review 2026-05-18): R20 "0 hits identity_sk"
+        // applies to the round-6 distributed bootstrap path
+        // (`distributed_identity_client::bootstrap_account`) — NOT this
+        // hw-callback entry point. Here a 32-byte ephemeral signing key
+        // materializes on heap (`Box<[u8; 32]>`, zeroize-on-drop) for
+        // backwards compatibility with downstream readers of `core.identity`.
+        // Window of existence is microseconds (synthesize → derive → drop),
+        // entirely heap-resident (no stack spill per round-5 closure), but
+        // it IS a brief on-device materialization. Real production HW path
+        // signs through `core.hw_callback` and never uses this ephemeral.
         //
-        // Legacy `identity: Arc<IdentityKey>` slot — we synthesize a
-        // throwaway IdentityKey from an ephemeral seed for backwards-
-        // compat with downstream code that still reads `core.identity`.
-        // The seed is `Box<[u8; 32]>` heap-resident, zeroized on drop;
-        // production code is expected to migrate readers to
-        // `core.hw_identity_handle + core.hw_callback` over v1.2.x.
+        // TODO(v1.2.x): refactor `core.identity` to `Option<Arc<IdentityKey>>`
+        // or a public-only verifying-key variant so this synthesis can be
+        // eliminated entirely. Tracking issue: M-FINAL-1.
         let ephemeral_seed =
             IdentitySeed::generate(&mut rand_core::OsRng, MnemonicLanguage::English);
         let identity = Arc::new(IdentityKey::derive(&ephemeral_seed, 0)?);
