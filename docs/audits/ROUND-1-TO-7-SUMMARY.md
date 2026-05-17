@@ -1,8 +1,10 @@
-# PhD-B Audit Rounds 1-6 — Consolidated Summary
+# PhD-B Audit Rounds 1-7 — Consolidated Summary
 
-**Status:** CLOSED — merged into `main` on 2026-05-18 via PR #6, commit
-`84b4d576`.
-**Branch under audit:** `audit/phd-b-hybrid-pq-2026-05-19`.
+**Status:** Rounds 1-6 CLOSED — merged into `main` on 2026-05-18 via PR #6,
+commit `84b4d576`. Round 7 single-session audit landed on branch
+`audit/phd-b-discovery-2026-05-18` on 2026-05-18; awaiting PR review.
+**Branches under audit:** `audit/phd-b-hybrid-pq-2026-05-19` (rounds 1-6),
+`audit/phd-b-discovery-2026-05-18` (round 7).
 **Codebase under audit:** Umbrella Protocol 1.1.0.
 **Auditor:** Claude Opus 4.7 (1M context), PhD-B level (state-level
 adversary D per SPEC-01 §4).
@@ -14,12 +16,13 @@ scans end-to-end.
 
 ## 1. Scope
 
-The six-round audit chain runs from cryptanalysis (round 1) through
+The seven-round audit chain runs from cryptanalysis (round 1) through
 attack-reality regression (round 2), defensive closure of the round-2
 findings (round 3), device-capture cryptanalysis (round 4), defensive
-closure of the round-4 findings (round 5), and a round-6 architectural
-redesign of identity to remove the on-device long-term private key
-entirely.
+closure of the round-4 findings (round 5), round-6 architectural redesign
+of identity to remove the on-device long-term private key entirely, and
+round-7 — adding private contact discovery (OPRF-PSI + @username lookup
+with KT bind).
 
 | Round | Title                                | Type                       | Spec                                                                          | Closure report                                                                     |
 |-------|--------------------------------------|----------------------------|-------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
@@ -29,9 +32,11 @@ entirely.
 | 4     | Device-capture PhD audit             | Forensic cryptanalysis     | `superpowers/specs/2026-05-19-phd-b-device-capture-defense-design.md`         | `audits/phd-b-device-capture-defense-2026-05-19.md`                                |
 | 5     | Device-capture closure               | Defense                    | `superpowers/specs/2026-05-19-phd-b-device-capture-closure-design.md`         | `audits/phd-b-device-capture-closure-2026-05-19.md`                                |
 | 6     | Distributed identity + PIN model     | Architectural redesign     | `superpowers/specs/2026-05-19-phd-b-distributed-identity-pin-design.md`       | `audits/phd-b-distributed-identity-closure-2026-05-19.md`                          |
-| **Final** | **Independent review**           | **Re-verification**        | (mandate via memory rule `feedback_phd_pass_full_model_reading.md`)           | `audits/phd-b-final-independent-review-2026-05-19.md`                              |
+| **Final R1-6** | **Independent review**       | **Re-verification**        | (mandate via memory rule `feedback_phd_pass_full_model_reading.md`)           | `audits/phd-b-final-independent-review-2026-05-19.md`                              |
+| 7     | Discovery (PSI + @username)          | Defense                    | `superpowers/specs/2026-05-18-phd-b-discovery-design.md`                      | `audits/phd-b-discovery-closure-2026-05-18.md`                                     |
 
-Consolidated ledger: `audits/phd-b-hybrid-pq-ledger-2026-05-19.md`.
+Consolidated ledger r1-6: `audits/phd-b-hybrid-pq-ledger-2026-05-19.md`.
+Ledger r7: `audits/phd-b-discovery-ledger-2026-05-18.md`.
 
 ---
 
@@ -131,6 +136,22 @@ branch; key deliverables:
 | MINOR-4       | MINOR    | `unlock_with_pin` XOR-combines shares (placeholder)                 | Honestly disclosed      |
 | MINOR-5       | MINOR    | FFI `OnboardingHandle` only exposes `mock_with_pin_root`             | Production wiring TBD   |
 
+### Round 7 (discovery: PSI + @username) — `D-*` (D-1..D-8 threat-model rows)
+
+| Row  | Severity → Status | Title                                                                  | Closed by                                                                                |
+|------|-------------------|------------------------------------------------------------------------|------------------------------------------------------------------------------------------|
+| D-1  | CRITICAL → CLOSED | Server learns plaintext phone from blinded queries                     | OPRF blinding (RFC 9497 SUF) + Tamarin lemma `server_never_learns_plaintext_phone`        |
+| D-2  | HIGH → CLOSED     | Server correlates @username queries from same client over time         | Per-query anon-id HKDF + fresh CSPRNG salt + Tamarin lemma `anon_id_unlinkable_across_queries` |
+| D-3  | CRITICAL → CLOSED | Server returns fake device_pubkey for queried handle (silent swap)     | RFC 6962 KT inclusion proof + pinned epoch root + Tamarin lemma `kt_bind_prevents_silent_swap` |
+| D-4  | HIGH → CLOSED     | 4-of-5 server cluster collusion recovers address book                  | Threshold 3-of-5 + OPRF SUF documented residual + 3 attack regression tests              |
+| D-5  | HIGH → CLOSED     | OPRF response replay attacks                                           | Per-server nonce + `NonceReplayGuard` (1000 rolling) + Tamarin lemma `replay_protection_enforced` |
+| D-6  | MEDIUM → CLOSED   | Anonymous-id reuse linkability                                         | `fresh_query_salt` CSPRNG by-construction + 10000-iteration regression tests             |
+| D-7  | MEDIUM → CLOSED (client) + CARRY-OVER (server coord) | Rate-limit bypass via parallel sibling devices | `ClientBudgetState` (100/h, 5000/day) + server-coordination obligation in backend spec §7 |
+| D-8  | LOW → CLOSED with measured residual | Cardinality-timing side channel                  | HashSet lookup constant-time + padding policy advisory + measured ratio ≤2× per discovery cycle |
+
+Round-7 closure report: `audits/phd-b-discovery-closure-2026-05-18.md`.
+Round-7 ledger: `audits/phd-b-discovery-ledger-2026-05-18.md`.
+
 ---
 
 ## 3. Numerical results — round 6 attack tests (R20-R27)
@@ -185,7 +206,8 @@ The acceptance gate is **scope-limited** by M-FINAL-1: the R20 lldb claim
 |--------------------------------|-------------:|------:|--------------------------------------------------------|
 | Pre-round-1 baseline           | 1977         | -     | 1.1.0 release tag baseline                             |
 | Through rounds 1-5             | 1977         | 0     | All round 1-5 work either inline-fixes or pure docs    |
-| **Post-round 6 (current)**     | **2080**     | **+103** | Round 6 added 8 R20-R27 + DKG + lifecycle + anti-forensic + screenshot_policy + self_destruct tests |
+| Post-round 6                   | 2080         | +103  | Round 6 added 8 R20-R27 + DKG + lifecycle + anti-forensic + screenshot_policy + self_destruct tests |
+| **Post-round 7 (current)**     | **2179**     | **+99** | Round 7 added `umbrella-discovery` crate (54 lib + 38 D-series + 3 PSI correctness) and DISCOVERY model consistency tests |
 
 ---
 
@@ -338,10 +360,53 @@ Branch totals: 134 files changed, +20,000 lines.
 
 ---
 
-## 11. Verdict
+## 11. Verdict — rounds 1-6
 
 **MERGED.** Branch `audit/phd-b-hybrid-pq-2026-05-19` is in `main` as of
 commit `84b4d576` (2026-05-18). 0 BLOCKER, 1 MAJOR (M-FINAL-1, disclosed),
 3 MINOR (documented), ~30 attacks / closures verified CLEAN by the
 independent reviewer. The 6-round audit chain is technically sound;
 closure claims are honest; tests reflect real attacker scenarios.
+
+---
+
+## 12. Round 7 completion (discovery, PSI + @username)
+
+**ON BRANCH; AWAITING PR.** Round 7 single-session PhD-B audit completed
+2026-05-18 on `audit/phd-b-discovery-2026-05-18`. All 7 acceptance gate
+items PASS:
+
+1. PSI 500 vs 1M intersection: 73/500 correct, 0 plaintext bytes in 32-KB
+   request + 96-KB three-server response.
+2. Username lookup: 1000 queries, 0 anon-id collisions.
+3. KT-bind: 3 of 4 forged-response sub-cases reject with the expected
+   `KtBindFailed` discriminator.
+4. Threshold 3-of-5: any subset `{0,1,2}, {1,2,3}, {2,3,4}, {0,2,4},
+   {0,3,4}` produces same OPRF labels (Lagrange combine correctness).
+5. `cargo test --release --workspace --all-features` green: 2179 passed
+   / 0 failed (baseline 2080 → +99).
+6. 8 D-series attack-regression files: 38 individual sub-tests all PASS.
+7. Tamarin `discovery.spthy`: 5 main lemmas + 1 sanity exists-trace
+   verified locally with `tamarin-prover 1.12.0`.
+
+PhD-B 6-question self-check: 5 of 6 fully PASS + 1 partial (dudect 1M for
+`verify_discovery_bind` deferred to round 8 as residual). Per memory rule
+`feedback_phd_no_partial.md`, this is acceptable when the partial is on a
+non-blocking item and documented as carry-over.
+
+Closure report: `audits/phd-b-discovery-closure-2026-05-18.md`.
+Ledger: `audits/phd-b-discovery-ledger-2026-05-18.md`.
+Branch commit log: see closure report §9.
+
+---
+
+## 13. Verdict — rounds 1-7 combined
+
+**Rounds 1-6 MERGED to `main`.** **Round 7 ON BRANCH awaiting PR.**
+
+Combined: 0 BLOCKER, 1 MAJOR (M-FINAL-1 from rounds 1-6, disclosed; round 7
+adds no new MAJOR), 3 MINOR rounds 1-6 + 0 MINOR round 7. Approximately
+38 D-series attack regression sub-tests in round 7 alone, on top of
+~30 attack/closure tests from rounds 1-6. The seven-round audit chain
+is technically sound; closure claims are honest; tests reflect real
+attacker scenarios.

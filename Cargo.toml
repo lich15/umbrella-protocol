@@ -16,6 +16,7 @@ members = [
     "crates/umbrella-client",
     "crates/umbrella-server-blind-postman",
     "crates/umbrella-threshold-identity",
+    "crates/umbrella-discovery",
     "crates/umbrella-ffi",
     "crates/umbrella-ffi-swift",
     "crates/umbrella-ffi-kotlin",
@@ -71,6 +72,7 @@ umbrella-calls = { path = "crates/umbrella-calls", version = "1.1.0" }
 umbrella-client = { path = "crates/umbrella-client", version = "1.1.0" }
 umbrella-server-blind-postman = { path = "crates/umbrella-server-blind-postman", version = "1.1.0" }
 umbrella-threshold-identity = { path = "crates/umbrella-threshold-identity", version = "1.1.0" }
+umbrella-discovery = { path = "crates/umbrella-discovery", version = "1.1.0" }
 umbrella-ffi = { path = "crates/umbrella-ffi", version = "1.1.0" }
 umbrella-vectors = { path = "crates/umbrella-vectors", version = "1.1.0" }
 

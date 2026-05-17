@@ -1,0 +1,42 @@
+[package]
+name = "umbrella-discovery"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Private contact discovery: OPRF-PSI for phone numbers + @username lookup with KT bind. Round 7 PhD-B audit."
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+# OPRF primitive (Ristretto255 + RFC 9497 + Shamir 3-of-5 threshold).
+# Round-2 attack-tested; reused as blinded oracle for PSI and username lookup.
+umbrella-oprf = { workspace = true }
+
+# Anonymous-id derivation (HKDF master_key + server_id from round 6).
+umbrella-threshold-identity = { workspace = true }
+
+# Key Transparency: Merkle inclusion proof for discovery binding.
+umbrella-kt = { workspace = true }
+
+# Crypto primitives used directly.
+ed25519-dalek = { workspace = true }
+sha2 = { workspace = true }
+hkdf = { workspace = true }
+chacha20poly1305 = { workspace = true }
+hmac = { workspace = true }
+subtle = { workspace = true }
+zeroize = { workspace = true }
+rand_core = { workspace = true }
+
+# Error and collection types.
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand_core = { workspace = true, features = ["getrandom"] }
+hex = { workspace = true }
+curve25519-dalek = { workspace = true }
