@@ -39,6 +39,7 @@ pub mod group_policy;
 pub mod key_package;
 pub mod parser;
 pub mod provider;
+pub mod screenshot_policy;
 pub mod signer;
 
 pub use ciphersuite::{UmbrellaCiphersuite, UMBRELLA_DEFAULT_CIPHERSUITE};
