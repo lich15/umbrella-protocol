@@ -1,0 +1,48 @@
+[package]
+name = "umbrella-threshold-identity"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Distributed identity via FROST-Ed25519 DKG between 5 servers + PIN-derived re-derivation. Round 6 architectural change — 24+12 words never present on a single device."
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+# FROST-Ed25519 DKG and threshold signing — Zcash Foundation, formally audited.
+# v3.0.0 ships Pedersen verifiable DKG (round1/round2) + threshold sign for any
+# t-of-n participant set with Ed25519-compatible public key output.
+frost-ed25519 = { workspace = true }
+
+# Argon2id PIN-KDF (memory=64MiB, iterations=3, parallelism=4) for slow PIN-derived
+# device-key / master-key re-derivation. Mobile-friendly but expensive for brute-force.
+argon2 = { workspace = true }
+
+# Pure cryptography primitives, mlocked secrets, KDF derivation, BIP-39 mnemonic.
+umbrella-crypto-primitives = { workspace = true }
+umbrella-identity = { workspace = true }
+
+ed25519-dalek = { workspace = true }
+hkdf = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+subtle = { workspace = true }
+rand_core = { workspace = true }
+rand_chacha = { workspace = true }
+zeroize = { workspace = true }
+thiserror = { workspace = true }
+heapless = { workspace = true }
+secrecy = { workspace = true }
+
+# Time-lock 24h recovery, attempt counters, heartbeat tracking, dead-man switch.
+# `std::time::Instant` + `std::time::Duration` от std are sufficient (server-side
+# code, std-only). For deterministic tests we accept an externally-injected clock.
+
+[dev-dependencies]
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+hex = { workspace = true }
+ed25519-dalek = { workspace = true }

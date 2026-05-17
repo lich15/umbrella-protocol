@@ -15,6 +15,7 @@ members = [
     "crates/umbrella-calls",
     "crates/umbrella-client",
     "crates/umbrella-server-blind-postman",
+    "crates/umbrella-threshold-identity",
     "crates/umbrella-ffi",
     "crates/umbrella-ffi-swift",
     "crates/umbrella-ffi-kotlin",
@@ -69,6 +70,7 @@ umbrella-backup = { path = "crates/umbrella-backup", version = "1.1.0" }
 umbrella-calls = { path = "crates/umbrella-calls", version = "1.1.0" }
 umbrella-client = { path = "crates/umbrella-client", version = "1.1.0" }
 umbrella-server-blind-postman = { path = "crates/umbrella-server-blind-postman", version = "1.1.0" }
+umbrella-threshold-identity = { path = "crates/umbrella-threshold-identity", version = "1.1.0" }
 umbrella-ffi = { path = "crates/umbrella-ffi", version = "1.1.0" }
 umbrella-vectors = { path = "crates/umbrella-vectors", version = "1.1.0" }
 
@@ -238,6 +240,14 @@ proptest = "1.11"
 # ——— Deterministic RNG для KAT тестов (v1.1.0 release, dev-only) ———
 # ——— Deterministic RNG for KAT tests (v1.1.0 release, dev-only) ———
 rand_chacha = "0.3"
+
+# ——— Round 6 distributed identity (umbrella-threshold-identity) ———
+# FROST-Ed25519 DKG: Zcash Foundation formally-audited 3-round Pedersen DKG +
+# threshold signing for any t-of-n. Produces Ed25519-compatible public keys.
+# Argon2id PIN-KDF: memory=64MiB, iterations=3, parallelism=4 — mobile-friendly,
+# expensive for brute-force per Biryukov-Khovratovich 2016.
+frost-ed25519 = { version = "3.0.0", default-features = false, features = ["serialization"] }
+argon2 = { version = "0.5", default-features = false, features = ["std", "alloc"] }
 
 [profile.release]
 lto = "fat"
