@@ -155,10 +155,17 @@ rcgen = { workspace = true }
 # memory for the needle bytes.
 bip39 = { workspace = true }
 
+# umbrella-threshold-identity для round-6 attack tests (R20-R27).
+# Already main dep — also needed as dev-dep for `attack_*` test direct use.
+
 [[example]]
 name = "r7_identity_lldb_target"
 required-features = []
 
 [[example]]
 name = "r12_ratchet_lldb_target"
+required-features = []
+
+[[example]]
+name = "r20_distributed_identity_lldb_target"
 required-features = []
