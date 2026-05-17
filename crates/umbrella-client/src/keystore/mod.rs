@@ -13,6 +13,7 @@
 //!   Component 1 of the round-5 device-capture closure (F-PHD-DC-R7-1 +
 //!   F-PHD-DC-R10-1).
 
+pub mod distributed_identity_client;
 pub mod hw_callback;
 pub mod migrations;
 pub mod row_cipher;

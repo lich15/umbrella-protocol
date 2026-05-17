@@ -133,8 +133,40 @@ impl Drop for IdentitySeed {
 impl IdentitySeed {
     /// Генерирует новый identity seed из CSPRNG. **Heap-resident from
     /// inception** — round-5 device-capture closure F-PHD-DC-R7-3.
+    ///
+    /// # Round-6 deprecation notice
+    ///
+    /// На production пути этот метод **больше не вызывается**. Round-6
+    /// distributed identity model перемещает identity-seed generation на
+    /// 5 серверов через FROST DKG (см. `umbrella-threshold-identity::dkg`).
+    /// На устройстве идентичность теперь существует только как public key
+    /// + 5 anonymous IDs + cached offline ticket; 24+12 слов **никогда**
+    /// не материализуются на одном устройстве.
+    ///
+    /// Метод оставлен для тестов (`#[cfg(test)]`-style use) и legacy
+    /// migration paths, но в production code use
+    /// `umbrella_client::keystore::distributed_identity_client::bootstrap_account`.
+    ///
     /// Generates a new identity seed from a CSPRNG. **Heap-resident from
     /// inception** — round-5 device-capture closure F-PHD-DC-R7-3.
+    ///
+    /// # Round-6 deprecation notice
+    ///
+    /// On the production path this method is **no longer called**. Round-6
+    /// distributed identity moves seed generation to 5 servers via FROST
+    /// DKG (see `umbrella-threshold-identity::dkg`). On-device identity now
+    /// exists only as a public key + 5 anonymous IDs + cached offline
+    /// ticket; the 24+12 words **never** materialise on a single device.
+    ///
+    /// The method is kept for tests and legacy migration paths; production
+    /// code should use
+    /// `umbrella_client::keystore::distributed_identity_client::bootstrap_account`.
+    #[deprecated(
+        since = "1.1.0",
+        note = "Round-6 distributed identity: use \
+                umbrella_client::keystore::distributed_identity_client::bootstrap_account \
+                instead. On-device seed generation is forbidden on the production path."
+    )]
     pub fn generate<R: CryptoRng + RngCore>(rng: &mut R, language: MnemonicLanguage) -> Self {
         // Allocate heap storage FIRST, then fill in place. `Box::new` returns
         // heap pointer without a stack-resident intermediate; subsequent

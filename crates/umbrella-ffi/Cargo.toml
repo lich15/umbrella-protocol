@@ -42,6 +42,7 @@ pq = ["umbrella-client/pq", "umbrella-identity/pq", "umbrella-backup/pq"]
 
 [dependencies]
 umbrella-client = { workspace = true }
+umbrella-threshold-identity = { workspace = true }
 # Внутренние крейты для FFI types/conversion: umbrella-backup
 # (WrappingParams + ThresholdConfig для ClientConfigFfi),
 # umbrella-identity (IdentitySeed::from_mnemonic для bootstrap),
@@ -59,6 +60,8 @@ umbrella-calls = { workspace = true }
 # uniffi proc-macro + tokio async runtime (production design Decisions 2, 3).
 uniffi = { workspace = true }
 thiserror = { workspace = true }
+hex = { workspace = true }
+rand_chacha = { workspace = true }
 
 [build-dependencies]
 # Scaffold генерация через uniffi::build в build.rs (v1.1.0 release).

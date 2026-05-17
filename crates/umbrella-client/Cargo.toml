@@ -50,6 +50,9 @@ umbrella-padding = { workspace = true }
 umbrella-backup = { workspace = true }
 umbrella-calls = { workspace = true }
 
+# Round-6 distributed identity backend.
+umbrella-threshold-identity = { workspace = true }
+
 # umbrella-crypto-primitives нужен для `MlockedSecret<T>` (round-5
 # device-capture closure F-PHD-DC-R11-1): RowCipher.master_key + MockHwKeystore.
 # umbrella-crypto-primitives provides `MlockedSecret<T>` (round-5 device-
@@ -116,6 +119,10 @@ sha2 = { workspace = true }
 
 # Errors + structured logs.
 thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# Round-6 deterministic CSPRNG для bootstrap test rigs.
+rand_chacha = { workspace = true }
 
 # Serde для config/metadata marshalling и hex-encoding для REST path-сегментов
 # (account_id, message_id, peer_id в Http2KtTransport / Http2PostmanTransport /
