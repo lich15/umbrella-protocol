@@ -116,7 +116,7 @@ fn pq_alice_classical_bob_communicate_on_classical_ciphersuite() {
     // Alice имеет UmbrellaXWingProvider (поддерживает classical + PQ).
     // Alice has UmbrellaXWingProvider (supports classical + PQ).
     let alice_ks = fresh_keystore_for_device(0);
-    let alice_provider = UmbrellaXWingProvider::new();
+    let alice_provider = UmbrellaXWingProvider::new_for_kat_tests_only();
 
     // Bob использует UmbrellaProvider (classical only).
     // Bob uses UmbrellaProvider (classical only).
@@ -197,7 +197,7 @@ fn classical_peer_cannot_join_xwing_welcome() {
     // Alice через UmbrellaXWingProvider создаёт X-Wing group.
     // Alice creates an X-Wing group via UmbrellaXWingProvider.
     let alice_ks = fresh_keystore_for_device(0);
-    let alice_provider = UmbrellaXWingProvider::new();
+    let alice_provider = UmbrellaXWingProvider::new_for_kat_tests_only();
 
     let group_id = GroupId::from_slice(b"classical-cant-join");
     let mut alice_group = UmbrellaGroup::create_private(
@@ -213,7 +213,7 @@ fn classical_peer_cannot_join_xwing_welcome() {
     // Bob has X-Wing-capable KeyPackage (через своего PQ provider).
     // Bob has an X-Wing-capable KeyPackage (via his own PQ provider).
     let bob_ks = fresh_keystore_for_device(1);
-    let bob_pq_provider = UmbrellaXWingProvider::new();
+    let bob_pq_provider = UmbrellaXWingProvider::new_for_kat_tests_only();
     let bob_kp = build_device_key_package(&bob_pq_provider, bob_ks.as_ref(), 1, CS_XWING)
         .expect("Bob X-Wing KeyPackage")
         .key_package()

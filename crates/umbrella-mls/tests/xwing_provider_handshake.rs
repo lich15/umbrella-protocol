@@ -58,7 +58,7 @@ impl Client {
         ks.add_device(device_index, None).unwrap();
         Self {
             ks: Arc::new(ks),
-            provider: UmbrellaXWingProvider::new(),
+            provider: UmbrellaXWingProvider::new_for_kat_tests_only(),
             device_index,
         }
     }

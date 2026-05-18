@@ -456,47 +456,60 @@ pub struct UmbrellaXWingProvider {
     hedged_witness: HedgedWitness,
 }
 
-impl Default for UmbrellaXWingProvider {
-    fn default() -> Self {
-        Self {
-            inner: OpenMlsRustCrypto::default(),
-            // Default = zero-byte witness; sound только для KAT/test пути,
-            // где RNG honest. Production должен ставить witness через
-            // `with_hedged_witness`.
-            //
-            // Default = zero-byte witness; sound only for the KAT/test
-            // path where the RNG is honest. Production must set the
-            // witness via `with_hedged_witness`.
-            hedged_witness: HedgedWitness::zeroed_for_tests_only(),
-        }
-    }
-}
+// F-MLS-1 closure (PhD-B Pass 1/2/3/4 HIGH carry-over → Pass 5 remediation
+// 2026-05-18): production callers MUST construct the provider via
+// `with_hedged_witness(witness)`. The pre-fix `Default::default()` impl
+// silently substituted `HedgedWitness::zeroed_for_tests_only()`, making
+// production builds vulnerable to CSPRNG compromise (Bellare-Hoang-Keelveedhi
+// 2015 hedged-encryption defense void). The `new()` test-rig method that
+// wrapped `Default::default()` is gated behind the `test-utils` feature so
+// production builds physically cannot reach the zeroed-witness path. See
+// `docs/audits/phd-b-final-consolidation-2026-05-18.md` §6 Track B item 5.
 
 impl UmbrellaXWingProvider {
-    /// Конструирует новый provider c свежим in-memory storage и CSPRNG.
-    /// Hedged witness = zero (test-only fallback; production должен
-    /// использовать [`Self::with_hedged_witness`]).
-    ///
-    /// Constructs a new provider with fresh in-memory storage and CSPRNG.
-    /// Hedged witness = zero (test-only fallback; production must use
-    /// [`Self::with_hedged_witness`]).
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Конструирует новый provider с указанным `hedged_witness` для
     /// production-safe HPKE base mode X-Wing encaps. Witness получается
     /// от `KeyStore::hedged_encaps_witness()` либо аналогичного
     /// long-term source.
     ///
+    /// **Это единственный production-safe конструктор** (F-MLS-1 closure):
+    /// witness обязателен на стадии типов, нет silent fallback к нулевому
+    /// witness который сделал бы hedged-encryption защиту бессмысленной.
+    ///
     /// Constructs a new provider with the given `hedged_witness` for
     /// production-safe HPKE base mode X-Wing encaps. The witness should
     /// come from `KeyStore::hedged_encaps_witness()` or an equivalent
     /// long-term source.
+    ///
+    /// **This is the only production-safe constructor** (F-MLS-1 closure):
+    /// the witness is required at the type level — no silent fallback to a
+    /// zero-byte witness that would void the hedged-encryption defense.
     pub fn with_hedged_witness(witness: HedgedWitness) -> Self {
         Self {
             inner: OpenMlsRustCrypto::default(),
             hedged_witness: witness,
+        }
+    }
+
+    /// **Test-rig only:** конструирует provider с нулевым hedged witness
+    /// (для KAT-векторов draft-connolly-cfrg-xwing-kem-10 Appendix C,
+    /// которые требуют детерминистический encaps без external entropy).
+    /// Production callers MUST использовать [`Self::with_hedged_witness`];
+    /// этот метод недоступен в production builds (`#[cfg(any(test,
+    /// feature = "test-utils"))]` gate — F-MLS-1 closure).
+    ///
+    /// **Test-rig only:** constructs the provider with a zero hedged
+    /// witness (for KAT vectors `draft-connolly-cfrg-xwing-kem-10`
+    /// Appendix C, which require deterministic encaps without external
+    /// entropy). Production callers MUST use
+    /// [`Self::with_hedged_witness`]; this method is not present in
+    /// production builds (`#[cfg(any(test, feature = "test-utils"))]`
+    /// gate — F-MLS-1 closure).
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn new_for_kat_tests_only() -> Self {
+        Self {
+            inner: OpenMlsRustCrypto::default(),
+            hedged_witness: HedgedWitness::zeroed_for_tests_only(),
         }
     }
 }
@@ -738,7 +751,7 @@ mod tests {
     /// supports(0x004D) → Ok; supports(0x0001) → delegates to inner and is also Ok.
     #[test]
     fn supports_xwing_and_classical() {
-        let provider = UmbrellaXWingProvider::new();
+        let provider = UmbrellaXWingProvider::new_for_kat_tests_only();
         assert!(provider
             .supports(Ciphersuite::MLS_256_XWING_CHACHA20POLY1305_SHA256_Ed25519)
             .is_ok());
@@ -751,7 +764,7 @@ mod tests {
     /// supported_ciphersuites includes 0x004D (via our push) + classical.
     #[test]
     fn supported_ciphersuites_includes_xwing() {
-        let provider = UmbrellaXWingProvider::new();
+        let provider = UmbrellaXWingProvider::new_for_kat_tests_only();
         let suites = provider.supported_ciphersuites();
         assert!(suites.contains(&Ciphersuite::MLS_256_XWING_CHACHA20POLY1305_SHA256_Ed25519));
         assert!(suites.contains(&Ciphersuite::MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519));
@@ -761,7 +774,7 @@ mod tests {
     /// HPKE seal/open roundtrip: Alice (sender) → Bob (receiver) — text matches.
     #[test]
     fn hpke_seal_open_roundtrip_xwing() {
-        let provider = UmbrellaXWingProvider::new();
+        let provider = UmbrellaXWingProvider::new_for_kat_tests_only();
 
         let ikm = [0x42u8; 32];
         let kp = provider
@@ -790,7 +803,7 @@ mod tests {
     /// (foundation for MLS exporter_secret API → SFrame derivation, Stage 6.2).
     #[test]
     fn hpke_setup_export_matches_xwing() {
-        let provider = UmbrellaXWingProvider::new();
+        let provider = UmbrellaXWingProvider::new_for_kat_tests_only();
         let kp = provider
             .derive_hpke_keypair(xwing_config(), &[0x77u8; 32])
             .expect("derive keypair");
@@ -821,7 +834,7 @@ mod tests {
     /// derive_hpke_keypair with the same IKM yields the same keypair (deterministic).
     #[test]
     fn derive_keypair_is_deterministic() {
-        let provider = UmbrellaXWingProvider::new();
+        let provider = UmbrellaXWingProvider::new_for_kat_tests_only();
         let ikm = [0xABu8; 64];
         let kp1 = provider.derive_hpke_keypair(xwing_config(), &ikm).unwrap();
         let kp2 = provider.derive_hpke_keypair(xwing_config(), &ikm).unwrap();
@@ -833,7 +846,7 @@ mod tests {
     /// Bit-flip in kem_output breaks decap → HpkeDecryptionError.
     #[test]
     fn hpke_open_corrupted_kem_output_rejected() {
-        let provider = UmbrellaXWingProvider::new();
+        let provider = UmbrellaXWingProvider::new_for_kat_tests_only();
         let kp = provider
             .derive_hpke_keypair(xwing_config(), &[0x11u8; 32])
             .unwrap();
@@ -862,7 +875,7 @@ mod tests {
                 HpkeAeadType::ChaCha20Poly1305,
             )
         }
-        let provider = UmbrellaXWingProvider::new();
+        let provider = UmbrellaXWingProvider::new_for_kat_tests_only();
         let kp = provider
             .derive_hpke_keypair(classical_config(), &[0x55u8; 32])
             .expect("classical derive_keypair");
@@ -885,7 +898,7 @@ mod tests {
     /// Invalid pk_r length → InvalidPublicKey (mis-use defence).
     #[test]
     fn hpke_seal_rejects_short_pubkey() {
-        let provider = UmbrellaXWingProvider::new();
+        let provider = UmbrellaXWingProvider::new_for_kat_tests_only();
         let result = provider.hpke_seal(xwing_config(), &[0u8; 100], b"info", b"aad", b"msg");
         assert!(matches!(result, Err(CryptoError::InvalidPublicKey)));
     }
@@ -954,7 +967,7 @@ mod tests {
     /// wipe the already-stored key before HpkeContext construction).
     #[test]
     fn f63_seal_open_semantic_regression_post_zeroize_fix() {
-        let provider = UmbrellaXWingProvider::new();
+        let provider = UmbrellaXWingProvider::new_for_kat_tests_only();
         let kp = provider
             .derive_hpke_keypair(xwing_config(), &[0xC3u8; 32])
             .expect("derive keypair post-fix");
@@ -982,7 +995,7 @@ mod tests {
     /// the keypair finalisation.
     #[test]
     fn f63_derive_keypair_deterministic_post_zeroize_fix() {
-        let provider = UmbrellaXWingProvider::new();
+        let provider = UmbrellaXWingProvider::new_for_kat_tests_only();
         let ikm = [0xA5u8; 64];
         let kp1 = provider.derive_hpke_keypair(xwing_config(), &ikm).unwrap();
         let kp2 = provider.derive_hpke_keypair(xwing_config(), &ikm).unwrap();

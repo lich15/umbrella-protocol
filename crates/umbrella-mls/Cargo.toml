@@ -52,6 +52,20 @@ pq = [
     "dep:chacha20poly1305",
     "dep:rand_core",
 ]
+# F-MLS-1 closure (PhD-B Pass 5 remediation 2026-05-18): gates the
+# `UmbrellaXWingProvider::new_for_kat_tests_only()` test-rig constructor
+# that wires a zero hedged witness (used by KAT vectors of
+# draft-connolly-cfrg-xwing-kem-10 Appendix C). Production builds
+# physically cannot reach this constructor because the `pub fn` is
+# `#[cfg(any(test, feature = "test-utils"))]`-gated and disappears from
+# the lib when the feature is off. The pre-fix `Default::default()` impl
+# (silent zero-witness fallback) is removed entirely; only
+# `with_hedged_witness(witness)` remains in production — compile-time
+# enforcement of the hedged-encryption invariant.
+#
+# F-MLS-1 closure: gates `new_for_kat_tests_only()` test-rig constructor.
+# Production builds physically cannot reach the zero-witness path.
+test-utils = []
 
 [dev-dependencies]
 proptest = { workspace = true }

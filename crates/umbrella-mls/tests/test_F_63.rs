@@ -130,7 +130,7 @@ fn xwing_config() -> HpkeConfig {
 /// test fails with HpkeDecryptionError or a plaintext mismatch.
 #[test]
 fn f63_seal_open_e2e_semantic_regression() {
-    let provider = UmbrellaXWingProvider::new();
+    let provider = UmbrellaXWingProvider::new_for_kat_tests_only();
     let kp = provider
         .derive_hpke_keypair(xwing_config(), &[0x42u8; 32])
         .expect("derive keypair");
@@ -162,7 +162,7 @@ fn f63_seal_open_e2e_semantic_regression() {
 /// setup_base_sender).
 #[test]
 fn f63_seal_open_100_cycles_no_uaf() {
-    let provider = UmbrellaXWingProvider::new();
+    let provider = UmbrellaXWingProvider::new_for_kat_tests_only();
     let kp = provider
         .derive_hpke_keypair(xwing_config(), &[0x77u8; 32])
         .expect("derive keypair");
@@ -203,7 +203,7 @@ fn f63_seal_open_100_cycles_no_uaf() {
 ///    seed_arr.copy_from_slice().
 #[test]
 fn f63_concurrent_seal_open_4_threads_no_data_race() {
-    let provider: Arc<UmbrellaXWingProvider> = Arc::new(UmbrellaXWingProvider::new());
+    let provider: Arc<UmbrellaXWingProvider> = Arc::new(UmbrellaXWingProvider::new_for_kat_tests_only());
     let kp = provider
         .derive_hpke_keypair(xwing_config(), &[0x99u8; 32])
         .expect("derive keypair");
@@ -252,7 +252,7 @@ fn f63_concurrent_seal_open_4_threads_no_data_race() {
 /// regressions if AEAD ctx accidentally zeroizes the key mid-encryption.
 #[test]
 fn f63_resource_exhaustion_1mib_seal_open() {
-    let provider = UmbrellaXWingProvider::new();
+    let provider = UmbrellaXWingProvider::new_for_kat_tests_only();
     let kp = provider
         .derive_hpke_keypair(xwing_config(), &[0x55u8; 32])
         .expect("derive keypair");
@@ -290,7 +290,7 @@ fn f63_resource_exhaustion_1mib_seal_open() {
 /// and its fields start leaking into downstream APIs).
 #[test]
 fn f63_classical_delegation_post_zeroize_fix() {
-    let provider = UmbrellaXWingProvider::new();
+    let provider = UmbrellaXWingProvider::new_for_kat_tests_only();
     let classical_config = HpkeConfig(
         HpkeKemType::DhKem25519,
         HpkeKdfType::HkdfSha256,
@@ -346,7 +346,7 @@ fn f63_classical_delegation_post_zeroize_fix() {
 /// self.exporter_secret).
 #[test]
 fn f63_export_matches_post_zeroize_fix() {
-    let provider = UmbrellaXWingProvider::new();
+    let provider = UmbrellaXWingProvider::new_for_kat_tests_only();
     let kp = provider
         .derive_hpke_keypair(xwing_config(), &[0xBBu8; 32])
         .expect("derive keypair");
@@ -419,7 +419,7 @@ fn f63_cold_boot_forensics_threat_row_11_documented() {
     // Documentation test: confirm the provider constructs, a baseline seal
     // works, and HpkeContext does not leak through the public surface (no
     // pub HpkeContext, no pub field accessor).
-    let provider = UmbrellaXWingProvider::new();
+    let provider = UmbrellaXWingProvider::new_for_kat_tests_only();
     let kp = provider
         .derive_hpke_keypair(xwing_config(), &[0x11u8; 32])
         .expect("derive keypair");
