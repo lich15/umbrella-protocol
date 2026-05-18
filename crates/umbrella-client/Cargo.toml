@@ -167,6 +167,19 @@ rcgen = { workspace = true }
 # memory for the needle bytes.
 bip39 = { workspace = true }
 
+# F-4 closure (PhD-B Pass 5 remediation): R21 attack test rebuild uses
+# real FROST 3-of-5 threshold signatures over UNRECOVERABLE_DELETE commands
+# instead of bypass-style direct invocation. The test rig drives DKG ↔ sign
+# ↔ aggregate end-to-end via umbrella_threshold_identity::dkg /
+# umbrella_threshold_identity::signing helpers; the FROST types
+# (`KeyPackage`, `PublicKeyPackage`, `Signature`) are used directly to wire
+# the mock cluster transport. Scope is dev-only — production API surface
+# stays free of this dep.
+#
+# F-4 closure: R21 attack test rebuild needs FROST types for the mock
+# Sealed Server cluster. Dev-only — never linked into production.
+frost-ed25519 = { workspace = true }
+
 # umbrella-threshold-identity для round-6 attack tests (R20-R27).
 # Already main dep — also needed as dev-dep for `attack_*` test direct use.
 
