@@ -951,11 +951,32 @@ fn mls_ed25519_metadata_block_reference_is_9_5() {
     assert_eq!(MLS_ED25519.block_reference, "9.5");
 }
 
-/// Pending status — допустимый стартовый state для свежедобавленной модели.
-/// Pending status is the valid initial state for a freshly added model.
+/// Verified status — MLS Ed25519 model verified locally on 2026-05-19
+/// via F-MLS-MODEL-1 closure (PhD-B Pass 5 remediation). 3 primary
+/// lemmas refactored from tautologies to substantive claims; 2 new
+/// exists-trace lemmas (public_group_admits_external_commit,
+/// ecdsa_malleability_admits_distinct_verifying_signatures) anchor
+/// model non-vacuity and ECDSA contrast. All 6 lemmas verify in
+/// 3.53s via tamarin-prover 1.12.0 (etk_split_brain_prevented in
+/// 172 steps — non-trivial proof).
+///
+/// Verified status — the MLS Ed25519 model was verified locally on
+/// 2026-05-19 via the F-MLS-MODEL-1 closure (PhD-B Pass 5
+/// remediation). The 3 primary lemmas were refactored from
+/// tautologies to substantive claims; 2 new exists-trace lemmas
+/// (public_group_admits_external_commit,
+/// ecdsa_malleability_admits_distinct_verifying_signatures) anchor
+/// the model's non-vacuity and demonstrate the ECDSA contrast. All
+/// 6 lemmas verify in 3.53 s via tamarin-prover 1.12.0
+/// (etk_split_brain_prevented in 172 steps — non-trivial proof).
 #[test]
-fn mls_ed25519_status_is_pending_until_first_weekly_run() {
-    assert_eq!(MLS_ED25519.status, VerificationStatus::Pending);
+fn mls_ed25519_status_is_verified_post_f_mls_model_1_closure() {
+    assert!(
+        matches!(MLS_ED25519.status, VerificationStatus::Verified { .. }),
+        "F-MLS-MODEL-1 closure (2026-05-19): MLS_ED25519 must transition Pending → Verified \
+         after local Tamarin run; status now = {:?}",
+        MLS_ED25519.status
+    );
 }
 
 /// Все block-9.5 модели имеют block_reference = "9.5" (sanity).

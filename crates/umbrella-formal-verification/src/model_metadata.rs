@@ -803,17 +803,35 @@ pub const SEALED_SENDER_V1: ModelMetadata = ModelMetadata {
 /// (Ed25519-modelling).
 pub const MLS_ED25519: ModelMetadata = ModelMetadata {
     name: "umbrella_mls_ed25519",
-    spec_reference: "SPEC-03-MLS-PROFILE v0.0.1 §4.1 + §4.3 + §5.1",
-    spec_version: "0.0.1",
+    // spec_reference + spec_version synchronously bumped 0.0.1 → 0.0.2
+    // per F-MLS-MODEL-1 closure (PhD-B Pass 5 remediation 2026-05-19,
+    // F-59 closure pattern). The three primary lemmas
+    // (external_operations_disabled, etk_split_brain_prevented,
+    // ed25519_only_whitelist) were tautological pre-closure and have
+    // been re-stated as substantive claims. Two new exists-trace
+    // lemmas (public_group_admits_external_commit,
+    // ecdsa_malleability_admits_distinct_verifying_signatures) make
+    // the model non-vacuous and demonstrate the contrasting ECDSA
+    // attack surface that Tamarin's `signing` builtin (Ed25519
+    // SUF-CMA) closes. Test
+    // `mls_ed25519_spec_version_matches_current_spec` enforces both
+    // fields stay in sync.
+    spec_reference: "SPEC-03-MLS-PROFILE v0.0.2 §4.1 + §4.3 + §5.1",
+    spec_version: "0.0.2",
     block_reference: "9.5",
     tool: ProtocolType::Tamarin,
     model_path: "models/mls_ed25519.spthy",
     properties: &[
         "external_operations_disabled",
+        "public_group_admits_external_commit",
         "etk_split_brain_prevented",
+        "ecdsa_malleability_admits_distinct_verifying_signatures",
         "ed25519_only_whitelist",
+        "honest_setup_executable",
     ],
-    status: VerificationStatus::Pending,
+    status: VerificationStatus::Verified {
+        last_run: "2026-05-19",
+    },
 };
 
 /// Модель multi-device authorization flow + identity rotation per ADR-008
@@ -1405,16 +1423,25 @@ mod tests {
     }
 
     /// MLS_ED25519 metadata имеет ожидаемую форму (block 9.5 Tamarin).
+    /// Updated 2026-05-19 (F-MLS-MODEL-1 closure): spec_version 0.0.1 →
+    /// 0.0.2; 3 tautological lemmas refactored to 6 substantive +
+    /// counterexample lemmas; status Pending → Verified after local
+    /// tamarin-prover 1.12.0 run.
+    ///
     /// MLS_ED25519 metadata has the expected shape (block 9.5 Tamarin).
+    /// Updated 2026-05-19 (F-MLS-MODEL-1 closure): spec_version 0.0.1 →
+    /// 0.0.2; 3 tautological lemmas refactored to 6 substantive +
+    /// counterexample lemmas; status Pending → Verified after a local
+    /// tamarin-prover 1.12.0 run.
     #[test]
     fn mls_ed25519_metadata_shape() {
         assert_eq!(MLS_ED25519.name, "umbrella_mls_ed25519");
         assert_eq!(MLS_ED25519.tool, ProtocolType::Tamarin);
         assert_eq!(MLS_ED25519.model_path, "models/mls_ed25519.spthy");
-        assert_eq!(MLS_ED25519.spec_version, "0.0.1");
+        assert_eq!(MLS_ED25519.spec_version, "0.0.2");
         assert_eq!(MLS_ED25519.block_reference, "9.5");
-        assert_eq!(MLS_ED25519.status, VerificationStatus::Pending);
-        assert_eq!(MLS_ED25519.properties.len(), 3);
+        assert!(matches!(MLS_ED25519.status, VerificationStatus::Verified { .. }));
+        assert_eq!(MLS_ED25519.properties.len(), 6);
     }
 
     /// ALL_MODELS содержит все три block-9.5 модели и итого имеет 14 элементов

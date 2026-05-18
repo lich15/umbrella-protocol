@@ -4,13 +4,18 @@
    ============================================================================
 
    Модель MLS Ed25519-only profile + disabled external operations + ETK
-   split-brain attack prevention per Cremers et al. eprint 2025/229.
+   split-brain attack prevention per Cremers-Gellert-Wiesmaier-Zhao
+   eprint 2025/229 «ETK: External-Operations TreeKEM and the Security
+   of MLS in RFC 9420».
 
    ETK split-brain attack (Cremers et al. 2025): MLS TreeKEM с non-SUF-CMA
    подписями (ECDSA) уязвим к split-view атаке. Атакующий repackages
-   ECDSA подпись с тем же содержимым но другими байтами (malleability),
-   и receivers Alice + Bob расходятся в transcript hash chain. С Ed25519
-   (SUF-CMA по построению) этой атаки нет.
+   ECDSA подпись с тем же содержимым но другими байтами (malleability:
+   `ecdsa_sign(sk, m, r1) ≠ ecdsa_repack(ecdsa_sign(sk, m, r1), r2)`
+   но обе валидны под `ecdsa_pk(sk)`), и receivers Alice + Bob расходятся
+   в transcript hash chain (split-brain). С Ed25519 (SUF-CMA по
+   построению) этой атаки нет — sig bytes uniquely determined by
+   (m, sk).
 
    Защита: SPEC-03 §4.1 whitelists только Ed25519-based ciphersuites
    (0x0001 / 0x0003 / 0x0004 / 0x0006 / 0x004D); ECDSA blocked compile-
@@ -21,46 +26,108 @@
    ----------------------------------------------------------------------------
    SPEC reference     : SPEC-03-MLS-PROFILE v0.0.1 §4.1 (whitelist) +
                         §4.3 (ETK митигация) + §5.1 (private group no
-                        external operations) + Cremers et al. eprint
-                        2025/229 «ETK: External-Operations TreeKEM and
-                        the Security of MLS in RFC 9420» 2025
+                        external operations) + Cremers-Gellert-Wiesmaier-
+                        Zhao eprint 2025/229 «ETK: External-Operations
+                        TreeKEM and the Security of MLS in RFC 9420»
+                        2025
    ADR  reference     : ADR-001 (workspace structure) + ADR-012 Решение 3
                         (Tamarin/ProVerif авторинг in-house) + ADR-013
                         (default ciphersuite Ed25519-based)
    Block reference    : 9.5 (formal models — classical protocols KT V1 +
                         sealed-sender V1 + MLS Ed25519-only)
    Tool               : Tamarin Prover 1.10.0+
+   spec_version       : v0.0.2 (F-MLS-MODEL-1 closure 2026-05-19 —
+                        substantive lemmas replace tautologies per
+                        PhD-B Pass 5 audit feedback)
    ----------------------------------------------------------------------------
 
    Properties (proven in this theory):
 
    - external_operations_disabled
-       Для любой группы создаваемой в private mode (default per SPEC-03
-       §5.1), никакие external operations не accepted: external commit
-       request rejected; external proposal rejected; external PSK
-       injection rejected. Modelled через rules `reject_external_*`
-       fires только если group state имеет `disabled_external_ops`
-       persistent fact.
+       Для любой группы создаваемой в private mode (ext_ops_enabled =
+       'false', per SPEC-03 §5.1 default), никакие external operations
+       не accepted: external commit request rejected; external proposal
+       rejected. Modelled через rules `external_*_attempt` fires только
+       если group state имеет `ext_ops_enabled = 'true'`.
+
+       **F-MLS-MODEL-1 closure (PhD-B Pass 5 remediation 2026-05-19):**
+       до closure lemma была vacuously true потому что НИ ОДИН rule не
+       создавал group с ext_ops_enabled = 'true' — precondition
+       `external_commit_attempt` rule был unreachable. Closure adds
+       `create_public_group_*` rule (modeling MLS public groups per
+       RFC 9420 where external ops allowed by design) so the rule IS
+       reachable for public groups. The lemma теперь substantively
+       distinguishes: private group → no external ops; public group →
+       external ops allowed. `public_group_admits_external_commit`
+       exists-trace lemma (NEW) proves model non-vacuous.
 
    - etk_split_brain_prevented
-       Если Alice и Bob members одной группы и оба видят same epoch
-       state, ни один adversary не может trigger split-view (Alice
-       видит epoch_state_A, Bob видит epoch_state_B, A ≠ B при том же
-       claimed Commit). Modelled через correspondence: any two
-       SeenEpoch events для same group + same epoch ⇒ same epoch_state.
-       Это формализует SUF-CMA Ed25519 защиту против ECDSA malleability
-       attack.
+       Если Alice и Bob members одной группы и оба видят same
+       (group_id, new_epoch) tuple после Commit, ни один adversary
+       не может trigger split-view (Alice видит epoch_state_A, Bob
+       видит epoch_state_B, A ≠ B при том же claimed Commit).
+
+       **F-MLS-MODEL-1 closure (PhD-B Pass 5 remediation 2026-05-19):**
+       до closure epoch_state = h(<group_id, new_epoch, ciphersuite>)
+       — purely function of public data + group_id; trivially same для
+       same arguments by determinism of `h/1`. Closure includes the
+       commit signature bytes в epoch_state hash:
+       epoch_state = h(<group_id, new_epoch, ciphersuite, signed_commit>)
+       где signed_commit = sign(<'commit', group_id, new_epoch>, sk_A).
+       Под Tamarin signing builtin (Ed25519 SUF-CMA), adversary
+       НЕ может produce alternate sig bytes that verify — Bob's
+       observed sig MUST equal Alice's broadcast sig — same
+       epoch_state computed обоими. Contrast: под ECDSA malleability
+       (function symbols `ecdsa_sign` + `ecdsa_repack`, eqs ниже),
+       adversary repackages Alice's sig → Bob sees different bytes
+       → different epoch_state → split-brain. The
+       `ecdsa_malleability_admits_distinct_verifying_signatures`
+       exists-trace lemma (NEW) demonstrates the contrast for
+       reviewer education.
 
    - ed25519_only_whitelist
-       Любая Negotiated ciphersuite в группе обязательно из whitelist
-       Ed25519-based (0x0001 / 0x0003 / 0x0004 / 0x0006 / 0x004D).
-       ECDSA-based ciphersuites не появляются в Negotiated events
-       — SPEC-03 §4.1 whitelist enforced compile-time через `TryFrom<u16>`
-       returning Err для non-whitelisted variants.
+       Любой `CreateGroup` event требует prior `Whitelisted(ciphersuite)`
+       event для того же ciphersuite. Это формализует SPEC-03 §4.1
+       whitelist: каждый supported ciphersuite emitted by a dedicated
+       `validate_whitelist_*` rule which precedes CreateGroup в trace
+       (CreateGroup consumes `!ValidatedCiphersuite(c)` persistent
+       fact created by validate rule).
+
+       **F-MLS-MODEL-1 closure (PhD-B Pass 5 remediation 2026-05-19):**
+       до closure `CreateGroup` и `Whitelisted` emitted в same rule at
+       same #i (the lemma `#j = #i` was structural co-emission, не
+       semantic dependency). Closure separates the actions: 5
+       independent `validate_whitelist_*` rules (one per supported
+       ciphersuite) emit `Whitelisted` AND populate
+       `!ValidatedCiphersuite(c)`. `create_private_group_*` and
+       `create_public_group_*` consume that fact. The lemma now states
+       `#j < #i` (Whitelisted strictly before CreateGroup), making the
+       dependency substantive — any future rule that creates a group
+       without consuming `!ValidatedCiphersuite` would fail the lemma.
 
    - honest_setup_executable (exists-trace)
        Honest group create + member add + honest commit может
-       выполниться без adversarial events.
+       выполниться без adversarial events. Sanity лейбл that rules не
+       overly restrictive.
+
+   - public_group_admits_external_commit (exists-trace, NEW post-closure)
+       Public group (ext_ops_enabled = 'true') CAN have
+       ExternalCommitAccepted events. Demonstrates model is non-vacuous —
+       absent this counterexample, `external_operations_disabled` would
+       be trivially satisfied because no External*Accepted events exist
+       anywhere in the trace.
+
+   - ecdsa_malleability_admits_distinct_verifying_signatures (exists-trace,
+     NEW post-closure)
+       Educational counterexample. Under ECDSA semantics
+       (`ecdsa_sign`/`ecdsa_repack` symbols + malleability equations),
+       adversary can produce two byte-distinct signatures
+       `s1 = ecdsa_sign(sk, m, r1)` and
+       `s2 = ecdsa_repack(s1, r2)` such that `s1 ≠ s2` (no equation
+       rewrites them to each other) yet `ecdsa_verify(s_i, m,
+       ecdsa_pk(sk)) = true` for both i ∈ {1, 2}. Demonstrates the
+       exact attack surface that Tamarin's `signing` builtin (modelling
+       Ed25519 SUF-CMA) closes.
 
    ----------------------------------------------------------------------------
    Axioms / abstractions:
@@ -70,26 +137,35 @@
      `verify(sign(m, sk), m, pk(sk)) = true`. SUF-CMA означает
      adversary не может create новую (m*, sig*) pair valid под target
      pubkey без queries oracle на m* — это default Tamarin signing
-     semantics.
+     semantics. Critically, `sign(m, sk)` returns a UNIQUE term;
+     no equation rewrites another term into `sign(m, sk)` form.
+   - ECDSA malleability modelled explicitly через `ecdsa_sign/3`,
+     `ecdsa_verify/3`, `ecdsa_repack/2` function symbols + equations.
+     `ecdsa_sign(sk, m, r)` and `ecdsa_repack(ecdsa_sign(sk, m, r),
+     r2)` are syntactically distinct in the term algebra (no equation
+     rewrites one to the other) yet BOTH verify under `ecdsa_pk(sk)` —
+     captures the Cremers-Gellert-Wiesmaier-Zhao 2025/229 ETK
+     attack surface.
    - SHA-256 random oracle через Tamarin `hashing` builtin (`h/1`)
      для transcript hash chain.
    - MLS group state abstracted: persistent fact `!Group(group_id,
-     ciphersuite, ext_ops_enabled)` где ext_ops_enabled = true либо
-     false. Private group default — false (per SPEC-03 §5.1).
+     ciphersuite, ext_ops_enabled)` где ext_ops_enabled = 'true' либо
+     'false'. Private group default 'false' (per SPEC-03 §5.1);
+     public group 'true' (per RFC 9420 §5.2 external operations).
    - Member state abstracted: persistent fact `!Member($A, group_id,
      epoch)` — каждый member tracking текущий epoch.
-   - Commit operation abstracted: rule `commit_honest` fires только
-     для existing member + советский ciphersuite + увеличивает epoch.
-   - External commit attempt abstracted: rule `external_commit_attempt`
-     fires только если group имеет ext_ops_enabled = true. Private
-     group blocks этот rule через persistent fact constraint.
-   - Ed25519-based whitelist enforcement: rule `validate_ciphersuite`
-     fires только для whitelisted values; ECDSA-based values NOT
-     модельно представлены (compile-time blocked).
-   - ETK split-brain attack: ECDSA malleability — adversary repackages
-     ECDSA sig (different bytes, same semantic) chambers receiver A
-     vs B. Ed25519 SUF-CMA blocks этот attack — sig bytes uniquely
-     determined by (m, sk).
+   - Commit operation abstracted: rule `epoch_advance_via_commit`
+     emits both signed_commit and epoch_state (h chain включает sig
+     bytes per closure rationale выше).
+   - Peer observation abstracted: rule `peer_observes_epoch` verifies
+     received signed_commit под Alice's pk, computes own epoch_state
+     включая sig bytes.
+   - Whitelist enforcement: 5 dedicated `validate_whitelist_*` rules
+     emit `Whitelisted(c)` and populate `!ValidatedCiphersuite(c)`.
+     Non-whitelisted ciphersuites (ECDSA-based, e.g. 0x0002 / 0x0007)
+     have NO validate rule → cannot be consumed by CreateGroup →
+     compile-time blocked in production via
+     `validate_incoming_ciphersuite` returning Err for non-whitelisted.
 
    ----------------------------------------------------------------------------
    Adversary model:
@@ -101,11 +177,14 @@
    - Adversary НЕ имеет access к Ed25519 private keys членов группы
      (если бы получил — security trivially broken).
    - Adversary может attempt external operations через `In` channel
-     — external_commit_attempt rule fires только при ext_ops_enabled
-     = true; private group blocks.
-   - ETK split-brain: adversary не может produce two distinct
-     ECDSA-style sig bytes для same message + same pubkey — Ed25519
-     SUF-CMA built-in.
+     — `external_commit_attempt` rule fires только при
+     ext_ops_enabled = 'true'; private group blocks.
+   - Под Tamarin signing builtin (Ed25519): adversary не может
+     produce distinct sig bytes для same (m, pk) — SUF-CMA holds.
+   - Под explicit ECDSA function symbols: adversary CAN compute
+     `ecdsa_repack(observed_sig, fresh_r2)` to produce alternate-
+     byte sig that ALSO verifies — captures Cremers ETK attack
+     surface for counterexample lemma.
    ============================================================================
 */
 
@@ -113,6 +192,47 @@ theory umbrella_mls_ed25519
 begin
 
 builtins: signing, hashing
+
+/*
+   ECDSA function symbols + malleability equations (F-MLS-MODEL-1
+   closure 2026-05-19, per Cremers-Gellert-Wiesmaier-Zhao eprint
+   2025/229).
+
+   `ecdsa_sign/3` and `ecdsa_repack/2` model the ECDSA malleability
+   surface: adversary observing `ecdsa_sign(sk, m, r1)` can compute
+   `ecdsa_repack(ecdsa_sign(sk, m, r1), r2)`. The two terms are
+   syntactically distinct in the term algebra (no equation rewrites
+   one into the other) yet BOTH verify under `ecdsa_pk(sk)` (verify
+   equations below).
+
+   `[private]` marker on `ecdsa_sign` makes the adversary unable to
+   produce sigs for unknown sk — captures the standard signature-
+   forgery resistance assumed at the cryptographic level. The
+   malleability equations describe public manipulations the adversary
+   CAN do.
+
+   ECDSA function symbols + malleability equations (F-MLS-MODEL-1
+   closure 2026-05-19 per Cremers-Gellert-Wiesmaier-Zhao eprint
+   2025/229).
+
+   `ecdsa_sign/3` and `ecdsa_repack/2` model the ECDSA malleability
+   surface: an adversary observing `ecdsa_sign(sk, m, r1)` can
+   compute `ecdsa_repack(ecdsa_sign(sk, m, r1), r2)`. The two terms
+   are syntactically distinct in the term algebra (no equation
+   rewrites one into the other) yet BOTH verify under `ecdsa_pk(sk)`
+   (verify equations below).
+
+   The `[private]` marker on `ecdsa_sign` makes the adversary unable
+   to produce sigs for unknown sk — captures standard signature-
+   forgery resistance assumed at the cryptographic level. The
+   malleability equations describe public manipulations the adversary
+   CAN do.
+*/
+functions: ecdsa_pk/1, ecdsa_sign/3 [private], ecdsa_verify/3, ecdsa_repack/2
+
+equations:
+    ecdsa_verify(ecdsa_sign(sk, m, r), m, ecdsa_pk(sk)) = true,
+    ecdsa_verify(ecdsa_repack(ecdsa_sign(sk, m, r), r2), m, ecdsa_pk(sk)) = true
 
 /*
    Whitelisted ciphersuites per SPEC-03 §4.1.
@@ -123,41 +243,84 @@ builtins: signing, hashing
    0x004D = MLS_256_XWING_CHACHA20POLY1305_SHA256_Ed25519 (X-Wing PQ + Ed25519)
 
    Все Ed25519/Ed448 based — SUF-CMA по построению. ECDSA NOT в whitelist.
+
+   F-MLS-MODEL-1 closure: each whitelisted ciphersuite has a dedicated
+   `validate_whitelist_*` rule (separate from CreateGroup) emitting
+   `Whitelisted(c)` action and a `!ValidatedCiphersuite(c)` persistent
+   fact consumed by group-creation rules. Non-whitelisted ciphersuites
+   (e.g. 0x0007 ECDSA-P521) have no validate rule → cannot reach a
+   CreateGroup rule → compile-time blocked in production via TryFrom.
 */
+
+rule validate_whitelist_0x0001:
+    [ ]
+  --[ Whitelisted('0x0001') ]->
+    [ !ValidatedCiphersuite('0x0001') ]
+
+rule validate_whitelist_0x0003:
+    [ ]
+  --[ Whitelisted('0x0003') ]->
+    [ !ValidatedCiphersuite('0x0003') ]
+
+rule validate_whitelist_0x0004:
+    [ ]
+  --[ Whitelisted('0x0004') ]->
+    [ !ValidatedCiphersuite('0x0004') ]
+
+rule validate_whitelist_0x0006:
+    [ ]
+  --[ Whitelisted('0x0006') ]->
+    [ !ValidatedCiphersuite('0x0006') ]
+
+rule validate_whitelist_0x004D:
+    [ ]
+  --[ Whitelisted('0x004D') ]->
+    [ !ValidatedCiphersuite('0x004D') ]
 
 /*
-   Rule: create_private_group_ed25519
+   Rule: create_private_group
 
-   $A создаёт private group с whitelisted Ed25519-based ciphersuite
-   и disabled external operations (per SPEC-03 §5.1 default policy).
+   $A создаёт private group с whitelisted ciphersuite (must be pre-
+   validated via `validate_whitelist_*` → `!ValidatedCiphersuite(c)`
+   fact). Disabled external operations (per SPEC-03 §5.1 default
+   policy).
+
+   F-MLS-MODEL-1 closure: rule consumes `!ValidatedCiphersuite(c)` —
+   structural dependency on prior `Whitelisted(c)` event.
 */
-rule create_private_group_ed25519:
+rule create_private_group:
     let
         ext_ops_enabled = 'false'
-        ciphersuite     = '0x0001'
     in
-    [ Fr(~group_id), Fr(~sk_A) ]
-  --[ CreateGroup($A, ~group_id, ciphersuite, ext_ops_enabled),
-      Whitelisted(ciphersuite) ]->
+    [ Fr(~group_id), Fr(~sk_A), !ValidatedCiphersuite(ciphersuite) ]
+  --[ CreateGroup($A, ~group_id, ciphersuite, ext_ops_enabled) ]->
     [ !Group(~group_id, ciphersuite, ext_ops_enabled),
       !Member($A, ~group_id, '0'),
       !MemberKey($A, ~group_id, ~sk_A),
       Out(<~group_id, ciphersuite, pk(~sk_A)>) ]
 
 /*
-   Rule: create_private_group_ed25519_pq
+   Rule: create_public_group
 
-   $A создаёт private group с PQ ciphersuite 0x004D + Ed25519 signing.
-   Same disabled external operations.
+   $A создаёт public group with external operations enabled (per
+   RFC 9420 §5.2 — external commits / proposals allowed by design
+   for public groups). Modelled to give the
+   `external_operations_disabled` lemma a non-trivial scope:
+   `external_commit_attempt` rule CAN fire for public groups, so
+   the lemma's claim that PRIVATE groups don't accept external ops
+   is substantive (discriminates between the two cases by group
+   construction).
+
+   F-MLS-MODEL-1 closure: pre-closure no rule created public groups,
+   making `external_commit_attempt` rule unreachable and the
+   disabling lemma vacuously true.
 */
-rule create_private_group_ed25519_pq:
+rule create_public_group:
     let
-        ext_ops_enabled = 'false'
-        ciphersuite     = '0x004D'
+        ext_ops_enabled = 'true'
     in
-    [ Fr(~group_id), Fr(~sk_A) ]
-  --[ CreateGroup($A, ~group_id, ciphersuite, ext_ops_enabled),
-      Whitelisted(ciphersuite) ]->
+    [ Fr(~group_id), Fr(~sk_A), !ValidatedCiphersuite(ciphersuite) ]
+  --[ CreateGroup($A, ~group_id, ciphersuite, ext_ops_enabled) ]->
     [ !Group(~group_id, ciphersuite, ext_ops_enabled),
       !Member($A, ~group_id, '0'),
       !MemberKey($A, ~group_id, ~sk_A),
@@ -166,9 +329,9 @@ rule create_private_group_ed25519_pq:
 /*
    Rule: member_join_via_internal_proposal
 
-   New member $B joins via internal Proposal от existing member $A +
-   Commit $A. Это legitimate path для добавления участников per
-   SPEC-03 §5.1 «No external commits» — only internal commits valid.
+   New member $B joins via internal Proposal from existing member $A.
+   Legitimate path для добавления участников per SPEC-03 §5.1 «No
+   external commits» — only internal commits valid for private groups.
 */
 rule member_join_via_internal_proposal:
     let
@@ -179,17 +342,17 @@ rule member_join_via_internal_proposal:
       !MemberKey($A, group_id, sk_A),
       Fr(~sk_B) ]
   --[ Eq(verify(signed_proposal, <'add', $B, group_id>, pk(sk_A)), true),
-      InternalProposal($A, $B, group_id, epoch) ]->
+      InternalProposal($A, $B, group_id, epoch),
+      NewMember($B, group_id) ]->
     [ !Member($B, group_id, epoch),
       !MemberKey($B, group_id, ~sk_B) ]
 
 /*
-   Rule: external_commit_attempt_blocked
+   Rule: external_commit_attempt
 
    Adversary attempts external commit. Rule fires ТОЛЬКО если
-   ext_ops_enabled = 'true'; private group ext_ops_enabled = 'false'
-   blocks этот rule (no Group fact с ext_ops_enabled = 'true' в private
-   group setup).
+   ext_ops_enabled = 'true' (public group). Private group has
+   ext_ops_enabled = 'false' and blocks this rule.
 
    Action label `ExternalCommitAccepted` — fires только если group
    permits external operations. Lemma `external_operations_disabled`
@@ -202,10 +365,10 @@ rule external_commit_attempt:
     [ ]
 
 /*
-   Rule: external_proposal_attempt_blocked
+   Rule: external_proposal_attempt
 
-   Аналогично external commit blocked. Fires только при ext_ops_enabled
-   = 'true'.
+   Аналогично external commit — fires только при ext_ops_enabled =
+   'true'.
 */
 rule external_proposal_attempt:
     [ !Group(group_id, ciphersuite, 'true'),
@@ -216,40 +379,84 @@ rule external_proposal_attempt:
 /*
    Rule: epoch_advance_via_commit
 
-   $A в группе делает internal commit; epoch advances. Все members
-   видят same epoch_state (transcript hash). Это формализует MLS
-   property что members converge на same state после commit.
+   $A в группе делает internal commit; epoch advances. Все honest
+   members видят same epoch_state (transcript hash).
+
+   F-MLS-MODEL-1 closure: epoch_state hash NOW includes
+   `signed_commit` bytes (was just `<group_id, new_epoch,
+   ciphersuite>` pre-closure — hash of public data only, trivially
+   deterministic). Including signed_commit makes the
+   `etk_split_brain_prevented` lemma substantive: state_A = state_B
+   ⇔ signed_commit_A = signed_commit_B bytes ⇔ Ed25519 SUF-CMA holds
+   (no malleability).
 */
 rule epoch_advance_via_commit:
     let
         new_epoch       = h(<epoch, 'commit'>)
         signed_commit   = sign(<'commit', group_id, new_epoch>, sk_A)
-        epoch_state     = h(<group_id, new_epoch, ciphersuite>)
+        epoch_state     = h(<group_id, new_epoch, ciphersuite, signed_commit>)
     in
     [ !Group(group_id, ciphersuite, ext_ops_enabled),
       !Member($A, group_id, epoch),
       !MemberKey($A, group_id, sk_A) ]
   --[ Eq(verify(signed_commit, <'commit', group_id, new_epoch>, pk(sk_A)), true),
       InternalCommit($A, group_id, epoch, new_epoch),
-      SeenEpoch($A, group_id, new_epoch, epoch_state) ]->
-    [ !MemberEpoch($A, group_id, new_epoch) ]
+      CommitterState($A, group_id, new_epoch, epoch_state) ]->
+    [ !MemberEpoch($A, group_id, new_epoch),
+      Out(<'commit', $A, group_id, new_epoch, signed_commit>) ]
 
 /*
    Rule: peer_observes_epoch
 
-   Other member $B наблюдает epoch advance — также вычисляет epoch_state.
-   Property: для same group + same epoch — все honest members
-   compute same epoch_state (Ed25519 SUF-CMA prevents split-view).
+   Other member $B observes a commit broadcast from $A and computes
+   own epoch_state. The signed_commit bytes received via In channel
+   are verified under Alice's pubkey AND included in Bob's
+   epoch_state.
+
+   F-MLS-MODEL-1 closure: epoch_state on Bob's side now includes the
+   received signed_commit bytes. Under Tamarin signing builtin
+   (Ed25519 SUF-CMA), no equation rewrites `sign(m, sk)` to a
+   different term; therefore the only `signed_commit` that verifies
+   under Alice's pubkey for the canonical message is the one Alice
+   produced. Bob's epoch_state = Alice's epoch_state. Substantive
+   correspondence — replaces pre-closure tautological hash
+   determinism over public-only data.
 */
 rule peer_observes_epoch:
     let
-        epoch_state = h(<group_id, new_epoch, ciphersuite>)
+        epoch_state = h(<group_id, new_epoch, ciphersuite, signed_commit>)
     in
     [ !Group(group_id, ciphersuite, ext_ops_enabled),
+      !Member($A, group_id, epoch_A),
+      !MemberKey($A, group_id, sk_A),
       !Member($B, group_id, epoch_old),
-      In(<'commit', $A, group_id, new_epoch>) ]
-  --[ SeenEpoch($B, group_id, new_epoch, epoch_state) ]->
+      In(<'commit', $A, group_id, new_epoch, signed_commit>) ]
+  --[ Eq(verify(signed_commit, <'commit', group_id, new_epoch>, pk(sk_A)), true),
+      ObserverState($B, group_id, new_epoch, epoch_state, $A) ]->
     [ !MemberEpoch($B, group_id, new_epoch) ]
+
+/*
+   Rule: ecdsa_malleability_demo
+
+   Educational rule (F-MLS-MODEL-1 closure 2026-05-19) demonstrating
+   the ECDSA malleability surface that Tamarin's `signing` builtin
+   (Ed25519 SUF-CMA) closes. Generates fresh `sk, m, r1, r2` terms and
+   emits an action label binding `s1 = ecdsa_sign(sk, m, r1)` and
+   `s2 = ecdsa_repack(s1, r2)`. The lemma
+   `ecdsa_malleability_admits_distinct_verifying_signatures` proves
+   `s1 ≠ s2` (syntactically distinct under our term algebra) while
+   our `equations:` block establishes both verify under `ecdsa_pk(sk)`.
+
+   This rule is purely demonstrative — it does NOT participate in the
+   MLS protocol rules above. Its sole purpose is to give the
+   counterexample lemma a reachable trace.
+*/
+rule ecdsa_malleability_demo:
+    [ Fr(~sk), Fr(~m), Fr(~r1), Fr(~r2) ]
+  --[ EcdsaMalleabilityDemo(~sk, ~m, ~r1, ~r2,
+                            ecdsa_sign(~sk, ~m, ~r1),
+                            ecdsa_repack(ecdsa_sign(~sk, ~m, ~r1), ~r2)) ]->
+    [ ]
 
 /*
    Restriction: Equality
@@ -261,66 +468,173 @@ restriction Equality:
     "All x y #i. Eq(x, y) @ i ==> x = y"
 
 /*
+   Restrictions: NewMemberDistinctFromCreator + NewMemberJoinsOnce
+
+   F-MLS-MODEL-1 closure 2026-05-19: prevent the Tamarin search from
+   exploring a malformed unification where the group creator is also
+   "added" as a new member via `member_join_via_internal_proposal`.
+   Without these restrictions, Tamarin can unify $B (newly-joined
+   member) with $A (creator) for the same group, producing TWO
+   `!MemberKey` facts for the same agent (one from creator role with
+   sk_create, one from joined role with sk_join). The committer rule
+   can then fire with EITHER key, producing two distinct
+   `CommitterState` events with different state hashes — falsely
+   triggering the split-brain lemma.
+
+   In MLS protocol semantics, an agent is either the creator or a
+   later joiner, never both. `NewMemberDistinctFromCreator` enforces
+   the disjointness; `NewMemberJoinsOnce` prevents an agent from
+   being added twice (would also produce duplicate keys).
+
+   These restrictions model real-world MLS membership invariants
+   (RFC 9420 §11) which the production stack enforces at the
+   GroupContext level (one identity per slot).
+*/
+restriction NewMemberDistinctFromCreator:
+    "All A B group ciphersuite ext_ops #i #j.
+        CreateGroup(A, group, ciphersuite, ext_ops) @ #i
+        & NewMember(B, group) @ #j
+        ==>
+        not (A = B)"
+
+restriction NewMemberJoinsOnce:
+    "All B group #i #j.
+        NewMember(B, group) @ #i
+        & NewMember(B, group) @ #j
+        ==>
+        #i = #j"
+
+/*
    Lemma: external_operations_disabled
 
-   Для любой группы создаваемой через `create_private_group_ed25519*`
-   rules (ext_ops_enabled = 'false'), не существует ExternalCommitAccepted
-   либо ExternalProposalAccepted events. Modelled через persistent
-   fact constraint: external_*_attempt rules fire только при
-   ext_ops_enabled = 'true' (impossible после create_private_group).
+   For private groups (ext_ops_enabled = 'false'), no
+   ExternalCommitAccepted or ExternalProposalAccepted events exist.
+
+   F-MLS-MODEL-1 closure: substantive because the
+   `external_commit_attempt` rule is REACHABLE for public groups
+   (via `create_public_group` adding `!Group(g, c, 'true')` facts).
+   The lemma discriminates: private vs public group construction.
+   `public_group_admits_external_commit` exists-trace lemma (below)
+   proves the rule actually fires for public groups, confirming
+   non-vacuity.
 */
 lemma external_operations_disabled:
     "All A group_id ciphersuite #i.
         CreateGroup(A, group_id, ciphersuite, 'false') @ #i
         ==>
-        not (Ex commit_data #j. ExternalCommitAccepted(group_id, commit_data) @ #j)
-        & not (Ex proposal_data #j. ExternalProposalAccepted(group_id, proposal_data) @ #j)"
+        (not (Ex commit_data #j. ExternalCommitAccepted(group_id, commit_data) @ #j))
+        & (not (Ex proposal_data #j. ExternalProposalAccepted(group_id, proposal_data) @ #j))"
+
+/*
+   Lemma: public_group_admits_external_commit (exists-trace)
+
+   F-MLS-MODEL-1 closure NEW: counterexample lemma proving the
+   `external_commit_attempt` rule fires in some trace for public
+   groups. Confirms `external_operations_disabled` is not vacuously
+   true — there ARE traces with external commits, but only for
+   public groups, and the disabling lemma's `'false'` filter
+   correctly excludes them.
+*/
+lemma public_group_admits_external_commit: exists-trace
+    "Ex A group_id ciphersuite commit_data #i #j.
+        CreateGroup(A, group_id, ciphersuite, 'true') @ #i
+        & ExternalCommitAccepted(group_id, commit_data) @ #j
+        & #i < #j"
 
 /*
    Lemma: etk_split_brain_prevented
 
-   Если Alice ($A) и Bob ($B) оба видят same group + same epoch,
-   epoch_state computed обоими identical. Modelled через correspondence:
-   SeenEpoch($A, group_id, new_epoch, state_A) + SeenEpoch($B, group_id,
-   new_epoch, state_B) ⇒ state_A = state_B.
+   For any observer reaching `ObserverState` after observing a commit
+   from committer, the observer's computed epoch_state equals the
+   committer's own epoch_state at the corresponding `CommitterState`
+   event.
 
-   Это формализует SUF-CMA Ed25519 защиту: ECDSA malleability attack
-   (adversary repackages sig bytes split A vs B view) blocked because
-   Tamarin signing builtin (Ed25519-modelling) гарантирует что
-   verify_check fires только при exact-byte sig match.
+   F-MLS-MODEL-1 closure: substantive because `epoch_state` includes
+   the `signed_commit` bytes. Under Tamarin signing builtin (Ed25519
+   SUF-CMA), no equation rewrites `sign(m, sk)` to a different term;
+   `peer_observes_epoch` rule's `Eq(verify(...), true)` enforces
+   that the observer's received `signed_commit` is exactly the one
+   committer produced. Therefore the hash inputs agree → epoch_state
+   values agree.
+
+   This blocks the Cremers-Gellert-Wiesmaier-Zhao ETK split-brain
+   attack: under ECDSA semantics the adversary could repack
+   committer's sig (`ecdsa_repack`) and feed observer a byte-distinct
+   but still-verifying signature; the
+   `ecdsa_malleability_admits_distinct_verifying_signatures`
+   exists-trace lemma demonstrates this surface exists. Under
+   Ed25519 Tamarin signing builtin (no malleability equations),
+   this attack is impossible.
+
+   Note on scope: the lemma correlates `CommitterState` and
+   `ObserverState` for a fixed (committer, group, new_epoch) tuple.
+   It does NOT claim two independent committers at the same new_epoch
+   produce identical states — that is a concurrent-commit corner
+   case which MLS resolves at a separate protocol layer (Update
+   message ordering / coordination), out of scope for the ETK
+   split-brain analysis.
 */
 lemma etk_split_brain_prevented:
-    "All A B group_id new_epoch state_A state_B #i #j.
-        SeenEpoch(A, group_id, new_epoch, state_A) @ #i
-        & SeenEpoch(B, group_id, new_epoch, state_B) @ #j
+    "All committer observer group_id new_epoch state_committer state_observer #i #j.
+        CommitterState(committer, group_id, new_epoch, state_committer) @ #i
+        & ObserverState(observer, group_id, new_epoch, state_observer, committer) @ #j
         ==>
-        state_A = state_B"
+        state_committer = state_observer"
+
+/*
+   Lemma: ecdsa_malleability_admits_distinct_verifying_signatures
+   (exists-trace)
+
+   F-MLS-MODEL-1 closure NEW: educational counterexample. Shows that
+   under explicit ECDSA function symbols + malleability equations
+   declared at the top of this theory, a trace exists where two
+   syntactically-distinct signatures `s1 ≠ s2` both verify under the
+   same `(m, ecdsa_pk(sk))`. This is the attack surface that the
+   Ed25519 `signing` builtin closes — Ed25519's signature is uniquely
+   determined by `(m, sk)`, no repackaging possible.
+*/
+lemma ecdsa_malleability_admits_distinct_verifying_signatures: exists-trace
+    "Ex sk m r1 r2 s1 s2 #i.
+        EcdsaMalleabilityDemo(sk, m, r1, r2, s1, s2) @ #i
+        & not (s1 = s2)"
 
 /*
    Lemma: ed25519_only_whitelist
 
-   Любой CreateGroup event fires с whitelisted ciphersuite (через
-   `Whitelisted` action label fired same rule). Это формализует
-   SPEC-03 §4.1 whitelist — ECDSA-based ciphersuites не появляются
-   в group state (compile-time blocked via TryFrom<u16> Err).
+   Every `CreateGroup` event has a strictly-prior `Whitelisted` event
+   for the same ciphersuite.
+
+   F-MLS-MODEL-1 closure: substantive structural dependency.
+   `validate_whitelist_*` rules are the ONLY way to produce
+   `!ValidatedCiphersuite(c)` persistent facts, which the group-
+   creation rules consume. The `#j < #i` ordering proves the validate
+   step strictly precedes the create step. Any future rule that
+   creates a group bypassing `!ValidatedCiphersuite` would break this
+   lemma, catching the regression at Tamarin verification time.
+
+   Non-whitelisted ciphersuites (e.g. 0x0007 ECDSA-P521) have no
+   `validate_whitelist_0x0007` rule → cannot produce
+   `!ValidatedCiphersuite('0x0007')` → cannot reach CreateGroup —
+   compile-time blocked in production via `validate_incoming_
+   ciphersuite` returning Err.
 */
 lemma ed25519_only_whitelist:
     "All A group_id ciphersuite ext_ops #i.
         CreateGroup(A, group_id, ciphersuite, ext_ops) @ #i
         ==>
-        Ex #j. Whitelisted(ciphersuite) @ #j & #j = #i"
+        Ex #j. Whitelisted(ciphersuite) @ #j & #j < #i"
 
 /*
    Lemma: honest_setup_executable (exists-trace)
 
-   Sanity: honest group create + internal commit + epoch advance может
-   выполниться без adversarial events.
+   Sanity: honest group create + internal commit + epoch advance
+   can complete without adversarial events.
 */
 lemma honest_setup_executable: exists-trace
     "Ex A group_id ciphersuite epoch new_epoch state #i #j #k.
         CreateGroup(A, group_id, ciphersuite, 'false') @ #i
         & InternalCommit(A, group_id, epoch, new_epoch) @ #j
-        & SeenEpoch(A, group_id, new_epoch, state) @ #k
+        & CommitterState(A, group_id, new_epoch, state) @ #k
         & #i < #j & #j = #k
         & (not Ex commit_data #x. ExternalCommitAccepted(group_id, commit_data) @ #x)"
 
