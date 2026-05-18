@@ -13,7 +13,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use umbrella_backup::cloud_wrap::WrappingParams;
 use umbrella_calls::CallPolicy;
-use umbrella_identity::{IdentityKey, IdentitySeed, MnemonicLanguage};
+use umbrella_identity::{IdentityKey, IdentitySeed};
 use umbrella_kt::KtLogState;
 
 use crate::error::{ClientError, Result};
@@ -219,15 +219,47 @@ impl Default for ClientConfig {
 // blocks introduce the first readers.
 #[allow(dead_code)]
 pub struct ClientCore {
-    /// Identity-key Ed25519 — корень доверия. В Блоке 7.2 хранится в памяти
-    /// (`Arc<IdentityKey>`); в Блоке 7.3 заменяется на non-exportable ключ
-    /// внутри Secure Enclave / StrongBox через `PersistentKeyStore` callback.
+    /// Identity-key Ed25519 — корень доверия. `Some(...)` для legacy/test
+    /// path'ей ([`ClientCore::new_for_test`]) — приватный материал лежит
+    /// в Rust heap внутри `IdentityKey` (zeroize-on-drop). `None` если
+    /// клиент был bootstrapped с hardware-backed identity
+    /// ([`ClientCore::new_with_hw_callback`]) — приватный материал
+    /// **физически** в Secure Enclave / StrongBox и НЕ материализуется
+    /// в Rust heap. В этом режиме public-key bytes доступны через
+    /// [`Self::hw_verifying_key`] (cache после bootstrap) или
+    /// [`Self::identity_verifying_key`] (унифицированный accessor).
     ///
-    /// Identity-key Ed25519 — root of trust. In Block 7.2 held in memory
-    /// (`Arc<IdentityKey>`); Block 7.3 swaps it for a non-exportable key
-    /// inside Secure Enclave / StrongBox via the `PersistentKeyStore`
-    /// callback.
-    pub(crate) identity: Arc<IdentityKey>,
+    /// **F-CLIENT-HW-1 closure (PhD-B Pass 5 remediation):** до closure
+    /// поле было `Arc<IdentityKey>` без `Option`, и `new_with_hw_callback`
+    /// синтезировало эфемерный `IdentitySeed` через
+    /// `IdentitySeed::generate` + `IdentityKey::derive`, чтобы заполнить
+    /// этот слот. Это материализовало 32 байта Ed25519 secret scalar
+    /// в process heap на микросекунды между synthesis → derive → drop —
+    /// узкое, но реальное окно для adversary с runtime memory access.
+    /// Closure refactor'ит поле в `Option` и hw-bootstrap path выставляет
+    /// `None`, полностью исключая materialization.
+    ///
+    /// Identity-key Ed25519 — root of trust. `Some(...)` for legacy / test
+    /// paths ([`ClientCore::new_for_test`]) — secret material lives in
+    /// Rust heap inside `IdentityKey` (zeroize-on-drop). `None` if the
+    /// client was bootstrapped with a hardware-backed identity
+    /// ([`ClientCore::new_with_hw_callback`]) — secret material is
+    /// **physically** held in Secure Enclave / StrongBox and never
+    /// materialises in Rust heap. In this mode the public-key bytes are
+    /// available via [`Self::hw_verifying_key`] (cached at bootstrap)
+    /// or [`Self::identity_verifying_key`] (unified accessor).
+    ///
+    /// **F-CLIENT-HW-1 closure (PhD-B Pass 5 remediation):** before the
+    /// closure this field was `Arc<IdentityKey>` (no `Option`), and
+    /// `new_with_hw_callback` synthesised an ephemeral `IdentitySeed`
+    /// through `IdentitySeed::generate` + `IdentityKey::derive` to fill
+    /// the slot. That materialised 32 bytes of Ed25519 secret scalar in
+    /// process heap for microseconds (synthesis → derive → drop) — a
+    /// narrow but real window for an adversary with runtime memory
+    /// access. The closure refactors the field into `Option` and the
+    /// hw-bootstrap path now sets `None`, eliminating the materialisation
+    /// entirely.
+    pub(crate) identity: Option<Arc<IdentityKey>>,
 
     /// Index этого устройства в семействе (0 = primary, 1–15 = secondary,
     /// SPEC-11 §4). В Блоке 7.2 всегда 0 для тестов.
@@ -312,6 +344,35 @@ pub struct ClientCore {
     /// `Some(handle)` if identity_sk lives in the hardware keystore and is
     /// only accessible via [`hw_callback`]. `None` for legacy / test paths.
     pub(crate) hw_identity_handle: Option<HwKeyHandle>,
+
+    /// Cache 32-байтовых bytes Ed25519 verifying-key для hardware-resident
+    /// identity. Заполняется в [`ClientCore::new_with_hw_callback`] через
+    /// [`bootstrap_hw_identity`] → [`PersistentKeyStoreCallback::verifying_key`].
+    /// `None` для legacy path'ей — в этом случае verifying-key читается из
+    /// `identity.as_ref().unwrap().public()`.
+    ///
+    /// **F-CLIENT-HW-2 closure carry-over:** до F-CLIENT-HW-2
+    /// `bootstrap_hw_identity` возвращал `[0u8; 32]` placeholder и call site
+    /// в `new_with_hw_callback` его discard'ил через
+    /// `_verifying_key_placeholder`. F-CLIENT-HW-2 закрыл placeholder; этот
+    /// cache field — F-CLIENT-HW-1 closure storage для real verifying-key
+    /// surfaced на bootstrap-time без round-trip к TEE на каждом read.
+    ///
+    /// Cache for the 32-byte Ed25519 verifying-key of the hardware-resident
+    /// identity. Populated by [`ClientCore::new_with_hw_callback`] via
+    /// [`bootstrap_hw_identity`] →
+    /// [`PersistentKeyStoreCallback::verifying_key`]. `None` for legacy
+    /// paths — in that case the verifying-key is read from
+    /// `identity.as_ref().unwrap().public()`.
+    ///
+    /// **F-CLIENT-HW-2 closure carry-over:** before F-CLIENT-HW-2
+    /// `bootstrap_hw_identity` returned a `[0u8; 32]` placeholder and the
+    /// call site in `new_with_hw_callback` discarded it via
+    /// `_verifying_key_placeholder`. F-CLIENT-HW-2 closed the placeholder
+    /// itself; this cache field is the F-CLIENT-HW-1 closure storage for
+    /// the real verifying-key surfaced at bootstrap-time without round-
+    /// tripping to the TEE on every read.
+    pub(crate) hw_verifying_key: Option<[u8; 32]>,
 }
 
 impl ClientCore {
@@ -341,7 +402,7 @@ impl ClientCore {
             Arc::new(StubUnwrapTransport::default());
 
         Ok(Arc::new(Self {
-            identity,
+            identity: Some(identity),
             device_index: 0,
             kt_state: Arc::new(RwLock::new(KtLogState::new())),
             unwrap_transport,
@@ -352,6 +413,7 @@ impl ClientCore {
             config,
             hw_callback: None,
             hw_identity_handle: None,
+            hw_verifying_key: None,
         }))
     }
 
@@ -361,11 +423,15 @@ impl ClientCore {
     /// **generated and held inside Secure Enclave / StrongBox**; only the
     /// opaque `HwKeyHandle` lives on the Rust side.
     ///
-    /// Legacy `identity: Arc<IdentityKey>` field is set to a placeholder
-    /// derived from a one-shot ephemeral seed that is immediately dropped
-    /// (used only for `device_index` plumbing and `Debug` impls — it
-    /// **does not** hold the canonical identity_sk). All real signing
-    /// operations on this `ClientCore` route through `hw_callback`.
+    /// **F-CLIENT-HW-1 closure (PhD-B Pass 5 remediation):** до closure
+    /// этот конструктор синтезировал эфемерный `IdentitySeed` +
+    /// `IdentityKey` чтобы заполнить теперь-`Option`-обёрнутое поле
+    /// `core.identity`, материализуя 32 байта Ed25519 secret в heap на
+    /// микросекунды (M-FINAL-1 disclosure). Closure refactor'ит
+    /// `core.identity` в `Option<Arc<IdentityKey>>`, выставляет `None` в
+    /// этой ветке и кэширует real verifying-key (после F-CLIENT-HW-2) в
+    /// поле [`hw_verifying_key`]. Производство secret material'а в Rust
+    /// heap в hw-bootstrap path eliminated полностью.
     ///
     /// Round-5 device-capture closure F-PHD-DC-R7-1 + F-PHD-DC-R10-1 entry
     /// point. Bootstrap a `ClientCore` using a hardware-backed keystore
@@ -373,12 +439,15 @@ impl ClientCore {
     /// is **generated and held inside Secure Enclave / StrongBox**; only
     /// the opaque `HwKeyHandle` lives on the Rust side.
     ///
-    /// The legacy `identity: Arc<IdentityKey>` field is set to a
-    /// placeholder derived from a one-shot ephemeral seed which is
-    /// immediately dropped (used only for `device_index` plumbing and
-    /// `Debug` impls — it **does not** carry the canonical identity_sk).
-    /// Every real signing operation on this `ClientCore` routes through
-    /// `hw_callback`.
+    /// **F-CLIENT-HW-1 closure (PhD-B Pass 5 remediation):** prior to the
+    /// closure this constructor synthesised an ephemeral `IdentitySeed` +
+    /// `IdentityKey` to fill the (then non-`Option`) `core.identity`
+    /// field, materialising 32 bytes of Ed25519 secret on the heap for
+    /// microseconds (M-FINAL-1 disclosure). The closure refactors
+    /// `core.identity` to `Option<Arc<IdentityKey>>`, sets `None` on this
+    /// branch, and caches the real verifying-key (post-F-CLIENT-HW-2)
+    /// in the [`hw_verifying_key`] field. Production of secret material
+    /// on the Rust heap in the hw-bootstrap path is eliminated entirely.
     ///
     /// # Параметры / Parameters
     ///
@@ -398,36 +467,31 @@ impl ClientCore {
         callback: Arc<dyn PersistentKeyStoreCallback>,
         label: impl Into<String>,
     ) -> Result<Arc<Self>> {
-        // Bootstrap identity inside the HW keystore. The handle is the
-        // only thing that comes back to Rust — secret bytes stay in TEE.
+        // Bootstrap identity inside the HW keystore. The handle and the
+        // 32-byte Ed25519 verifying-key are the only things that come
+        // back to Rust — the private signing scalar stays in the TEE.
+        //
+        // F-CLIENT-HW-1 closure: the verifying-key returned here is real
+        // (post-F-CLIENT-HW-2); previously this binding was discarded as
+        // `_verifying_key_placeholder` because `bootstrap_hw_identity`
+        // returned `[0u8; 32]`.
         let label = label.into();
-        let (handle, _verifying_key_placeholder) =
+        let (handle, verifying_key) =
             bootstrap_hw_identity(&callback, label).map_err(ClientError::from)?;
 
-        // M-FINAL-1 (independent review 2026-05-18): R20 "0 hits identity_sk"
-        // applies to the round-6 distributed bootstrap path
-        // (`distributed_identity_client::bootstrap_account`) — NOT this
-        // hw-callback entry point. Here a 32-byte ephemeral signing key
-        // materializes on heap (`Box<[u8; 32]>`, zeroize-on-drop) for
-        // backwards compatibility with downstream readers of `core.identity`.
-        // Window of existence is microseconds (synthesize → derive → drop),
-        // entirely heap-resident (no stack spill per round-5 closure), but
-        // it IS a brief on-device materialization. Real production HW path
-        // signs through `core.hw_callback` and never uses this ephemeral.
-        //
-        // TODO(v1.2.x): refactor `core.identity` to `Option<Arc<IdentityKey>>`
-        // or a public-only verifying-key variant so this synthesis can be
-        // eliminated entirely. Tracking issue: M-FINAL-1.
-        let ephemeral_seed =
-            IdentitySeed::generate(&mut rand_core::OsRng, MnemonicLanguage::English);
-        let identity = Arc::new(IdentityKey::derive(&ephemeral_seed, 0)?);
-        drop(ephemeral_seed); // explicit zeroize-on-drop
+        // F-CLIENT-HW-1 closure: the M-FINAL-1 disclosure block that
+        // synthesised an ephemeral `IdentitySeed` + `IdentityKey` purely
+        // to populate `core.identity` is removed. `core.identity` is now
+        // `Option<Arc<IdentityKey>>` and stays `None` in the hw path —
+        // no ephemeral secret scalar ever materialises in Rust heap.
+        // Real verifying-key is cached in `hw_verifying_key` so callers
+        // do not round-trip to the TEE on every public-key read.
 
         let unwrap_transport: Arc<dyn AsyncUnwrapTransport + Send + Sync> =
             Arc::new(StubUnwrapTransport::default());
 
         Ok(Arc::new(Self {
-            identity,
+            identity: None,
             device_index: 0,
             kt_state: Arc::new(RwLock::new(KtLogState::new())),
             unwrap_transport,
@@ -438,6 +502,7 @@ impl ClientCore {
             config,
             hw_callback: Some(callback),
             hw_identity_handle: Some(handle),
+            hw_verifying_key: Some(verifying_key),
         }))
     }
 
@@ -461,6 +526,80 @@ impl ClientCore {
     #[must_use]
     pub fn hw_identity_handle(&self) -> Option<&HwKeyHandle> {
         self.hw_identity_handle.as_ref()
+    }
+
+    /// Унифицированный accessor 32-байтового Ed25519 verifying-key для
+    /// identity этого ClientCore. **F-CLIENT-HW-1 closure accessor.**
+    ///
+    /// Маршрутизация:
+    ///
+    /// - **HW path** ([`Self::new_with_hw_callback`]): возвращает cached
+    ///   `hw_verifying_key`, заполненный через
+    ///   [`PersistentKeyStoreCallback::verifying_key`] на bootstrap.
+    ///   Identity_sk физически в TEE, accessor НЕ round-trip'ит в
+    ///   keystore — O(1) memcpy из cached поля.
+    /// - **Legacy path** ([`Self::new_for_test`]): возвращает
+    ///   `identity.public().to_bytes()` через unwrap `Option`.
+    /// - **Invariant violation** (не должен случаться у correctly-bootstrapped
+    ///   ClientCore): обе ветки `None` → `ClientError::Internal`.
+    ///
+    /// Этот метод — единый точка для consumers (например `call/session.rs`
+    /// DtlsRunner идентификация peer'а), которым нужны public bytes
+    /// независимо от backing storage. До F-CLIENT-HW-1 closure consumers
+    /// читали `core.identity.public().to_bytes()` напрямую, что (а)
+    /// требовало hw path синтезировать ephemeral `IdentityKey` (M-FINAL-1
+    /// gap) и (б) не позволяло выбрать между HW vs legacy без логики на
+    /// caller-side.
+    ///
+    /// # Ошибки / Errors
+    ///
+    /// - `ClientError::Internal` если у ClientCore ни identity ни
+    ///   hw_verifying_key — это invariant violation; correct construction
+    ///   через [`Self::new_for_test`] / [`Self::new_with_hw_callback`]
+    ///   гарантирует ровно одну из веток.
+    ///
+    /// Unified accessor for the 32-byte Ed25519 verifying-key of this
+    /// ClientCore's identity. **F-CLIENT-HW-1 closure accessor.**
+    ///
+    /// Dispatch:
+    ///
+    /// - **HW path** ([`Self::new_with_hw_callback`]): returns the cached
+    ///   `hw_verifying_key`, populated through
+    ///   [`PersistentKeyStoreCallback::verifying_key`] at bootstrap. The
+    ///   identity_sk lives in the TEE; this accessor does NOT round-trip
+    ///   into the keystore — it is an O(1) memcpy from the cached field.
+    /// - **Legacy path** ([`Self::new_for_test`]): returns
+    ///   `identity.public().to_bytes()` through an `Option` unwrap.
+    /// - **Invariant violation** (must not happen for a correctly
+    ///   bootstrapped ClientCore): both branches `None` →
+    ///   `ClientError::Internal`.
+    ///
+    /// This method is the single entry point for consumers (e.g. the
+    /// `call/session.rs` DtlsRunner peer-identity binding) that need
+    /// public bytes regardless of backing storage. Before the
+    /// F-CLIENT-HW-1 closure consumers read
+    /// `core.identity.public().to_bytes()` directly, which (a) forced
+    /// the hw path to synthesise an ephemeral `IdentityKey` (the
+    /// M-FINAL-1 gap) and (b) put HW-vs-legacy branching on the
+    /// caller side.
+    ///
+    /// # Errors
+    ///
+    /// - `ClientError::Internal` if the ClientCore has neither identity
+    ///   nor hw_verifying_key — an invariant violation; correct
+    ///   construction via [`Self::new_for_test`] /
+    ///   [`Self::new_with_hw_callback`] guarantees exactly one branch.
+    pub fn identity_verifying_key(&self) -> Result<[u8; 32]> {
+        if let Some(vk) = self.hw_verifying_key {
+            return Ok(vk);
+        }
+        if let Some(id) = self.identity.as_ref() {
+            return Ok(id.public().to_bytes());
+        }
+        Err(ClientError::Internal(
+            "ClientCore invariant violated: neither identity nor hw_verifying_key is populated"
+                .to_string(),
+        ))
     }
 
     /// Закрытая граница неполного HTTP/2 bootstrap.
@@ -741,6 +880,193 @@ mod production_boundary_tests {
         assert!(
             msg.contains("SPKI") && msg.contains("stubs"),
             "error must name missing SPKI/stub boundary: {msg}"
+        );
+    }
+
+    /// **F-CLIENT-HW-1 closure: legacy bootstrap invariant.**
+    ///
+    /// `new_for_test` (Block 7.2 wiring) materialises `IdentityKey` in
+    /// Rust heap → `core.identity = Some(...)`. The hw_callback /
+    /// hw_identity_handle / hw_verifying_key fields stay `None`. The
+    /// `identity_verifying_key()` accessor returns the in-heap key's
+    /// public bytes; this exactly matches a direct
+    /// `IdentityKey::derive(...).public().to_bytes()` computation.
+    ///
+    /// Closure invariant after F-CLIENT-HW-1: HW-vs-legacy partition is
+    /// total — every `ClientCore` is in exactly one of the two regimes.
+    #[tokio::test]
+    async fn f_client_hw_1_legacy_bootstrap_materializes_identity_and_no_hw_state() {
+        let seed = test_seed();
+        let direct_vk = umbrella_identity::IdentityKey::derive(&seed, 0)
+            .expect("derive identity")
+            .public()
+            .to_bytes();
+
+        let core = ClientCore::new_for_test(production_shaped_config(), seed)
+            .await
+            .expect("legacy bootstrap succeeds");
+
+        assert!(
+            core.identity.is_some(),
+            "F-CLIENT-HW-1: legacy bootstrap MUST populate core.identity"
+        );
+        assert!(
+            core.hw_callback.is_none(),
+            "F-CLIENT-HW-1: legacy bootstrap MUST leave hw_callback None"
+        );
+        assert!(
+            core.hw_identity_handle.is_none(),
+            "F-CLIENT-HW-1: legacy bootstrap MUST leave hw_identity_handle None"
+        );
+        assert!(
+            core.hw_verifying_key.is_none(),
+            "F-CLIENT-HW-1: legacy bootstrap MUST leave hw_verifying_key None"
+        );
+
+        let accessor_vk = core
+            .identity_verifying_key()
+            .expect("identity_verifying_key succeeds on legacy core");
+        assert_eq!(
+            accessor_vk, direct_vk,
+            "F-CLIENT-HW-1: legacy identity_verifying_key MUST match direct IdentityKey::derive(...).public()"
+        );
+    }
+
+    /// **F-CLIENT-HW-1 closure: hw bootstrap invariant — no ephemeral
+    /// IdentityKey materialization.**
+    ///
+    /// Pre-closure `new_with_hw_callback` synthesised an ephemeral
+    /// `IdentitySeed` + `IdentityKey` to fill `core.identity`. That
+    /// materialised 32 bytes of Ed25519 secret scalar in process heap
+    /// for a microseconds-wide window (the M-FINAL-1 disclosure).
+    ///
+    /// Closure invariant: after `new_with_hw_callback`,
+    /// `core.identity` is `None`, no `IdentityKey` instance exists, and
+    /// the only identity-key material in Rust process state is the
+    /// 32-byte verifying-key (public, not secret) cached in
+    /// `hw_verifying_key`. Real signing scalar lives in
+    /// Secure Enclave / StrongBox via the `hw_callback`.
+    ///
+    /// Concrete numbers: ephemeral identity_sk leak window pre-closure
+    /// ≈ microseconds (sufficient for adversary process-memory inspection
+    /// per round-4 R7 lldb attack); post-closure leak window = 0 (no
+    /// secret scalar ever crosses into Rust heap on this path).
+    #[tokio::test]
+    async fn f_client_hw_1_hw_bootstrap_does_not_materialize_ephemeral_identity_key() {
+        use crate::keystore::hw_callback::{MockHwKeystore, PersistentKeyStoreCallback};
+
+        let mock = Arc::new(MockHwKeystore::new());
+        let callback: Arc<dyn PersistentKeyStoreCallback> = mock.clone();
+        let core = ClientCore::new_with_hw_callback(
+            production_shaped_config(),
+            callback,
+            "f-client-hw-1.no-ephemeral-identity",
+        )
+        .await
+        .expect("hw bootstrap succeeds");
+
+        assert!(
+            core.identity.is_none(),
+            "F-CLIENT-HW-1 closure REGRESSION: hw bootstrap MUST NOT materialize \
+             ephemeral IdentityKey — pre-closure synthesised one to fill the slot, \
+             leaking 32 bytes of Ed25519 secret to Rust heap for microseconds"
+        );
+        assert!(
+            core.hw_callback.is_some(),
+            "F-CLIENT-HW-1: hw bootstrap MUST populate hw_callback"
+        );
+        assert!(
+            core.hw_identity_handle.is_some(),
+            "F-CLIENT-HW-1: hw bootstrap MUST populate hw_identity_handle"
+        );
+        assert!(
+            core.hw_verifying_key.is_some(),
+            "F-CLIENT-HW-1: hw bootstrap MUST populate hw_verifying_key cache"
+        );
+
+        // Cached verifying_key MUST equal the keystore's verifying_key
+        // for the bound handle — no drift between bootstrap-time fetch
+        // and runtime callback query (the smoke-test inside
+        // bootstrap_hw_identity also covers this, but defense in depth).
+        let handle = core.hw_identity_handle.as_ref().expect("handle present");
+        let direct_vk = mock
+            .verifying_key(handle)
+            .expect("callback yields verifying_key");
+        let cached_vk = core
+            .hw_verifying_key
+            .expect("hw_verifying_key cache populated");
+        assert_eq!(
+            cached_vk, direct_vk,
+            "F-CLIENT-HW-1: cached hw_verifying_key MUST equal callback's verifying_key"
+        );
+    }
+
+    /// **F-CLIENT-HW-1 closure: unified accessor invariant.**
+    ///
+    /// `identity_verifying_key()` is the single accessor consumers (e.g.
+    /// `call/session.rs` DtlsRunner) reach for. It MUST:
+    ///
+    /// 1. Return cached `hw_verifying_key` bytes verbatim when present.
+    /// 2. Fall back to `identity.public().to_bytes()` for legacy cores.
+    /// 3. Never call into the keystore callback (no TEE round-trip per
+    ///    read — the cache exists to avoid that).
+    ///
+    /// Pre-closure consumers read `core.identity.public().to_bytes()`
+    /// directly, which required `new_with_hw_callback` to synthesise an
+    /// ephemeral IdentityKey (the M-FINAL-1 gap).
+    #[tokio::test]
+    async fn f_client_hw_1_identity_verifying_key_dispatches_correctly() {
+        use crate::keystore::hw_callback::{MockHwKeystore, PersistentKeyStoreCallback};
+
+        // HW path: accessor returns cached hw_verifying_key.
+        let mock = Arc::new(MockHwKeystore::new());
+        let callback: Arc<dyn PersistentKeyStoreCallback> = mock.clone();
+        let hw_core = ClientCore::new_with_hw_callback(
+            production_shaped_config(),
+            callback,
+            "f-client-hw-1.accessor.hw",
+        )
+        .await
+        .expect("hw bootstrap");
+        let hw_handle = hw_core
+            .hw_identity_handle
+            .as_ref()
+            .expect("handle present");
+        let hw_direct = mock
+            .verifying_key(hw_handle)
+            .expect("callback verifying_key");
+        let hw_accessor = hw_core
+            .identity_verifying_key()
+            .expect("accessor on hw core");
+        assert_eq!(
+            hw_accessor, hw_direct,
+            "F-CLIENT-HW-1: hw path accessor MUST equal callback.verifying_key(handle)"
+        );
+
+        // Legacy path: accessor returns identity.public().to_bytes().
+        let seed = test_seed();
+        let legacy_direct = umbrella_identity::IdentityKey::derive(&seed, 0)
+            .expect("derive")
+            .public()
+            .to_bytes();
+        let legacy_core = ClientCore::new_for_test(production_shaped_config(), seed)
+            .await
+            .expect("legacy bootstrap");
+        let legacy_accessor = legacy_core
+            .identity_verifying_key()
+            .expect("accessor on legacy core");
+        assert_eq!(
+            legacy_accessor, legacy_direct,
+            "F-CLIENT-HW-1: legacy path accessor MUST equal identity.public().to_bytes()"
+        );
+
+        // Cross-check: hw_accessor and legacy_accessor should differ
+        // (the mock's randomly-generated hw identity vs the legacy
+        // derived-from-seed identity are independent CSPRNG outputs;
+        // collision probability ≈ 2^-256 per the Ed25519 spec).
+        assert_ne!(
+            hw_accessor, legacy_accessor,
+            "F-CLIENT-HW-1 sanity: hw and legacy verifying-keys are independent"
         );
     }
 }

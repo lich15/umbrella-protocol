@@ -185,7 +185,14 @@ impl CallSession {
             _ => IceAgent::new_no_p2p(turn).await?,
         };
 
-        let identity_pub = core.identity.public().to_bytes();
+        // F-CLIENT-HW-1 closure: route public-key fetch through the
+        // unified accessor so HW-backed cores (where `core.identity` is
+        // `None`) supply the verifying-key from the cached
+        // `hw_verifying_key`. Pre-closure call site read
+        // `core.identity.public().to_bytes()` directly, which forced
+        // `new_with_hw_callback` to synthesise an ephemeral identity
+        // seed (M-FINAL-1 gap, now closed).
+        let identity_pub = core.identity_verifying_key()?;
         let session_nonce: [u8; 16] = rand::random();
         let dtls = DtlsRunner::new(identity_pub, session_nonce);
 
