@@ -12,6 +12,9 @@ verify, and test the protocol without exposing private working material.
 
 - `audits/` - retained verification notes and tool-policy documents.
 - `security/` - release manifest, SBOM, and security operation notes.
+- `integration/` - backend integration contract (read-only specs
+  for client-side transport implementation; closure of
+  F-CLIENT-FACADE-1 Block 7.4 milestone).
 - Current release notes:
   `security/release-notes-v1.1.0.md`.
 - Live dependency monitoring:
@@ -28,6 +31,13 @@ verify, and test the protocol without exposing private working material.
   `audits/phd-b-distributed-identity-closure-2026-05-19.md`.
 - PhD-B independent reviewer verdict:
   `audits/phd-b-final-independent-review-2026-05-19.md`.
+- **PhD-B Pass 5 remediation closure (current)**:
+  `audits/phd-b-pass5-remediation-2026-05-19.md` —
+  consolidated report of 20 closure commits resolving 18
+  Pass 5 findings (all CRITICAL + HIGH + MEDIUM
+  security/formal). F-CLIENT-FACADE-1 reclassified to
+  engineering scope; integration contract at
+  `integration/gateway-svc-contract.md`.
 - `WORKING_RULES.md` - рабочие постулаты проекта.
 - `superpowers/specs/` - утверждённые рабочие планы крупных изменений.
 - root-level `UmbrellaX_protocol_public_en.pdf` and
@@ -53,12 +63,41 @@ attack regressions (R1-R6), hedged-encaps closure, device-capture defense
 attack tests R20-R27. The independent reviewer verdict in
 [`audits/phd-b-final-independent-review-2026-05-19.md`](audits/phd-b-final-independent-review-2026-05-19.md)
 returned 0 BLOCKER + 1 MAJOR (M-FINAL-1, scope-of-closure caveat on the
-legacy hw-callback bootstrap, tracked for v1.2.x removal) + 3 MINOR. The
-consolidated summary lives in
+legacy hw-callback bootstrap) + 3 MINOR. The consolidated summary lives in
 [`audits/ROUND-1-TO-6-SUMMARY.md`](audits/ROUND-1-TO-6-SUMMARY.md). After
 the audit chain the workspace baseline is 2080 release-mode tests
 (`cargo test --release --workspace --all-features`), up from 1977 pre
 round-6.
+
+**Pass 5 remediation closure (2026-05-19)** — a parallel PhD-B Pass 5
+audit cycle opened 18 additional findings on top of the rounds 1-6
+review. All 18 have been closed in a focused remediation series of 20
+commits on `main` (see
+[`audits/phd-b-pass5-remediation-2026-05-19.md`](audits/phd-b-pass5-remediation-2026-05-19.md)).
+Highlights:
+
+- 4 CRITICAL ship-blockers closed (F-1 / F-2 / F-3 / F-FFI-2).
+- 5 HIGH findings closed, including the M-FINAL-1 v1.2.x removal
+  tracker — the ephemeral identity_sk materialisation on the hw
+  bootstrap path is now eliminated via F-CLIENT-HW-1
+  (commit `e7b034ff`); `ClientCore.identity` is `Option<Arc<...>>`
+  and `None` on hw path; `HwBackedKeyStore` provides the
+  identity-sk routing via `PersistentKeyStoreCallback::sign_identity`
+  (commit `46784d1a`, F-IDENT-1 + F-IDENT-2).
+- 6 formal-model tautologies closed — all six Tamarin models
+  (`mls_ed25519`, `kt_v1_self_monitoring`, `kt_v2_self_monitoring`,
+  `sframe_rfc9605`, `downgrade_resistance`, `type_safe_enforcement`)
+  now carry substantive multi-rule correspondence lemmas plus
+  exists-trace non-vacuity anchors. All verify under
+  `tamarin-prover` 1.12.0.
+- 3 MEDIUM dudect measurement-artefact findings closed via
+  bounded-pool refactor at sub-100 ns timing sites.
+- Single remaining open item F-CLIENT-FACADE-1 reclassified to
+  Block 7.4 engineering milestone scope. Integration contract for
+  the closure is documented at
+  [`integration/gateway-svc-contract.md`](integration/gateway-svc-contract.md);
+  closure planned across follow-up sessions implementing QUIC +
+  WebSocket transports against the contract.
 
 The public FFI/client production bootstrap is gated until every required
 transport and verifier is wired end to end. Cryptographic crates and test

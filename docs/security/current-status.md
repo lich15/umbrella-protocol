@@ -1,8 +1,67 @@
 # Current Status
 
-Дата: 2026-05-18
+Дата: 2026-05-19 (PhD-B Pass 5 remediation closure)
 
 [English](#english) | [Русский](#русский)
+
+## Update 2026-05-19 — PhD-B Pass 5 remediation closed
+
+The PhD-B Pass 5 audit findings have been closed across a focused
+remediation series (20 closure commits on `main` between
+`471e7928` and `23eda73a`). All security and formal-correctness
+findings are resolved. Full report:
+`docs/audits/phd-b-pass5-remediation-2026-05-19.md`. The single
+remaining open item (F-CLIENT-FACADE-1 — chat-facade stubs) is a
+Block 7.4 engineering milestone, not a security finding;
+integration contract for the closure is documented in
+`docs/integration/gateway-svc-contract.md`.
+
+Key transitions from the prior status snapshot below:
+
+- **M-FINAL-1 CLOSED** (commit `e7b034ff`, F-CLIENT-HW-1) —
+  `ClientCore::new_with_hw_callback` no longer materialises an
+  ephemeral identity_sk in Rust heap. `core.identity` is now
+  `Option<Arc<IdentityKey>>` and `None` on the hw bootstrap path;
+  the M-FINAL-1 disclosure block is removed entirely. Public-key
+  bytes are now sourced from `hw_verifying_key` cache via the new
+  `ClientCore::identity_verifying_key()` accessor. The
+  v1.2.x removal tracker in the snapshot below is therefore
+  satisfied.
+- **F-IDENT-1 + F-IDENT-2 CLOSED** (commit `46784d1a`) —
+  `HwBackedKeyStore: KeyStore` impl added at
+  `crates/umbrella-client/src/keystore/hw_backed.rs`. The new
+  keystore has no `seed` field by design; identity-sk operations
+  route through `PersistentKeyStoreCallback::sign_identity`.
+- **F-MLS-MODEL-1 + 5 MEDIUM formal-model tautologies CLOSED**
+  (commits `8d362af6`, `24ec707b`, `6dfc862f`, `977b1974`,
+  `c0082bc2`, `23eda73a`) — substantive multi-rule correspondence
+  lemmas replace prior tautological proofs across
+  `mls_ed25519.spthy`, `kt_v1_self_monitoring.spthy`,
+  `kt_v2_self_monitoring.spthy`, `sframe_rfc9605.spthy`,
+  `downgrade_resistance.spthy`, `type_safe_enforcement.spthy`. All
+  six models now verify under `tamarin-prover` 1.12.0 with
+  substantive proof complexity (e.g. `etk_split_brain_prevented`
+  in `mls_ed25519.spthy` proven in 172 steps post-closure vs
+  ~12 steps pre-closure tautology).
+- **F-DUDECT cluster CLOSED** (commit `76947fc0`) — bounded-pool
+  pattern applied to sub-100 ns sites (HKDF expand,
+  `[u8;32]::ct_eq` baseline, `strip_padding` tail check) at
+  `crates/umbrella-tests/tests/dudect_constant_time.rs`. 100 K-
+  sample smoke test confirms 47–92 % |t|-reduction across the
+  three affected sites.
+- Single open finding **F-CLIENT-FACADE-1** is now categorised as
+  Block 7.4 engineering scope (chat facades return stubbed
+  `MessageId([0u8; 16])`), not a security finding. Integration
+  contract is specified in
+  `docs/integration/gateway-svc-contract.md` and closure is
+  planned across follow-up sessions implementing QUIC +
+  WebSocket transports against the contract.
+
+The rest of the original status text from 2026-05-18 follows
+below. Any contradiction with the update block above resolves in
+favour of the update block (newer information).
+
+---
 
 ## English
 

@@ -12,6 +12,18 @@ adversary D per SPEC-01 §4).
 re-built every artifact, re-ran every acceptance gate, re-ran two lldb
 scans end-to-end.
 
+> **Post-Pass-5 update 2026-05-19:** The Pass 5 audit (parallel to
+> rounds 1-7 reviewed here) opened 18 findings; all have been
+> closed in a focused remediation series. Consolidated closure
+> report: `docs/audits/phd-b-pass5-remediation-2026-05-19.md`.
+> Single remaining open item (F-CLIENT-FACADE-1) is reclassified
+> as Block 7.4 engineering milestone with integration contract
+> at `docs/integration/gateway-svc-contract.md`. The rounds 1-7
+> summary below remains accurate for the pre-Pass-5 audit chain
+> but does NOT reflect the post-Pass-5 closure status — see the
+> Pass 5 remediation report for the current security/formal
+> closure ledger.
+
 ---
 
 ## 1. Scope
