@@ -261,6 +261,24 @@ pub trait PersistentKeyStoreCallback: Send + Sync + 'static {
     /// wipe). After this call all `sign_identity` / `unwrap_secret`
     /// calls for `handle` return `KeyNotFound`.
     fn delete_identity(&self, handle: &HwKeyHandle) -> Result<(), HwKeystoreError>;
+
+    /// Retrieve the Ed25519 verifying-key (32 bytes) for the hardware-
+    /// resident identity. Native implementations fetch directly from the
+    /// TEE without the private seed ever returning to Rust:
+    /// - iOS: `SecKeyCopyPublicKey(handle)` →
+    ///   `SecKeyCopyExternalRepresentation` → raw 32 bytes.
+    /// - Android: `KeyStore.getCertificate(alias).publicKey.encoded`
+    ///   (X.509 SubjectPublicKeyInfo with the 32 raw Ed25519 bytes at
+    ///   `[len - 32..]`).
+    ///
+    /// **F-CLIENT-HW-2 closure (PhD-B Pass 5 remediation):** previously
+    /// [`bootstrap_hw_identity`] returned `[0u8; 32]` as a placeholder
+    /// for the verifying-key. The closure adds this trait method so the
+    /// callback can surface the real Ed25519 public key bytes that Key
+    /// Transparency publishing or peer-verification flows consume.
+    /// Production wiring fetches from the TEE-resident handle without
+    /// the seed ever materialising in Rust.
+    fn verifying_key(&self, handle: &HwKeyHandle) -> Result<[u8; 32], HwKeystoreError>;
 }
 
 /// `MockHwKeystore` — software-only implementation for macOS test rig.
@@ -466,22 +484,41 @@ impl PersistentKeyStoreCallback for MockHwKeystore {
             .ok_or_else(|| HwKeystoreError::KeyNotFound(handle.label().to_string()))?;
         Ok(())
     }
+
+    fn verifying_key(&self, handle: &HwKeyHandle) -> Result<[u8; 32], HwKeystoreError> {
+        // F-CLIENT-HW-2 closure: derive the verifying-key from the stored
+        // seed using `ed25519_dalek::SigningKey::verifying_key`. Production
+        // calls `SecKeyCopyPublicKey` (iOS) or
+        // `KeyStore.getCertificate(alias).publicKey` (Android) — the seed
+        // never returns to userspace in either case. The mock takes a
+        // side-channel peek at the seed (acceptable per the same R7-stack-
+        // spill caveat noted on `sign_identity`) so the mock keystore is
+        // testable end-to-end without a real SE/StrongBox.
+        use ed25519_dalek::SigningKey;
+        let guard = self
+            .keys
+            .lock()
+            .map_err(|_| HwKeystoreError::Native("mock mutex poisoned".into()))?;
+        let material = guard
+            .get(handle)
+            .ok_or_else(|| HwKeystoreError::KeyNotFound(handle.label().to_string()))?;
+        let signing = SigningKey::from_bytes(material.seed.expose());
+        Ok(signing.verifying_key().to_bytes())
+    }
 }
 
 /// Bootstrap a TEE-anchored identity into the keystore. Returns the
 /// `HwKeyHandle` plus the Ed25519 verifying-key bytes that can be
 /// published to Key Transparency. The signing scalar **stays in TEE**.
 ///
-/// Bootstrap a TEE-anchored identity into the keystore. Returns the
-/// `HwKeyHandle` plus the Ed25519 verifying-key bytes that can be
-/// published to Key Transparency. The signing scalar **stays in TEE**.
-///
-/// # Mock note
-///
-/// For `MockHwKeystore`, the verifying-key is derived from the stored
-/// seed via `SigningKey::verifying_key()`. For real iOS/Android, the
-/// verifying-key is retrieved via `SecKeyCopyPublicKey` or
-/// `KeyStore.getCertificate(alias).publicKey`.
+/// **F-CLIENT-HW-2 closure (PhD-B Pass 5 remediation):** the verifying-key
+/// is now sourced from [`PersistentKeyStoreCallback::verifying_key`] — a
+/// real 32-byte Ed25519 public key — instead of the `[0u8; 32]`
+/// placeholder that previously occupied the second tuple slot. A probe
+/// `sign_identity` call still runs as a smoke test that the native
+/// bridge is wired correctly; the returned signature is verified against
+/// the freshly-fetched verifying-key to catch handle/key drift at
+/// bootstrap time rather than at first peer interaction.
 ///
 /// # Mock note
 ///
@@ -497,8 +534,8 @@ pub fn bootstrap_hw_identity(
     let handle = callback.generate_identity(label)?;
 
     // Probe the verifying-key by signing a fixed-prefix "publish" message
-    // and verifying with the public key — this also acts as a smoke test
-    // that the native bridge is correctly wired.
+    // and verifying with the public key — also acts as a smoke test that
+    // the native bridge is correctly wired.
     let probe = b"umbrellax-tee-identity-probe-v1";
     let sig_bytes = callback.sign_identity(&handle, probe)?;
     if sig_bytes.len() != 64 {
@@ -508,20 +545,27 @@ pub fn bootstrap_hw_identity(
         )));
     }
 
-    // For the mock, callers immediately compose the verifying key from
-    // the SigningKey path inside `sign_identity`; production retrieves
-    // it from the SE via `SecKeyCopyPublicKey`. We expose only the
-    // 64-byte signature here and let `Iden(tity|tityStore)` derive the
-    // verifying key in the next round if needed; for the round-5
-    // closure we return zero bytes as the verifying-key placeholder —
-    // real wiring will populate via a separate `verifying_key` callback
-    // method in v1.2.0.
-    //
-    // Round-5 acceptance scope: the **wiring path** is what we
-    // demonstrate (Rust ↔ callback ↔ HW); the publishing of the
-    // verifying key is an orthogonal concern handled by Block 7.10
-    // production integration.
-    Ok((handle, [0u8; 32]))
+    // F-CLIENT-HW-2 closure: fetch the real Ed25519 verifying-key from
+    // the callback. Previously this returned `[0u8; 32]` placeholder; the
+    // caller (`ClientCore::new_with_hw_callback`) silently discarded the
+    // result via `let (handle, _verifying_key_placeholder) = ...`, which
+    // masked the gap. Now the gap is closed: the verifying-key is real,
+    // ready for downstream KT-publish / peer-verification consumers once
+    // F-CLIENT-HW-1 (production signing path wire-up) lands.
+    let verifying_key = callback.verifying_key(&handle)?;
+
+    // Smoke test: verify the probe signature against the fetched
+    // verifying-key. Catches handle/key drift between
+    // `generate_identity` and `verifying_key` at bootstrap time.
+    let dalek_pk = ed25519_dalek::VerifyingKey::from_bytes(&verifying_key)
+        .map_err(|e| HwKeystoreError::SigningFailed(format!("verifying_key invalid: {e}")))?;
+    let dalek_sig = ed25519_dalek::Signature::from_slice(&sig_bytes)
+        .map_err(|e| HwKeystoreError::SigningFailed(format!("probe sig parse: {e}")))?;
+    dalek_pk
+        .verify_strict(probe, &dalek_sig)
+        .map_err(|e| HwKeystoreError::SigningFailed(format!("probe sig verify: {e}")))?;
+
+    Ok((handle, verifying_key))
 }
 
 #[cfg(test)]
@@ -603,6 +647,63 @@ mod tests {
             .expect("bootstrap mock");
         assert_eq!(handle.label(), "xyz.umbrellax.identity.test");
         assert_eq!(vk.len(), 32);
+        // F-CLIENT-HW-2 closure: vk is no longer a `[0u8; 32]` placeholder.
+        assert_ne!(
+            vk,
+            [0u8; 32],
+            "F-CLIENT-HW-2 closure: bootstrap_hw_identity must return real verifying-key, \
+             not the pre-closure [0u8; 32] placeholder"
+        );
+    }
+
+    /// **F-CLIENT-HW-2 closure regression guard.**
+    ///
+    /// Validates that the verifying-key surfaced by [`bootstrap_hw_identity`]
+    /// matches the actual Ed25519 public key for the keystore-resident
+    /// identity. End-to-end check: bootstrap → sign a message via callback
+    /// → verify the signature against the returned verifying-key. Confirms
+    /// closure of the gap where the function previously returned
+    /// `[0u8; 32]` (silent placeholder) regardless of which keystore handle
+    /// was generated.
+    ///
+    /// If a future regression re-introduces the placeholder pattern, this
+    /// test fails at the `from_bytes`/`verify_strict` step because the
+    /// all-zeros verifying-key cannot validate a real Ed25519 signature.
+    #[test]
+    fn bootstrap_hw_identity_returns_real_verifying_key_matching_dalek_derivation() {
+        use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+
+        let mock = Arc::new(MockHwKeystore::new());
+        let callback: Arc<dyn PersistentKeyStoreCallback> = mock.clone();
+
+        let (handle, vk_bytes) = bootstrap_hw_identity(&callback, "f-client-hw-2.test")
+            .expect("bootstrap should succeed");
+
+        // The verifying-key MUST be a valid Ed25519 point — the all-zeros
+        // pre-closure placeholder would fail this decode.
+        let vk_dalek =
+            VerifyingKey::from_bytes(&vk_bytes).expect("vk_bytes must decode as Ed25519");
+
+        // Sign a fresh message via the callback (production: SE/StrongBox
+        // signing operation). Verify with the returned vk — proves the vk
+        // corresponds to the actual signing key stored under `handle`.
+        let msg = b"F-CLIENT-HW-2 closure verification message";
+        let sig_bytes = callback.sign_identity(&handle, msg).expect("sign");
+        let sig = Signature::from_slice(&sig_bytes).expect("64-byte Ed25519 sig");
+        vk_dalek
+            .verify(msg, &sig)
+            .expect("F-CLIENT-HW-2 closure: vk verifies hw-callback signatures");
+
+        // Two distinct handles must yield distinct verifying-keys (sanity:
+        // generate_identity yields a fresh seed each call → independent
+        // SigningKey → independent VerifyingKey).
+        let (other_handle, other_vk) = bootstrap_hw_identity(&callback, "f-client-hw-2.other.test")
+            .expect("second bootstrap");
+        assert_ne!(handle, other_handle);
+        assert_ne!(
+            vk_bytes, other_vk,
+            "F-CLIENT-HW-2 closure: distinct handles must yield distinct verifying-keys"
+        );
     }
 
     /// Acceptance gate row 2: `MockHwKeystore` test passes under
