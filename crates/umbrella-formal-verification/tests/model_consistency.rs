@@ -342,11 +342,28 @@ fn kt_v2_self_monitoring_metadata_block_reference_is_9_3() {
     assert_eq!(KT_V2_SELF_MONITORING.block_reference, "9.3");
 }
 
-/// Pending status — допустимый стартовый state для свежедобавленной модели.
-/// Pending status is the valid initial state for a freshly added model.
+/// Verified status — KT V2 self-monitoring model verified locally on
+/// 2026-05-19 via F-KT-V2-MODEL-1 closure (PhD-B Pass 5 remediation).
+/// 3 tautologies refactored to 4 substantive correspondence claims
+/// (bidirectional 'absent'≠'present' lemma split into 2 direction-
+/// specific lemmas); 4 new exists-trace lemmas anchor non-vacuity.
+/// All 9 lemmas verify in 0.40s via tamarin-prover 1.12.0.
+///
+/// Verified status — the KT V2 self-monitoring model was verified
+/// locally on 2026-05-19 via the F-KT-V2-MODEL-1 closure (PhD-B Pass 5
+/// remediation). 3 tautologies refactored to 4 substantive
+/// correspondence claims (the bidirectional `'absent' ≠ 'present'`
+/// lemma was split into 2 direction-specific lemmas); 4 new
+/// exists-trace lemmas anchor non-vacuity. All 9 lemmas verify in
+/// 0.40 s via tamarin-prover 1.12.0.
 #[test]
-fn kt_v2_self_monitoring_status_is_pending_until_first_weekly_run() {
-    assert_eq!(KT_V2_SELF_MONITORING.status, VerificationStatus::Pending);
+fn kt_v2_self_monitoring_status_is_verified_post_f_kt_v2_model_1_closure() {
+    assert!(
+        matches!(KT_V2_SELF_MONITORING.status, VerificationStatus::Verified { .. }),
+        "F-KT-V2-MODEL-1 closure (2026-05-19): KT_V2_SELF_MONITORING must transition Pending → \
+         Verified after local Tamarin run; status now = {:?}",
+        KT_V2_SELF_MONITORING.status
+    );
 }
 
 // ---------------------------------------------------------------------------

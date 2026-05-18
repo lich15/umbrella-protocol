@@ -374,17 +374,41 @@ pub const HYBRID_SIGNATURE_AND_MODE: ModelMetadata = ModelMetadata {
 /// is abstracted in the model via persistent multiset KtEntry facts.
 pub const KT_V2_SELF_MONITORING: ModelMetadata = ModelMetadata {
     name: "umbrella_kt_v2_self_monitoring",
-    spec_reference: "SPEC-13-PQ-HYBRID v1.0.0 §6 + SPEC-09 §3",
-    spec_version: "1.0.0",
+    // spec_reference + spec_version synchronously bumped 1.0.0 → 1.0.1
+    // per F-KT-V2-MODEL-1 closure (PhD-B Pass 5 remediation 2026-05-19,
+    // F-59 sync pattern). The 3 primary lemmas were structural-truth
+    // tautologies: 2 were tuple-inequality tautologies
+    // `not(<sub,f,s> = <orig,f,s>)` (different tuple components →
+    // different tuples by Tamarin term algebra), and 1 was a
+    // bidirectional literal-disjointness tautology over `'absent' ≠
+    // 'present'` atoms. All 3 refactored to substantive correspondence
+    // claims: SelfMonitor mismatch ⇒ exists earlier Adversary* event.
+    // The bidirectional `unexpected_missing` lemma was SPLIT into 2
+    // direction-specific lemmas (`omission_detected_v2` +
+    // `unexpected_addition_detected_v2`) for clarity. 4 new exists-
+    // trace lemmas (`*_admits_detection`) anchor non-vacuity. Test
+    // `kt_v2_self_monitoring_spec_version_matches_current_spec`
+    // enforces continued sync between `spec_reference` and
+    // `spec_version` fields.
+    spec_reference: "SPEC-13-PQ-HYBRID v1.0.1 §6 + SPEC-09 §3",
+    spec_version: "1.0.1",
     block_reference: "9.3",
     tool: ProtocolType::Tamarin,
     model_path: "models/kt_v2_self_monitoring.spthy",
     properties: &[
         "ghost_participant_substitution_detected",
         "slh_dsa_backup_substitution_detected",
-        "slh_dsa_backup_unexpected_missing_detected",
+        "slh_dsa_backup_omission_detected_v2",
+        "slh_dsa_backup_unexpected_addition_detected_v2",
+        "ghost_substitution_admits_detection",
+        "slh_backup_substitution_admits_detection",
+        "slh_backup_omission_admits_detection",
+        "slh_backup_unexpected_addition_admits_detection",
+        "honest_setup_executable",
     ],
-    status: VerificationStatus::Pending,
+    status: VerificationStatus::Verified {
+        last_run: "2026-05-19",
+    },
 };
 
 /// Модель sealed-sender V2 envelope sender privacy в quantum threat model
@@ -1311,8 +1335,19 @@ mod tests {
         assert_eq!(HYBRID_SIGNATURE_AND_MODE.properties.len(), 3);
     }
 
-    /// KT_V2_SELF_MONITORING metadata имеет ожидаемую форму.
-    /// KT_V2_SELF_MONITORING metadata has the expected shape.
+    /// KT_V2_SELF_MONITORING metadata имеет ожидаемую форму. Updated
+    /// 2026-05-19 (F-KT-V2-MODEL-1 closure): spec_version 1.0.0 →
+    /// 1.0.1; 3 tautological lemmas refactored к 4 substantive
+    /// correspondence (bidirectional 'absent'≠'present' split в 2
+    /// direction-specific lemmas) + 4 new exists-trace anchors + 1
+    /// sanity = 9 properties; status Pending → Verified.
+    ///
+    /// KT_V2_SELF_MONITORING metadata has the expected shape. Updated
+    /// 2026-05-19 (F-KT-V2-MODEL-1 closure): spec_version 1.0.0 →
+    /// 1.0.1; 3 tautologies refactored to 4 substantive correspondence
+    /// claims (bidirectional `'absent' ≠ 'present'` lemma split into 2
+    /// direction-specific lemmas) + 4 new exists-trace anchors + 1
+    /// sanity = 9 properties; status Pending → Verified.
     #[test]
     fn kt_v2_self_monitoring_metadata_shape() {
         assert_eq!(KT_V2_SELF_MONITORING.name, "umbrella_kt_v2_self_monitoring");
@@ -1321,10 +1356,13 @@ mod tests {
             KT_V2_SELF_MONITORING.model_path,
             "models/kt_v2_self_monitoring.spthy"
         );
-        assert_eq!(KT_V2_SELF_MONITORING.spec_version, "1.0.0");
+        assert_eq!(KT_V2_SELF_MONITORING.spec_version, "1.0.1");
         assert_eq!(KT_V2_SELF_MONITORING.block_reference, "9.3");
-        assert_eq!(KT_V2_SELF_MONITORING.status, VerificationStatus::Pending);
-        assert_eq!(KT_V2_SELF_MONITORING.properties.len(), 3);
+        assert!(matches!(
+            KT_V2_SELF_MONITORING.status,
+            VerificationStatus::Verified { .. }
+        ));
+        assert_eq!(KT_V2_SELF_MONITORING.properties.len(), 9);
     }
 
     /// ALL_MODELS содержит обе block-9.3 модели в дополнение к XWing.

@@ -10,7 +10,7 @@
    через byte-equal сравнение observed entry vs local state.
 
    ----------------------------------------------------------------------------
-   SPEC reference     : SPEC-13-PQ-HYBRID v0.0.1 §6 (KT log schema v2) +
+   SPEC reference     : SPEC-13-PQ-HYBRID v1.0.1 §6 (KT log schema v2) +
                         SPEC-09-KEY-TRANSPARENCY §3 (self-monitoring
                         доктрина no silent acceptance)
    ADR  reference     : ADR-011 Решение 6 (KT schema migration V1↔V2
@@ -18,27 +18,75 @@
                         (Tamarin/ProVerif авторинг in-house)
    Block reference    : 9.3 (formal models — hybrid signature + KT v2)
    Tool               : Tamarin Prover 1.10.0+
+   spec_version       : v1.0.1 (F-KT-V2-MODEL-1 closure 2026-05-19 —
+                        substantive correspondence lemmas replace
+                        tuple-inequality + literal-disjointness
+                        tautologies per PhD-B Pass 5 audit feedback;
+                        patch bump from v1.0.0 baseline)
    ----------------------------------------------------------------------------
 
    Properties (proven in this theory):
 
    - ghost_participant_substitution_detected
-       Если adversary публикует KT v2 entry с подменённым hybrid pubkey
-       (substituted ≠ user's local hybrid_pk) и self-monitoring выбирает
-       этот entry для проверки — observed tuple отличается от local
-       tuple, mismatch detectable. Field tag в monitor.rs:
-       `v2_identity_hybrid_pubkey`.
+       Substantive correspondence: SelfMonitor observing hybrid pubkey
+       mismatch ⇒ exists earlier AdversarySubstituteHybrid event.
+
+       **F-KT-V2-MODEL-1 closure (PhD-B Pass 5 remediation 2026-05-19):**
+       pre-closure lemma was tuple-inequality tautology
+       `not(<sub, f, s> = <orig, f, s>)` — structural truth from
+       Tamarin term algebra (different first components → different
+       tuples), provable without touching protocol rules. Post-closure:
+       correspondence claim requiring trace through rule structure
+       (only adversary_publish_with_substituted_hybrid rule produces
+       entries with first-position mismatch).
 
    - slh_dsa_backup_substitution_detected
-       Если adversary substituted SLH-DSA backup pubkey, self-monitor
-       observes mismatch. Field tag: `v2_slh_dsa_backup_pubkey`.
+       Substantive correspondence: SelfMonitor observing SLH-DSA backup
+       pubkey mismatch ⇒ exists earlier AdversarySubstituteSlhBackup.
+       **F-KT-V2-MODEL-1 closure**: substantive correspondence replaces
+       tuple-inequality tautology.
 
-   - slh_dsa_backup_unexpected_missing_detected
-       Двунаправленный: либо adversary omits SLH-DSA backup когда user
-       expects 'present' (field tag `v2_slh_dsa_backup_missing`), либо
-       publishes unexpected backup когда user expects 'absent' (field
-       tag `v2_slh_dsa_backup_unexpected`) — оба пути producing
-       self-monitor observable mismatch через flag mismatch.
+   - slh_dsa_backup_omission_detected_v2
+       Substantive correspondence: SelfMonitor observing flag downgrade
+       (observed='absent' while local='present') ⇒ exists earlier
+       AdversaryOmitSlhBackup. Captures the V2-downgrade attack where
+       adversary strips the SLH-DSA backup field to disable
+       catastrophic recovery capability.
+
+       **F-KT-V2-MODEL-1 closure**: pre-closure half of bidirectional
+       lemma was literal-disjointness tautology
+       `not(<h, 'absent', 'none'> = <h, 'present', s>)` — `'absent'`
+       and `'present'` are distinct public atoms in Tamarin's term
+       algebra (no equation rewrites one to the other), so the
+       inequality is structural truth independent of protocol rules.
+       Post-closure: substantive correspondence requiring trace through
+       adversary_publish_with_omitted_slh_backup rule.
+
+   - slh_dsa_backup_unexpected_addition_detected_v2
+       Substantive correspondence: SelfMonitor observing flag upgrade
+       (observed='present' while local='absent') ⇒ exists earlier
+       AdversaryAddUnexpectedSlhBackup. Captures the inverse attack
+       where adversary injects a foreign SLH-DSA backup under a user
+       that did NOT opt in (preparation for future catastrophic
+       recovery forgery).
+       **F-KT-V2-MODEL-1 closure**: pre-closure other half of
+       bidirectional lemma was literal-disjointness tautology;
+       post-closure substantive correspondence.
+
+   - ghost_substitution_admits_detection (exists-trace, NEW post-closure)
+       Counterexample anchor: a trace exists where adversary substitutes
+       hybrid AND self-monitor detects mismatch (proves model non-vacuous).
+
+   - slh_backup_substitution_admits_detection (exists-trace, NEW)
+       Counterexample anchor for SLH-DSA backup substitution surface.
+
+   - slh_backup_omission_admits_detection (exists-trace, NEW)
+       Counterexample anchor for SLH-DSA backup omission (downgrade)
+       surface.
+
+   - slh_backup_unexpected_addition_admits_detection (exists-trace, NEW)
+       Counterexample anchor for SLH-DSA backup unexpected-addition
+       (injection) surface.
 
    - honest_setup_executable (exists-trace)
        Honest publish + self-monitor с matching local state может
@@ -215,68 +263,166 @@ rule self_monitor:
 /*
    Lemma: ghost_participant_substitution_detected
 
-   Если adversary substituted hybrid pubkey (substituted ≠ original)
-   и self-monitor выбрал substituted entry для проверки — observed
-   tuple <hybrid_sub, flag, slh> отличается от local tuple
-   <hybrid_orig, flag, slh> по первой позиции (hybrid component).
-   Tamarin доказывает inequality через ground reasoning по hypotheses.
+   Substantive correspondence: every observable hybrid-pubkey mismatch
+   between SelfMonitor's tuple and LocalState's tuple traces back to
+   a concrete adversary substitution. The honest publish rule
+   (`publish_own_v2_entry`) binds the entry to LocalState's hybrid_pk
+   (observed = local, no mismatch). Only
+   `adversary_publish_with_substituted_hybrid` produces entries with
+   first-position mismatch.
+
+   **F-KT-V2-MODEL-1 closure (PhD-B Pass 5 remediation 2026-05-19):**
+   pre-closure lemma was tuple-inequality tautology
+   `not(<sub, f, s> = <orig, f, s>)` — structural truth from Tamarin's
+   term algebra (different first components → different tuples),
+   provable without touching protocol rules. Post-closure: trace-
+   substantive correspondence requiring proof through the rule graph.
 */
 lemma ghost_participant_substitution_detected:
-    "All A acc_id hybrid_orig hybrid_sub flag slh #i #j.
+    "All A acc_id hybrid_observed flag slh hybrid_local flag_local slh_local #i.
+        SelfMonitor(A, acc_id,
+                    <hybrid_observed, flag, slh>,
+                    <hybrid_local, flag_local, slh_local>) @ i
+        & not(hybrid_observed = hybrid_local)
+        ==>
+        Ex #j. AdversarySubstituteHybrid(A, acc_id, hybrid_local, hybrid_observed) @ j & j < i"
+
+/*
+   Lemma: slh_dsa_backup_substitution_detected
+
+   Substantive correspondence: every observable SLH-DSA backup pubkey
+   mismatch (third position of the SelfMonitor tuple) traces back to a
+   concrete adversary substitution event on the backup surface.
+
+   **F-KT-V2-MODEL-1 closure**: pre-closure tuple-inequality tautology
+   over the third position; post-closure substantive correspondence.
+*/
+lemma slh_dsa_backup_substitution_detected:
+    "All A acc_id hybrid flag slh_observed hybrid_local flag_local slh_local #i.
+        SelfMonitor(A, acc_id,
+                    <hybrid, flag, slh_observed>,
+                    <hybrid_local, flag_local, slh_local>) @ i
+        & flag = 'present'
+        & flag_local = 'present'
+        & hybrid = hybrid_local
+        & not(slh_observed = slh_local)
+        ==>
+        Ex #j. AdversarySubstituteSlhBackup(A, acc_id, slh_local, slh_observed) @ j & j < i"
+
+/*
+   Lemma: slh_dsa_backup_omission_detected_v2
+
+   Substantive correspondence: SelfMonitor observing the SLH-DSA backup
+   flag downgrade (observed='absent' while local='present') ⇒ exists
+   earlier `AdversaryOmitSlhBackup` event. Captures the V2-downgrade
+   attack where an adversary strips the SLH-DSA backup field to disable
+   the catastrophic recovery capability.
+
+   **F-KT-V2-MODEL-1 closure**: pre-closure half of the original
+   bidirectional lemma was literal-disjointness tautology
+   `not(<h, 'absent', 'none'> = <h, 'present', s>)` — `'absent'` and
+   `'present'` are distinct public atoms in Tamarin's term algebra (no
+   equation rewrites one into the other), so the inequality is
+   structural truth independent of protocol rules. Post-closure:
+   trace-substantive correspondence requiring proof through the
+   `adversary_publish_with_omitted_slh_backup` rule.
+*/
+lemma slh_dsa_backup_omission_detected_v2:
+    "All A acc_id hybrid flag_observed slh_observed hybrid_local flag_local slh_local #i.
+        SelfMonitor(A, acc_id,
+                    <hybrid, flag_observed, slh_observed>,
+                    <hybrid_local, flag_local, slh_local>) @ i
+        & flag_observed = 'absent'
+        & flag_local = 'present'
+        & hybrid = hybrid_local
+        ==>
+        Ex #j. AdversaryOmitSlhBackup(A, acc_id, slh_local) @ j & j < i"
+
+/*
+   Lemma: slh_dsa_backup_unexpected_addition_detected_v2
+
+   Substantive correspondence: SelfMonitor observing the SLH-DSA backup
+   flag upgrade (observed='present' while local='absent') ⇒ exists
+   earlier `AdversaryAddUnexpectedSlhBackup` event. Captures the inverse
+   attack where an adversary injects a foreign SLH-DSA backup under a
+   user that did NOT opt in (preparation for future catastrophic
+   recovery forgery).
+
+   **F-KT-V2-MODEL-1 closure**: pre-closure other half of the original
+   bidirectional lemma was literal-disjointness tautology; post-closure
+   trace-substantive correspondence requiring proof through the
+   `adversary_publish_with_unexpected_slh_backup` rule.
+*/
+lemma slh_dsa_backup_unexpected_addition_detected_v2:
+    "All A acc_id hybrid flag_observed slh_observed hybrid_local flag_local slh_local #i.
+        SelfMonitor(A, acc_id,
+                    <hybrid, flag_observed, slh_observed>,
+                    <hybrid_local, flag_local, slh_local>) @ i
+        & flag_observed = 'present'
+        & flag_local = 'absent'
+        & hybrid = hybrid_local
+        ==>
+        Ex #j. AdversaryAddUnexpectedSlhBackup(A, acc_id, slh_observed) @ j & j < i"
+
+/*
+   Lemma: ghost_substitution_admits_detection (exists-trace)
+
+   F-KT-V2-MODEL-1 closure NEW: counterexample anchor proving the
+   correspondence lemma is non-vacuous — a trace exists where
+   AdversarySubstituteHybrid fires AND SelfMonitor subsequently
+   detects the resulting mismatch (i < j ordering).
+*/
+lemma ghost_substitution_admits_detection: exists-trace
+    "Ex A acc_id hybrid_orig hybrid_sub flag slh #i #j.
         AdversarySubstituteHybrid(A, acc_id, hybrid_orig, hybrid_sub) @ i
         & SelfMonitor(A, acc_id,
                       <hybrid_sub, flag, slh>,
                       <hybrid_orig, flag, slh>) @ j
         & not(hybrid_orig = hybrid_sub)
-        & i < j
-        ==>
-        not(<hybrid_sub, flag, slh> = <hybrid_orig, flag, slh>)"
+        & i < j"
 
 /*
-   Lemma: slh_dsa_backup_substitution_detected
+   Lemma: slh_backup_substitution_admits_detection (exists-trace)
 
-   Аналогично: substituted SLH-DSA backup pubkey appears как mismatched
-   third position в observed tuple vs local tuple. Self-monitor выбравший
-   тот entry observes mismatch.
+   F-KT-V2-MODEL-1 closure NEW: counterexample anchor for the SLH-DSA
+   backup substitution surface.
 */
-lemma slh_dsa_backup_substitution_detected:
-    "All A acc_id hybrid slh_orig slh_sub #i #j.
+lemma slh_backup_substitution_admits_detection: exists-trace
+    "Ex A acc_id hybrid slh_orig slh_sub #i #j.
         AdversarySubstituteSlhBackup(A, acc_id, slh_orig, slh_sub) @ i
         & SelfMonitor(A, acc_id,
                       <hybrid, 'present', slh_sub>,
                       <hybrid, 'present', slh_orig>) @ j
         & not(slh_orig = slh_sub)
-        & i < j
-        ==>
-        not(<hybrid, 'present', slh_sub> = <hybrid, 'present', slh_orig>)"
+        & i < j"
 
 /*
-   Lemma: slh_dsa_backup_unexpected_missing_detected
+   Lemma: slh_backup_omission_admits_detection (exists-trace)
 
-   Двунаправленный: либо adversary omits SLH-DSA backup когда user
-   expects 'present' (flag flips 'present' → 'absent'), либо adversary
-   adds unexpected backup когда user expects 'absent' (flag flips
-   'absent' → 'present'). В обоих случаях observed flag отличается
-   от local flag — mismatch detectable.
+   F-KT-V2-MODEL-1 closure NEW: counterexample anchor for the SLH-DSA
+   backup omission surface.
 */
-lemma slh_dsa_backup_unexpected_missing_detected:
-    "(All A acc_id hybrid slh_orig #i #j.
+lemma slh_backup_omission_admits_detection: exists-trace
+    "Ex A acc_id hybrid slh_orig #i #j.
         AdversaryOmitSlhBackup(A, acc_id, slh_orig) @ i
         & SelfMonitor(A, acc_id,
                       <hybrid, 'absent', 'none'>,
                       <hybrid, 'present', slh_orig>) @ j
-        & i < j
-        ==>
-        not(<hybrid, 'absent', 'none'> = <hybrid, 'present', slh_orig>))
-     &
-     (All A acc_id hybrid slh_added #i #j.
+        & i < j"
+
+/*
+   Lemma: slh_backup_unexpected_addition_admits_detection (exists-trace)
+
+   F-KT-V2-MODEL-1 closure NEW: counterexample anchor for the SLH-DSA
+   backup unexpected-addition surface.
+*/
+lemma slh_backup_unexpected_addition_admits_detection: exists-trace
+    "Ex A acc_id hybrid slh_added #i #j.
         AdversaryAddUnexpectedSlhBackup(A, acc_id, slh_added) @ i
         & SelfMonitor(A, acc_id,
                       <hybrid, 'present', slh_added>,
                       <hybrid, 'absent', 'none'>) @ j
-        & i < j
-        ==>
-        not(<hybrid, 'present', slh_added> = <hybrid, 'absent', 'none'>))"
+        & i < j"
 
 /*
    Lemma: honest_setup_executable (exists-trace)
