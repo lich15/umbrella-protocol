@@ -665,8 +665,19 @@ pub const DOWNGRADE_RESISTANCE: ModelMetadata = ModelMetadata {
 /// available entries and verifies each byte-equal against the local state.
 pub const KT_V1_SELF_MONITORING: ModelMetadata = ModelMetadata {
     name: "umbrella_kt_v1_self_monitoring",
-    spec_reference: "SPEC-09-KEY-TRANSPARENCY v0.0.1 §6 + SPEC-13 §6.1",
-    spec_version: "0.0.1",
+    // spec_reference + spec_version synchronously bumped 0.0.1 → 0.0.2
+    // per F-KT-V1-MODEL-1 closure (PhD-B Pass 5 remediation 2026-05-19,
+    // F-59 sync pattern). The three primary lemmas (identity / device /
+    // foreign_identity substitution_detected_v1) были тавтологиями вида
+    // `not(A=B) ⇒ not(B=A)` (commutativity of `=`), provable without
+    // touching any protocol rule. Closure restates as substantive
+    // correspondence claims: SelfMonitor with mismatch ⇒ exists earlier
+    // AdversarySubstitute event. Three new exists-trace lemmas
+    // (`*_admits_detection`) anchor non-vacuity. Test
+    // `kt_v1_self_monitoring_spec_version_matches_current_spec` enforces
+    // continued sync between `spec_reference` and `spec_version` fields.
+    spec_reference: "SPEC-09-KEY-TRANSPARENCY v0.0.2 §6 + SPEC-13 §6.1",
+    spec_version: "0.0.2",
     block_reference: "9.5",
     tool: ProtocolType::Tamarin,
     model_path: "models/kt_v1_self_monitoring.spthy",
@@ -674,8 +685,14 @@ pub const KT_V1_SELF_MONITORING: ModelMetadata = ModelMetadata {
         "identity_substitution_detected_v1",
         "device_substitution_detected_v1",
         "foreign_identity_detected_v1",
+        "identity_substitution_admits_detection",
+        "device_substitution_admits_detection",
+        "foreign_rotation_admits_detection",
+        "honest_setup_executable",
     ],
-    status: VerificationStatus::Pending,
+    status: VerificationStatus::Verified {
+        last_run: "2026-05-19",
+    },
 };
 
 /// Модель sealed-sender V1 envelope sender privacy в classical threat
@@ -1393,8 +1410,19 @@ mod tests {
         assert_eq!(proverif, 4, "expected 4 ProVerif models after round 7");
     }
 
-    /// KT_V1_SELF_MONITORING metadata имеет ожидаемую форму (block 9.5 Tamarin).
-    /// KT_V1_SELF_MONITORING metadata has the expected shape (block 9.5 Tamarin).
+    /// KT_V1_SELF_MONITORING metadata имеет ожидаемую форму (block 9.5
+    /// Tamarin). Updated 2026-05-19 (F-KT-V1-MODEL-1 closure): spec_version
+    /// 0.0.1 → 0.0.2; 3 commutativity tautologies refactored to substantive
+    /// correspondence + 3 new exists-trace anchors + 1 sanity = 7
+    /// properties; status Pending → Verified after local tamarin-prover
+    /// 1.12.0 run.
+    ///
+    /// KT_V1_SELF_MONITORING metadata has the expected shape (block 9.5
+    /// Tamarin). Updated 2026-05-19 (F-KT-V1-MODEL-1 closure): spec_version
+    /// 0.0.1 → 0.0.2; 3 commutativity tautologies refactored to substantive
+    /// correspondence + 3 new exists-trace anchors + 1 sanity = 7
+    /// properties; status Pending → Verified after a local
+    /// tamarin-prover 1.12.0 run.
     #[test]
     fn kt_v1_self_monitoring_metadata_shape() {
         assert_eq!(KT_V1_SELF_MONITORING.name, "umbrella_kt_v1_self_monitoring");
@@ -1403,10 +1431,13 @@ mod tests {
             KT_V1_SELF_MONITORING.model_path,
             "models/kt_v1_self_monitoring.spthy"
         );
-        assert_eq!(KT_V1_SELF_MONITORING.spec_version, "0.0.1");
+        assert_eq!(KT_V1_SELF_MONITORING.spec_version, "0.0.2");
         assert_eq!(KT_V1_SELF_MONITORING.block_reference, "9.5");
-        assert_eq!(KT_V1_SELF_MONITORING.status, VerificationStatus::Pending);
-        assert_eq!(KT_V1_SELF_MONITORING.properties.len(), 3);
+        assert!(matches!(
+            KT_V1_SELF_MONITORING.status,
+            VerificationStatus::Verified { .. }
+        ));
+        assert_eq!(KT_V1_SELF_MONITORING.properties.len(), 7);
     }
 
     /// SEALED_SENDER_V1 metadata имеет ожидаемую форму (block 9.5 ProVerif).

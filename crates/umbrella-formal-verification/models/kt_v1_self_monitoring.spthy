@@ -12,7 +12,7 @@
    monitoring через byte-equal сравнение observed entry vs local user state.
 
    ----------------------------------------------------------------------------
-   SPEC reference     : SPEC-09-KEY-TRANSPARENCY v0.0.1 §6 (Self-monitoring) +
+   SPEC reference     : SPEC-09-KEY-TRANSPARENCY v0.0.2 §6 (Self-monitoring) +
                         SPEC-13-PQ-HYBRID v0.0.1 §6.1 (V1 entries baseline)
    ADR  reference     : ADR-011 Решение 6 (KT schema migration V1↔V2 forward-
                         compatible) + ADR-012 Решение 3 (Tamarin/ProVerif
@@ -20,31 +20,60 @@
    Block reference    : 9.5 (formal models — classical protocols KT V1 +
                         sealed-sender V1 + MLS Ed25519-only)
    Tool               : Tamarin Prover 1.10.0+
+   spec_version       : v0.0.2 (F-KT-V1-MODEL-1 closure 2026-05-19 —
+                        substantive correspondence lemmas replace
+                        commutativity tautologies per PhD-B Pass 5
+                        audit feedback)
    ----------------------------------------------------------------------------
 
    Properties (proven in this theory):
 
    - identity_substitution_detected_v1
-       Если adversary публикует KT V1 entry с подменённым identity_pubkey
-       (substituted ≠ user's local identity_pubkey) и self-monitoring
-       выбирает этот entry — observed identity отличается от local
-       identity. Field check в monitor.rs `verify_own_entry`:
-       `KtError::IdentityMismatch` alert.
+       Если self-monitor user $A observes a KT V1 identity entry с
+       identity_pubkey ≠ user's local identity_pubkey, an adversary
+       substitution event MUST have preceded the monitor event. The
+       lemma captures the detection property: any observable identity
+       mismatch traces back to a concrete adversary action — honest
+       publish rules cannot produce such mismatches.
+
+       **F-KT-V1-MODEL-1 closure (PhD-B Pass 5 remediation
+       2026-05-19):** до closure lemma была commutativity тавтология
+       `not(identity_orig = identity_sub) ⇒ not(identity_sub =
+       identity_orig)` — symmetry of `=` proved without touching
+       protocol rules. Closure restates as correspondence: SelfMonitor
+       with mismatch ⇒ exists earlier AdversarySubstitute event.
 
    - device_substitution_detected_v1
-       Если adversary публикует device entry с device_pubkey не в
-       expected active_device_pubkeys list, self-monitor observes
-       mismatch. Field check `KtError::UnknownDevice` alert.
+       Аналог для device_pubkey: SelfMonitorDeviceV1 with observed ≠
+       local ⇒ exists earlier AdversarySubstituteDeviceV1 event.
+       **F-KT-V1-MODEL-1 closure**: substantive correspondence replaces
+       commutativity tautology.
 
    - foreign_identity_detected_v1
-       Если adversary публикует IdentityRotationRecord с
-       old_identity_pubkey ≠ expected.identity_pubkey (foreign rotation
-       attempt), self-monitor detects mismatch. Field check
-       `KtError::ForeignIdentity` alert.
+       Аналог для IdentityRotationRecord: SelfMonitorRotationV1 with
+       observed_old ≠ local_id ⇒ exists earlier AdversaryForeignRotation
+       event. **F-KT-V1-MODEL-1 closure**: substantive correspondence
+       replaces commutativity tautology.
+
+   - identity_substitution_admits_detection (exists-trace, NEW
+     post-closure)
+       Counterexample anchor: a trace exists where adversary substitutes
+       identity_pubkey AND self-monitor detects mismatch. Proves model
+       is non-vacuous — without this lemma, the all-traces correspondence
+       could vacuously hold if substitution events were unreachable.
+
+   - device_substitution_admits_detection (exists-trace, NEW
+     post-closure)
+       Counterexample anchor for device substitution.
+
+   - foreign_rotation_admits_detection (exists-trace, NEW
+     post-closure)
+       Counterexample anchor for foreign rotation.
 
    - honest_setup_executable (exists-trace)
        Honest publish + self-monitor с matching local state может
-       выполниться без adversarial events.
+       выполниться без adversarial events. Sanity check that rules
+       не overly restrictive.
 
    ----------------------------------------------------------------------------
    Axioms / abstractions:
@@ -213,51 +242,105 @@ rule self_monitor_rotation:
 /*
    Lemma: identity_substitution_detected_v1
 
-   Если adversary substituted identity_pubkey (substituted ≠ original)
-   и self-monitor выбрал substituted entry — observed identity_pk
-   отличается от local identity_pk. Tamarin доказывает inequality
-   через ground reasoning по hypotheses.
+   Substantive correspondence: every observable identity mismatch traces
+   back to a concrete adversary substitution event. The honest publish
+   rule produces `!KtEntryV1Identity($A, acc_id, identity_pk)` where
+   `identity_pk` is bound to LocalStateV1's identity_pubkey, so the
+   monitor sees `observed = local` (no mismatch). The only way to get
+   a `!KtEntryV1Identity` with `observed ≠ local` is via
+   `adversary_publish_with_substituted_identity`.
+
+   **F-KT-V1-MODEL-1 closure (PhD-B Pass 5 remediation 2026-05-19):**
+   pre-closure the lemma was `not(orig = sub) ⇒ not(sub = orig)` —
+   commutativity of `=` provable without referencing protocol rules.
+   Post-closure: correspondence claim that requires tracing the rule
+   structure (only adversary rule can produce mismatched entries).
 */
 lemma identity_substitution_detected_v1:
-    "All A acc_id identity_orig identity_sub #i #j.
-        AdversarySubstituteIdentityV1(A, acc_id, identity_orig, identity_sub) @ i
-        & SelfMonitorIdentityV1(A, acc_id, identity_sub, identity_orig) @ j
-        & not(identity_orig = identity_sub)
-        & i < j
+    "All A acc_id observed_id local_id #i.
+        SelfMonitorIdentityV1(A, acc_id, observed_id, local_id) @ i
+        & not(observed_id = local_id)
         ==>
-        not(identity_sub = identity_orig)"
+        Ex #j. AdversarySubstituteIdentityV1(A, acc_id, local_id, observed_id) @ j & j < i"
 
 /*
    Lemma: device_substitution_detected_v1
 
-   Аналогично: substituted device_pubkey appears как mismatched entry
-   в self-monitor observed vs local state.
+   Substantive correspondence (mirror of identity_substitution_detected_v1
+   for the device-key surface): every observable device mismatch traces
+   back to a concrete adversary substitution event.
+
+   **F-KT-V1-MODEL-1 closure**: pre-closure commutativity tautology,
+   post-closure substantive correspondence.
 */
 lemma device_substitution_detected_v1:
-    "All A acc_id device_orig device_sub #i #j.
-        AdversarySubstituteDeviceV1(A, acc_id, device_orig, device_sub) @ i
-        & SelfMonitorDeviceV1(A, acc_id, device_sub, device_orig) @ j
-        & not(device_orig = device_sub)
-        & i < j
+    "All A acc_id observed_dev local_dev #i.
+        SelfMonitorDeviceV1(A, acc_id, observed_dev, local_dev) @ i
+        & not(observed_dev = local_dev)
         ==>
-        not(device_sub = device_orig)"
+        Ex #j. AdversarySubstituteDeviceV1(A, acc_id, local_dev, observed_dev) @ j & j < i"
 
 /*
    Lemma: foreign_identity_detected_v1
 
-   Если adversary публикует IdentityRotationRecord с old_identity_pubkey
-   не совпадающим с user's expected identity_pubkey, self-monitor
-   detects mismatch. Field check в monitor.rs:
-   `KtError::ForeignIdentity` alert.
+   Substantive correspondence: every observable old-identity mismatch in
+   a rotation record traces back to a concrete adversary foreign-
+   rotation event. There is no honest publish rule for rotation
+   entries — `!KtEntryV1Rotation` facts only come from
+   `adversary_publish_foreign_rotation`. The lemma asserts the structural
+   dependency.
+
+   **F-KT-V1-MODEL-1 closure**: pre-closure commutativity tautology,
+   post-closure substantive correspondence.
 */
 lemma foreign_identity_detected_v1:
-    "All A acc_id identity_foreign identity_new identity_orig #i #j.
+    "All A acc_id observed_old local_id #i.
+        SelfMonitorRotationV1(A, acc_id, observed_old, local_id) @ i
+        & not(observed_old = local_id)
+        ==>
+        Ex identity_new #j. AdversaryForeignRotation(A, acc_id, observed_old, identity_new) @ j & j < i"
+
+/*
+   Lemma: identity_substitution_admits_detection (exists-trace)
+
+   F-KT-V1-MODEL-1 closure NEW: counterexample anchor. A trace exists
+   where an adversary substitutes identity_pubkey AND the self-monitor
+   subsequently detects the resulting mismatch. Proves the
+   correspondence lemma above is non-vacuous — substitution events
+   ARE reachable AND the detection mechanism captures them.
+*/
+lemma identity_substitution_admits_detection: exists-trace
+    "Ex A acc_id identity_orig identity_sub #i #j.
+        AdversarySubstituteIdentityV1(A, acc_id, identity_orig, identity_sub) @ i
+        & SelfMonitorIdentityV1(A, acc_id, identity_sub, identity_orig) @ j
+        & not(identity_orig = identity_sub)
+        & i < j"
+
+/*
+   Lemma: device_substitution_admits_detection (exists-trace)
+
+   F-KT-V1-MODEL-1 closure NEW: counterexample anchor for the device
+   surface (mirror of identity case).
+*/
+lemma device_substitution_admits_detection: exists-trace
+    "Ex A acc_id device_orig device_sub #i #j.
+        AdversarySubstituteDeviceV1(A, acc_id, device_orig, device_sub) @ i
+        & SelfMonitorDeviceV1(A, acc_id, device_sub, device_orig) @ j
+        & not(device_orig = device_sub)
+        & i < j"
+
+/*
+   Lemma: foreign_rotation_admits_detection (exists-trace)
+
+   F-KT-V1-MODEL-1 closure NEW: counterexample anchor for the rotation
+   surface.
+*/
+lemma foreign_rotation_admits_detection: exists-trace
+    "Ex A acc_id identity_foreign identity_new identity_orig #i #j.
         AdversaryForeignRotation(A, acc_id, identity_foreign, identity_new) @ i
         & SelfMonitorRotationV1(A, acc_id, identity_foreign, identity_orig) @ j
         & not(identity_foreign = identity_orig)
-        & i < j
-        ==>
-        not(identity_foreign = identity_orig)"
+        & i < j"
 
 /*
    Lemma: honest_setup_executable (exists-trace)
