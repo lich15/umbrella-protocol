@@ -1011,8 +1011,20 @@ pub const MULTI_DEVICE_AUTHORIZATION: ModelMetadata = ModelMetadata {
 /// `multi_device_authorization.spthy`).
 pub const SFRAME_RFC9605: ModelMetadata = ModelMetadata {
     name: "umbrella_sframe_rfc9605",
-    spec_reference: "SPEC-06-CALLS-AND-IP-PRIVACY v0.0.3 §5+§6+§4.1 + ADR-009 + RFC 9605",
-    spec_version: "0.0.3",
+    // spec_reference + spec_version synchronously bumped 0.0.3 → 0.0.4
+    // per F-SFRAME-MODEL-1 closure (PhD-B Pass 5 remediation 2026-05-19,
+    // F-59 sync pattern). 2 of 4 primary lemmas
+    // (dtls_identity_binding_consistent + kid_uniqueness_per_epoch) were
+    // hash-determinism tautologies — proved «same inputs ⇒ same outputs»
+    // which trivially follows from `h/1` being a function, without
+    // touching protocol rules. Refactored to substantive CONVERSE
+    // claims: collision resistance / KID injectivity — «same fingerprint
+    // ⇒ same inputs», «same kid ⇒ same (sender, epoch)». 2 new exists-
+    // trace anchors (`*_admits_distinct_*`) prove the converse claims
+    // are non-vacuous (model admits distinct outputs for distinct
+    // inputs).
+    spec_reference: "SPEC-06-CALLS-AND-IP-PRIVACY v0.0.4 §5+§6+§4.1 + ADR-009 + RFC 9605",
+    spec_version: "0.0.4",
     block_reference: "10.23",
     tool: ProtocolType::Tamarin,
     model_path: "models/sframe_rfc9605.spthy",
@@ -1020,10 +1032,13 @@ pub const SFRAME_RFC9605: ModelMetadata = ModelMetadata {
         "per_kid_counter_anti_replay",
         "frame_decrypt_authentic",
         "dtls_identity_binding_consistent",
+        "dtls_binding_distinct_inputs_admit_distinct_fingerprints",
         "kid_uniqueness_per_epoch",
+        "kid_distinct_per_sender_or_epoch_admits_distinct_kid",
+        "honest_setup_executable",
     ],
     status: VerificationStatus::Verified {
-        last_run: "2026-05-07",
+        last_run: "2026-05-19",
     },
 };
 
@@ -1554,21 +1569,31 @@ mod tests {
     }
 
     /// SFRAME_RFC9605 metadata имеет ожидаемую форму (block 10.23 Tamarin).
-    /// SFRAME_RFC9605 metadata has the expected shape (block 10.23 Tamarin).
+    /// Updated 2026-05-19 (F-SFRAME-MODEL-1 closure): spec_version 0.0.3 →
+    /// 0.0.4; 2 hash-determinism tautologies refactored к substantive
+    /// converse (collision resistance + KID injectivity) + 2 exists-trace
+    /// anchors; total 4 → 7 properties; last_run 2026-05-07 → 2026-05-19.
+    ///
+    /// SFRAME_RFC9605 metadata has the expected shape (block 10.23
+    /// Tamarin). Updated 2026-05-19 (F-SFRAME-MODEL-1 closure):
+    /// spec_version 0.0.3 → 0.0.4; 2 hash-determinism tautologies
+    /// refactored to substantive converse (collision resistance + KID
+    /// injectivity) + 2 exists-trace anchors; total 4 → 7 properties;
+    /// last_run 2026-05-07 → 2026-05-19.
     #[test]
     fn sframe_rfc9605_metadata_shape() {
         assert_eq!(SFRAME_RFC9605.name, "umbrella_sframe_rfc9605");
         assert_eq!(SFRAME_RFC9605.tool, ProtocolType::Tamarin);
         assert_eq!(SFRAME_RFC9605.model_path, "models/sframe_rfc9605.spthy");
-        assert_eq!(SFRAME_RFC9605.spec_version, "0.0.3");
+        assert_eq!(SFRAME_RFC9605.spec_version, "0.0.4");
         assert_eq!(SFRAME_RFC9605.block_reference, "10.23");
         assert_eq!(
             SFRAME_RFC9605.status,
             VerificationStatus::Verified {
-                last_run: "2026-05-07"
+                last_run: "2026-05-19"
             }
         );
-        assert_eq!(SFRAME_RFC9605.properties.len(), 4);
+        assert_eq!(SFRAME_RFC9605.properties.len(), 7);
     }
 
     /// TYPE_SAFE_ENFORCEMENT metadata имеет ожидаемую форму (block 10.23

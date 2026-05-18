@@ -18,7 +18,7 @@
    keystore) которые out-of-scope этой model.
 
    ----------------------------------------------------------------------------
-   SPEC reference     : SPEC-06-CALLS-AND-IP-PRIVACY v0.0.3 §5 (key schedule
+   SPEC reference     : SPEC-06-CALLS-AND-IP-PRIVACY v0.0.4 §5 (key schedule
                         RFC 9605) + §6 (wire format) + §4.1 (DTLS identity
                         binding для 1-1 calls)
    ADR  reference     : ADR-009 (Calls SFrame DTLS) + ADR-001 (workspace)
@@ -27,6 +27,10 @@
                         (MLS exporter label "SFrame 1.0 Base Key")
    Block reference    : 10.23 (Phase 3 cross-cutting formal models expansion)
    Tool               : Tamarin Prover 1.10.0+
+   spec_version       : v0.0.4 (F-SFRAME-MODEL-1 closure 2026-05-19 —
+                        substantive converse lemmas replace hash-
+                        determinism tautologies per PhD-B Pass 5 audit
+                        feedback)
    ----------------------------------------------------------------------------
 
    Properties (proven in this theory):
@@ -44,15 +48,33 @@
        AAD → AEAD verification fails → frame не accepted.
 
    - dtls_identity_binding_consistent
-       DTLS certificate fingerprint = SHA-256(domain || identity_pubkey ||
-       session_nonce) deterministic per identity-pk + nonce. Любая
-       MITM attempt к подмене peer fingerprint без compromise identity-sk
-       fails — MlsError::DtlsIdentityMismatch fires.
+       Substantive collision-resistance claim under Tamarin symbolic
+       hash model: two DTLS bindings produce the same fingerprint ONLY
+       if they used identical (identity_pk, session_nonce) inputs.
+       Captures the actual MITM-detection property of safety-number UI:
+       a fingerprint uniquely identifies the (identity_pk, nonce) pair
+       it was computed over, so an adversary cannot present a fake
+       identity_pk under the honest peer's expected fingerprint.
+
+       **F-SFRAME-MODEL-1 closure (PhD-B Pass 5 remediation 2026-05-19):**
+       pre-closure lemma was hash-determinism tautology «two
+       DtlsBinding events with same (pk, nonce) yield same fp» —
+       trivially true by `h/1` being a function. Provable without
+       touching the protocol rule. Post-closure: converse direction
+       (collision resistance) which is what MITM-detection actually
+       relies on.
 
    - kid_uniqueness_per_epoch
-       KID = (sender_leaf_index << 16) | (epoch & 0xFFFF) — uniquely
-       determined sender + epoch. Каждый sender в каждой epoch имеет
-       unique KID.
+       Substantive uniqueness claim: two DerivePerKid events sharing
+       a KID MUST have used identical (sender, epoch) inputs. Captures
+       the actual security property — KID uniquely identifies sender +
+       epoch, preventing cross-sender or cross-epoch key reuse attacks.
+
+       **F-SFRAME-MODEL-1 closure (PhD-B Pass 5 remediation 2026-05-19):**
+       pre-closure lemma was hash-determinism tautology «same (sender,
+       epoch, kid) inputs yield same (key, salt)» — trivially true by
+       `h/1` being a function. Post-closure: converse direction
+       (KID is injective in (sender, epoch)).
 
    - honest_setup_executable (exists-trace)
        Honest sender encrypts frame с unique counter; honest recipient
@@ -253,37 +275,94 @@ lemma frame_decrypt_authentic:
 /*
    Lemma: dtls_identity_binding_consistent
 
-   Любой DtlsBinding event для identity_pk + session_nonce produces
-   deterministic fingerprint. Two DtlsBinding events с same args ⇒
-   same fingerprint.
+   Substantive collision-resistance: two DtlsBinding events producing
+   the same fingerprint MUST have used identical (identity_pk,
+   session_nonce) inputs. Under Tamarin's symbolic hash model (`h/1`
+   is a free function — `h(t1) = h(t2) ⇔ t1 = t2`), this captures
+   what safety-number UI MITM detection relies on.
+
+   **F-SFRAME-MODEL-1 closure (PhD-B Pass 5 remediation 2026-05-19):**
+   pre-closure lemma was the forward direction (hash determinism —
+   `same inputs ⇒ same fingerprint`) which trivially follows from
+   `h/1` being a function. Post-closure: the CONVERSE direction
+   (collision resistance) — `same fingerprint ⇒ same inputs` — which
+   is the substantive security property.
+
+   Practical consequence: an adversary attempting to present a fake
+   identity_pk under the honest peer's expected fingerprint would
+   need to find a collision in `h`, which the symbolic hash model
+   precludes (free function semantics in the term algebra).
 */
 lemma dtls_identity_binding_consistent:
-    "All identity_pk nonce fp1 fp2 #i #j.
-        DtlsBinding(identity_pk, nonce, fp1) @ #i &
-        DtlsBinding(identity_pk, nonce, fp2) @ #j
+    "All ipk1 nonce1 ipk2 nonce2 fp #i #j.
+        DtlsBinding(ipk1, nonce1, fp) @ #i &
+        DtlsBinding(ipk2, nonce2, fp) @ #j
         ==>
-        fp1 = fp2"
+        ipk1 = ipk2 & nonce1 = nonce2"
+
+/*
+   Lemma: dtls_binding_distinct_inputs_admit_distinct_fingerprints
+   (exists-trace)
+
+   F-SFRAME-MODEL-1 closure NEW: counterexample anchor proving the
+   collision-resistance lemma is non-vacuous — a trace exists where two
+   DtlsBinding events for DIFFERENT (identity_pk, nonce) inputs produce
+   distinct fingerprints. Without this, the all-traces collision-
+   resistance claim could vacuously hold if the model only ever
+   produced one fingerprint per trace.
+*/
+lemma dtls_binding_distinct_inputs_admit_distinct_fingerprints: exists-trace
+    "Ex ipk1 nonce1 ipk2 nonce2 fp1 fp2 #i #j.
+        DtlsBinding(ipk1, nonce1, fp1) @ #i &
+        DtlsBinding(ipk2, nonce2, fp2) @ #j &
+        not(ipk1 = ipk2) &
+        not(fp1 = fp2)"
 
 /*
    Lemma: kid_uniqueness_per_epoch
 
-   Per draft-ietf-mls-sframe: KID = (sender_leaf << 16) | (epoch & 0xFFFF).
-   Структурно guaranteed через `kid = <$A, epoch>` в rule `derive_per_kid`
-   — каждая DerivePerKid event для (sender, epoch) имеет unique kid bit-
-   exactly. Lemma здесь верифицирует key/salt consistency: same (sender,
-   epoch, kid) tuple yields same (key, salt) bit-equally (h — функция;
-   нет collision freedom required в random-oracle model).
+   Substantive uniqueness: two DerivePerKid events sharing a KID MUST
+   have used identical (sender, epoch). Captures the actual security
+   property — KID injectively identifies (sender, epoch), preventing
+   cross-sender or cross-epoch key reuse attacks per
+   draft-ietf-mls-sframe (`KID = (sender_leaf << 16) | (epoch & 0xFFFF)`
+   — injective in the (sender_leaf, epoch) domain).
 
-   Time index #i = #j NOT claimed: rule может fire multiple times для same
-   `!MlsBaseKey($A, epoch, base_key)` persistent fact (multiple receivers
-   each derive locally). What matters is that outputs match deterministically.
+   **F-SFRAME-MODEL-1 closure (PhD-B Pass 5 remediation 2026-05-19):**
+   pre-closure lemma was the forward direction (hash determinism for
+   key/salt outputs given same input tuple) — trivially provable
+   without touching protocol rules. Post-closure: the CONVERSE direction
+   (kid injectivity) — `same kid ⇒ same (sender, epoch)` — which is
+   the substantive security property.
+
+   Practical consequence: an adversary cannot induce KID collision
+   between two distinct senders or two distinct epochs, eliminating the
+   key-reuse attack surface.
 */
 lemma kid_uniqueness_per_epoch:
-    "All A epoch kid k1 s1 k2 s2 #i #j.
-        DerivePerKid(A, epoch, kid, k1, s1) @ #i &
-        DerivePerKid(A, epoch, kid, k2, s2) @ #j
+    "All A1 epoch1 kid k1 s1 A2 epoch2 k2 s2 #i #j.
+        DerivePerKid(A1, epoch1, kid, k1, s1) @ #i &
+        DerivePerKid(A2, epoch2, kid, k2, s2) @ #j
         ==>
-        k1 = k2 & s1 = s2"
+        A1 = A2 & epoch1 = epoch2"
+
+/*
+   Lemma: kid_distinct_per_sender_or_epoch_admits_distinct_kid
+   (exists-trace)
+
+   F-SFRAME-MODEL-1 closure NEW: counterexample anchor proving the
+   kid_uniqueness_per_epoch lemma is non-vacuous — a trace exists where
+   two DerivePerKid events for DIFFERENT (sender, epoch) inputs produce
+   distinct KIDs. Without this, the all-traces uniqueness claim could
+   vacuously hold if the model only ever produced one (sender, epoch)
+   per trace.
+*/
+lemma kid_distinct_per_sender_or_epoch_admits_distinct_kid: exists-trace
+    "Ex A1 epoch1 kid1 k1 s1 A2 epoch2 kid2 k2 s2 #i #j.
+        DerivePerKid(A1, epoch1, kid1, k1, s1) @ #i &
+        DerivePerKid(A2, epoch2, kid2, k2, s2) @ #j &
+        not(epoch1 = epoch2) &
+        not(kid1 = kid2)"
 
 /*
    Lemma: honest_setup_executable (exists-trace)
