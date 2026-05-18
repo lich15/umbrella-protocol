@@ -29,10 +29,16 @@ Memory previously tracked **none** of these findings — Pass 2 newly surfaces t
 - `crates/umbrella-calls`
 - `crates/umbrella-formal-verification` (read all `.spthy` models in `models/`)
 
-**Pass-2 deferred large reads to absorb in Pass 3:**
-1. `crates/umbrella-oprf/src/attestation.rs` (65 KB / ~1640 lines) — standalone attestation-layer audit (Play Integrity / DeviceCheck).
-2. `crates/umbrella-sealed-sender/tests/phd_real_attacks_sealed_sender.rs` (44 KB / ~1000 lines) — deeper sealed-sender adversarial pass.
-3. `crates/umbrella-backup/tests/phd_attacks_v2_wrapping.rs` (24 KB / ~600 lines) — deeper backup adversarial pass.
+**Pass-2 deferred large reads:** **CLOSED via Pass-2 supplemental** (`docs/audits/phd-b-full-sweep-pass2-supplemental-2026-05-18.md`):
+1. ~~`crates/umbrella-oprf/src/attestation.rs`~~ — closed, F-ATT-1/2/3 (PASS strong)
+2. ~~`crates/umbrella-sealed-sender/tests/phd_real_attacks_sealed_sender.rs`~~ — closed, F-SS-PHD-1/2/3 (PASS+ KCI + DS statistical exemplars)
+3. ~~`crates/umbrella-backup/tests/phd_attacks_v2_wrapping.rs`~~ — closed, F-BACKUP-PHD-1/2/3 (PASS+ exhaustive bit-flip + AAD substitution)
+
+**Pass-2 relevant Tamarin/ProVerif models:** **CLOSED via Pass-2 supplemental** — 7 models read top-to-bottom (xwing_combiner.spthy + sealed_sender_v1.pv + sealed_sender_v2.pv + oprf_ristretto255.pv + sealed_servers_threshold_3of5.spthy + sealed_servers_threshold_universal.spthy + backup_wrap_v2.pv). Notable findings:
+- F-XWING-MODEL-1 (MINOR): hedged eseed abstracted as single value
+- F-OPRF-PV-2 (MODEL GAP): combine_3 equation uses k_master ×3; real Shamir math covered in companion sealed_servers_threshold_3of5.spthy
+- F-3OF5-1 + F-UNIV-1 (PASS+): real threshold property formally proved (universal pigeonhole)
+- Multiple HONEST GAPs про model invariants, key-compromise epochs, replay defense layer separation — all documented honestly in model comments
 
 **Cross-cutting Pass 3 mandates:**
 1. **F-MLS-1 production wire-up resolution:** grep `umbrella-client`, `umbrella-ffi`, `umbrella-mls`, and `crates/umbrella-*/src/**` with broader patterns:
@@ -43,9 +49,16 @@ Memory previously tracked **none** of these findings — Pass 2 newly surfaces t
    If no production callsite exists, document the state as "PQ MLS not yet production-wired" and assign HIGH carry-over to a future stage. If callsites exist that Pass 2 missed, re-audit them for `with_hedged_witness` usage.
 
 2. **Tamarin/ProVerif model reading** per memory `feedback_phd_pass_full_model_reading`:
-   - Read every `.spthy` file in `crates/umbrella-formal-verification/models/` from top to bottom (no preamble-only reading; lemma names can be misleading).
-   - Cross-check that lemma claims match what is actually proved.
-   - Identify any tautological lemmas, wire-format abstraction gaps, RFC TV2 coverage gaps.
+   - Pass-2 supplemental covered 7 Pass-2-relevant models. **Pass 3 must read the remaining 9 models:**
+     - `discovery.spthy` (umbrella-discovery — Pass 1 follow-up)
+     - `downgrade_resistance.spthy` (cross-cutting)
+     - `hybrid_signature_and_mode.spthy` (umbrella-pq hybrid sigs)
+     - `kt_v1_self_monitoring.spthy` + `kt_v2_self_monitoring.spthy` (umbrella-kt)
+     - `mls_ed25519.spthy` (umbrella-mls)
+     - `multi_device_authorization.spthy` (umbrella-identity — 35 KB largest)
+     - `sframe_rfc9605.spthy` (umbrella-calls)
+     - `type_safe_enforcement.spthy` (umbrella-client + cross-cutting)
+   - Cross-check lemma claims match what is actually proved. Apply same tautological-lemma detector as in supplemental (xwing_combiner.spthy historical lesson).
 
 3. **Dudect per-crate runs:** add per-crate constant-time measurements for:
    - umbrella-oprf blind/unblind path (1M+ samples)
