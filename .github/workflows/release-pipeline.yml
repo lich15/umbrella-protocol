@@ -56,7 +56,7 @@ jobs:
           jq '.metadata.timestamp' docs/audits/sbom.json
 
       - name: Attach SBOM to release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           files: docs/audits/sbom.json
