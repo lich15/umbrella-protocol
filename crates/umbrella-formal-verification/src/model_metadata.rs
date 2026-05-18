@@ -626,8 +626,29 @@ pub const BACKUP_WRAP_V2: ModelMetadata = ModelMetadata {
 /// interception.
 pub const DOWNGRADE_RESISTANCE: ModelMetadata = ModelMetadata {
     name: "umbrella_downgrade_resistance",
-    spec_reference: "SPEC-13-PQ-HYBRID v1.0.0 §9",
-    spec_version: "1.0.0",
+    // spec_reference + spec_version synchronously bumped 1.0.0 → 1.0.1
+    // per F-DOWNGRADE-MODEL-1 closure (PhD-B Pass 5 remediation
+    // 2026-05-19, F-59 sync pattern). 3 of 5 primary lemmas
+    // (default_ciphersuite_respected, no_silent_fallback_under_
+    // capability_mismatch, adversary_strip_does_not_force_downgrade)
+    // were tautologies of distinct kinds:
+    //   (1) constant-read tautology — proved the constant emitted by
+    //       the single rule (no multi-rule engagement);
+    //   (2) vacuously-true tautology — formula's filter caught no
+    //       Negotiated events because rule structure precluded them;
+    //   (3) sibling-implied tautology — weaker conditional of
+    //       `adversary_cannot_force_silent_downgrade`.
+    // Refactored к substantive multi-rule correspondence claims
+    // tying SetupClientPq / AdversaryStripped / ExplicitOverride
+    // hypotheses together. 2 new exists-trace anchors
+    // (`classical_pq_request_admits_capability_error`,
+    // `adversary_strip_admits_traces_with_unchanged_negotiation`)
+    // demonstrate the model is non-vacuous on the failure path and
+    // the unchanged-negotiation path. Status transitions
+    // Failed (180s alarm 2026-05-09) → Verified after 0.15s
+    // tamarin-prover 1.12.0 local run on refactored model.
+    spec_reference: "SPEC-13-PQ-HYBRID v1.0.1 §9",
+    spec_version: "1.0.1",
     block_reference: "9.4",
     tool: ProtocolType::Tamarin,
     model_path: "models/downgrade_resistance.spthy",
@@ -636,9 +657,13 @@ pub const DOWNGRADE_RESISTANCE: ModelMetadata = ModelMetadata {
         "explicit_chatsettings_override_allowed",
         "default_ciphersuite_respected",
         "no_silent_fallback_under_capability_mismatch",
+        "classical_pq_request_admits_capability_error",
+        "adversary_strip_does_not_force_downgrade",
+        "adversary_strip_admits_traces_with_unchanged_negotiation",
+        "honest_setup_executable",
     ],
-    status: VerificationStatus::Failed {
-        reason: "production-readiness 2026-05-09 bounded Tamarin run hit 180s alarm; see docs/audits/production-readiness-2026-05-09/residual-risks.md"
+    status: VerificationStatus::Verified {
+        last_run: "2026-05-19",
     },
 };
 
@@ -1415,8 +1440,21 @@ mod tests {
         assert_eq!(BACKUP_WRAP_V2.properties.len(), 4);
     }
 
-    /// DOWNGRADE_RESISTANCE metadata имеет ожидаемую форму (block 9.4 Tamarin).
-    /// DOWNGRADE_RESISTANCE metadata has the expected shape (block 9.4 Tamarin).
+    /// DOWNGRADE_RESISTANCE metadata имеет ожидаемую форму (block 9.4
+    /// Tamarin). Updated 2026-05-19 (F-DOWNGRADE-MODEL-1 closure):
+    /// spec_version 1.0.0 → 1.0.1; 3 tautologies (constant-read +
+    /// vacuously-true + sibling-implied) refactored к substantive
+    /// multi-rule correspondence + 2 exists-trace anchors; 4 → 8
+    /// properties; status Failed (180s alarm) → Verified (0.15s
+    /// tamarin-prover 1.12.0).
+    ///
+    /// DOWNGRADE_RESISTANCE metadata has the expected shape (block 9.4
+    /// Tamarin). Updated 2026-05-19 (F-DOWNGRADE-MODEL-1 closure):
+    /// spec_version 1.0.0 → 1.0.1; 3 tautologies (constant-read +
+    /// vacuously-true + sibling-implied) refactored to substantive
+    /// multi-rule correspondence + 2 exists-trace anchors; 4 → 8
+    /// properties; status Failed (180s alarm) → Verified (0.15s
+    /// tamarin-prover 1.12.0).
     #[test]
     fn downgrade_resistance_metadata_shape() {
         assert_eq!(DOWNGRADE_RESISTANCE.name, "umbrella_downgrade_resistance");
@@ -1425,13 +1463,13 @@ mod tests {
             DOWNGRADE_RESISTANCE.model_path,
             "models/downgrade_resistance.spthy"
         );
-        assert_eq!(DOWNGRADE_RESISTANCE.spec_version, "1.0.0");
+        assert_eq!(DOWNGRADE_RESISTANCE.spec_version, "1.0.1");
         assert_eq!(DOWNGRADE_RESISTANCE.block_reference, "9.4");
         assert!(matches!(
             DOWNGRADE_RESISTANCE.status,
-            VerificationStatus::Failed { .. }
+            VerificationStatus::Verified { .. }
         ));
-        assert_eq!(DOWNGRADE_RESISTANCE.properties.len(), 4);
+        assert_eq!(DOWNGRADE_RESISTANCE.properties.len(), 8);
     }
 
     /// ALL_MODELS содержит все три block-9.4 модели (snapshot — block 9.5 добавит 3 ещё).

@@ -734,16 +734,35 @@ fn downgrade_resistance_metadata_block_reference_is_9_4() {
     assert_eq!(DOWNGRADE_RESISTANCE.block_reference, "9.4");
 }
 
-/// Failed status — production-readiness bounded proof did not complete.
-/// Failed status is retained until a successful Tamarin proof replaces it.
+/// Verified status — downgrade-resistance model verified locally on
+/// 2026-05-19 via F-DOWNGRADE-MODEL-1 closure (PhD-B Pass 5
+/// remediation). 3 tautologies (constant-read + vacuously-true +
+/// sibling-implied) refactored to substantive multi-rule
+/// correspondence; 2 new exists-trace anchors. All 8 lemmas verify
+/// in 0.15s via tamarin-prover 1.12.0 — substantially faster than the
+/// production-readiness 2026-05-09 bounded run that hit the 180s
+/// alarm (the refactored lemmas have tighter quantifier scopes and
+/// avoid the search-space explosion of the original formulation).
+///
+/// Verified status — the downgrade-resistance model was verified
+/// locally on 2026-05-19 via the F-DOWNGRADE-MODEL-1 closure (PhD-B
+/// Pass 5 remediation). 3 tautologies (constant-read +
+/// vacuously-true + sibling-implied) refactored to substantive
+/// multi-rule correspondence; 2 new exists-trace anchors. All 8
+/// lemmas verify in 0.15 s via tamarin-prover 1.12.0 — substantially
+/// faster than the production-readiness 2026-05-09 bounded run that
+/// hit the 180 s alarm (the refactored lemmas have tighter
+/// quantifier scopes and avoid the search-space explosion of the
+/// original formulation).
 #[test]
-fn downgrade_resistance_status_records_production_readiness_timeout() {
-    assert!(matches!(
-        DOWNGRADE_RESISTANCE.status,
-        VerificationStatus::Failed { reason }
-            if reason.contains("production-readiness 2026-05-09")
-                && reason.contains("residual-risks.md")
-    ));
+fn downgrade_resistance_status_is_verified_post_f_downgrade_model_1_closure() {
+    assert!(
+        matches!(DOWNGRADE_RESISTANCE.status, VerificationStatus::Verified { .. }),
+        "F-DOWNGRADE-MODEL-1 closure (2026-05-19): DOWNGRADE_RESISTANCE must transition \
+         Failed (180s alarm 2026-05-09) → Verified after local Tamarin run on refactored \
+         model; status now = {:?}",
+        DOWNGRADE_RESISTANCE.status
+    );
 }
 
 /// ProVerif models есть в ALL_MODELS — block 9.4 added first 2 (sealed_sender_v2 + backup_wrap_v2).

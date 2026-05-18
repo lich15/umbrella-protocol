@@ -14,7 +14,7 @@
    имеет prior explicit override event.
 
    ----------------------------------------------------------------------------
-   SPEC reference     : SPEC-13-PQ-HYBRID v0.0.1 §9 (Capability negotiation +
+   SPEC reference     : SPEC-13-PQ-HYBRID v0.0.2 §9 (Capability negotiation +
                         downgrade resistance) + ADR-013 (Stage 1 default switch)
    ADR  reference     : ADR-011 Решение 7 (feature flag иерархия) +
                         ADR-013 Решения 1-5 (default switch + ABI invariant +
@@ -23,6 +23,11 @@
    Block reference    : 9.4 (formal models — sealed-sender V2 + backup wrap V2 +
                         downgrade resistance)
    Tool               : Tamarin Prover 1.10.0+
+   spec_version       : v0.0.2 (F-DOWNGRADE-MODEL-1 closure 2026-05-19 —
+                        substantive multi-rule correspondence lemmas
+                        replace constant-read / vacuously-true /
+                        sibling-implied tautologies per PhD-B Pass 5
+                        audit feedback)
    ----------------------------------------------------------------------------
 
    Properties (intended in this theory; metadata remains Pending until
@@ -334,35 +339,80 @@ lemma explicit_chatsettings_override_allowed: exists-trace
 /*
    Lemma: default_ciphersuite_respected
 
-   Любой default ciphersuite event в PQ-aware flow uses '0x004D'. Более
-   широкая лемма про отсутствие override сведена к safety property выше:
-   classical suite не появляется без ExplicitOverride.
+   Substantive multi-rule correspondence: for any Negotiated event
+   between two PQ-aware clients with no prior ExplicitOverride, the
+   negotiated suite must be the PQ default ('0x004D'). Captures the
+   actual security property — capability negotiation honors the PQ-
+   first postulate when no explicit user override is in play, even
+   under the highest-preference selection across all advertised
+   ciphersuites.
+
+   **F-DOWNGRADE-MODEL-1 closure (PhD-B Pass 5 remediation
+   2026-05-19):** pre-closure lemma was «DefaultCiphersuite event uses
+   suite = 0x004D» — provable by reading the constant binding inside
+   the (single) rule emitting `DefaultCiphersuite`, never engaging
+   with other rules. Post-closure: substantive correspondence
+   spanning `SetupClientPq` (×2 peers) + absence of `ExplicitOverride`
+   ⇒ `Negotiated` suite = 0x004D. Tamarin must trace through the
+   rule graph to verify.
 */
 lemma default_ciphersuite_respected:
-    "All A suite #i.
-        DefaultCiphersuite(A, suite) @ #i
+    "All A B suite #i.
+        Negotiated(A, B, suite) @ #i
+        & (Ex #s. SetupClientPq(A) @ #s & #s < #i)
+        & (Ex #t. SetupClientPq(B) @ #t & #t < #i)
+        & (not Ex #j. ExplicitOverride(A, B) @ #j & #j < #i)
         ==>
         suite = '0x004D'"
 
 /*
    Lemma: no_silent_fallback_under_capability_mismatch
 
-   Если caller set ChatSettings.ciphersuite = Some('0x004D') на
-   classical-only client (без feature pq), system не может silent fallback
-   на 0x0003 после такого explicit PQ requirement. Лемма safety-only:
-   Tamarin без fairness не доказывает «eventually error», поэтому executable
-   error path проверяется rule/trace sanity отдельно через модель.
+   Substantive strengthening: a classical-only client that explicitly
+   requests the PQ ciphersuite must NOT reach any Negotiated event for
+   that chat (not just 0x0003 — the original lemma was vacuously true
+   because no Negotiated rule fires for ClassicalA at all). The
+   strengthened claim covers all suites and confirms the
+   `require_pq_without_feature` failure path is the only outcome.
 
-   Property: нет трассы, где ClientClassical(A) + ExplicitChatSettings(A, B,
-   '0x004D') после этого приводит к Negotiated(A, B, '0x0003').
+   **F-DOWNGRADE-MODEL-1 closure (PhD-B Pass 5 remediation
+   2026-05-19):** pre-closure formula said «no trace with
+   ClassicalA + ExplicitPQ → Negotiated 0x0003» — vacuously true
+   because (looking at rules) the only two Negotiated-emitting rules
+   (`chat_settings_default_pq_to_pq` and
+   `negotiate_pq_to_classical_with_explicit_override`) both require
+   `!ClientPq($A)`, so ClassicalA never reaches Negotiated at all.
+   The original suite=0x0003 filter was orthogonal — the underlying
+   restriction is suite-independent. Post-closure: stronger claim
+   that no Negotiated event of ANY suite reaches ClassicalA who
+   explicitly requested 0x004D; supplemented by
+   `classical_pq_request_admits_capability_error` exists-trace anchor
+   showing the failure path (MlsErrorCapabilities) IS reachable.
 */
 lemma no_silent_fallback_under_capability_mismatch:
-    "not (Ex A B #i #j #k.
+    "All A B #i #j.
         SetupClientClassical(A) @ #i
         & ExplicitChatSettings(A, B, '0x004D') @ #j
-        & i < j
-        & Negotiated(A, B, '0x0003') @ #k
-        & j < k)"
+        & #i < #j
+        ==>
+        not (Ex suite #k. Negotiated(A, B, suite) @ #k & #j < #k)"
+
+/*
+   Lemma: classical_pq_request_admits_capability_error (exists-trace)
+
+   F-DOWNGRADE-MODEL-1 closure NEW: counterexample anchor proving the
+   failure path is reachable — a trace exists where ClassicalA explicit
+   requests 0x004D AND the `MlsErrorCapabilities` event fires. Without
+   this anchor, `no_silent_fallback_under_capability_mismatch` could
+   hold vacuously if the model precluded the entire scenario (which it
+   does NOT — `require_pq_without_feature` rule fires the error).
+*/
+lemma classical_pq_request_admits_capability_error: exists-trace
+    "Ex A B #i #j #k.
+        SetupClientClassical(A) @ #i
+        & ExplicitChatSettings(A, B, '0x004D') @ #j
+        & MlsErrorCapabilities(A, B) @ #k
+        & #i < #j & #j < #k"
 
 /*
    Lemma: adversary_strip_does_not_force_downgrade (F-PHD-PQ-3 substantive)
@@ -390,11 +440,38 @@ lemma no_silent_fallback_under_capability_mismatch:
    capability stripping does not affect the outcome.
 */
 lemma adversary_strip_does_not_force_downgrade:
-    "All A B #i.
-        Negotiated(A, B, '0x0003') @ #i
-        & (Ex #s. AdversaryStrippedCapability(A, '0x004D') @ #s & s < i)
+    "All A B suite #i.
+        Negotiated(A, B, suite) @ #i
+        & (Ex #s. SetupClientPq(A) @ #s & #s < #i)
+        & (Ex #t. SetupClientPq(B) @ #t & #t < #i)
+        & (Ex #u. AdversaryStrippedCapability(A, '0x004D') @ #u & #u < #i)
+        & (not Ex #j. ExplicitOverride(A, B) @ #j & #j < #i)
         ==>
-        (Ex #j. ExplicitOverride(A, B) @ #j & j < i)"
+        suite = '0x004D'"
+
+/*
+   Lemma: adversary_strip_admits_traces_with_unchanged_negotiation
+   (exists-trace)
+
+   F-DOWNGRADE-MODEL-1 closure NEW: counterexample anchor proving the
+   `adversary_strip_does_not_force_downgrade` lemma is non-vacuous —
+   a trace exists where AdversaryStrippedCapability fires AND
+   Negotiated produces the PQ default 0x004D. Confirms the model
+   exhibits the actual MITM-resistance scenario, not just enforces it
+   vacuously.
+
+   Pre-closure the sibling lemma was effectively a conditional
+   restatement of `adversary_cannot_force_silent_downgrade` (the
+   AdversaryStripped premise was inert because the rule has empty
+   effect). Post-closure: the substantive lemma engages with the
+   capability + override structure directly, and this exists-trace
+   anchor proves the attack surface is modelled (not just rejected).
+*/
+lemma adversary_strip_admits_traces_with_unchanged_negotiation: exists-trace
+    "Ex A B #i #j.
+        AdversaryStrippedCapability(A, '0x004D') @ #i
+        & Negotiated(A, B, '0x004D') @ #j
+        & #i < #j"
 
 /*
    Lemma: honest_setup_executable (exists-trace)
