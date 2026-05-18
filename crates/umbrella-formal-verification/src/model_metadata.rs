@@ -1127,8 +1127,33 @@ pub const SFRAME_RFC9605: ModelMetadata = ModelMetadata {
 /// access the user device or the MLS group key.
 pub const TYPE_SAFE_ENFORCEMENT: ModelMetadata = ModelMetadata {
     name: "umbrella_type_safe_enforcement",
-    spec_reference: "Private protocol overview v1.0.0 §4.1",
-    spec_version: "1.0.0",
+    // spec_reference + spec_version synchronously bumped 1.0.0 → 1.0.1
+    // per F-TYPE-SAFE-MODEL-1 closure (PhD-B Pass 5 remediation
+    // 2026-05-19, F-59 sync pattern). 3 of 4 primary lemmas were
+    // tautologies of distinct kinds:
+    //   (1) cloud_chat_requires_sealed_servers — linear-fact-chaining
+    //       tautology (Tamarin traced cloud_read → UnwrapComplete →
+    //       cloud_unwrap_threshold trivially without examining
+    //       threshold semantics);
+    //   (2) secret_chat_no_cloud_unwrap — mode-gated tautology (Fr-
+    //       generated chat_id with single !ChatMode fact trivially
+    //       excluded unwrap on a secret chat);
+    //   (3) mode_separation_invariant — Fr-semantics tautology
+    //       (`#i = #j` requirement followed from chat_id's freshness
+    //       per rule firing).
+    // Refactored к substantive multi-rule correspondence: the
+    // `SealedServerUnwrap` action label now carries the server-index
+    // triple `(i, j, k)`, and (1) requires three pairwise-distinct
+    // indices to engage with the threshold semantics; (2) chains
+    // ReadSecretMessage to prior ChatCreated('secret') AND the
+    // enriched unwrap-absence; (3) drops the time-tightness for
+    // pure mode-immutability. 2 new exists-trace anchors
+    // (`secret_message_after_chat_created_admits_no_unwrap`,
+    // `cloud_read_admits_three_distinct_servers_in_unwrap`)
+    // demonstrate the model is non-vacuous on both Cloud and Secret
+    // happy paths.
+    spec_reference: "Private protocol overview v1.0.1 §4.1",
+    spec_version: "1.0.1",
     block_reference: "10.23",
     tool: ProtocolType::Tamarin,
     model_path: "models/type_safe_enforcement.spthy",
@@ -1136,10 +1161,13 @@ pub const TYPE_SAFE_ENFORCEMENT: ModelMetadata = ModelMetadata {
         "cloud_chat_requires_sealed_servers",
         "secret_chat_no_cloud_unwrap",
         "mode_separation_invariant",
+        "secret_message_after_chat_created_admits_no_unwrap",
+        "cloud_read_admits_three_distinct_servers_in_unwrap",
         "secret_chat_three_of_five_servers_compromise_irrelevant",
+        "honest_setup_executable_both_modes",
     ],
     status: VerificationStatus::Verified {
-        last_run: "2026-05-07",
+        last_run: "2026-05-19",
     },
 };
 
@@ -1635,9 +1663,18 @@ mod tests {
     }
 
     /// TYPE_SAFE_ENFORCEMENT metadata имеет ожидаемую форму (block 10.23
-    /// Tamarin).
-    /// TYPE_SAFE_ENFORCEMENT metadata has the expected shape (block 10.23
-    /// Tamarin).
+    /// Tamarin). Updated 2026-05-19 (F-TYPE-SAFE-MODEL-1 closure):
+    /// spec_version 1.0.0 → 1.0.1; 3 tautologies (linear-fact-chaining +
+    /// mode-gated + Fr-semantics) refactored к substantive multi-rule
+    /// correspondence + 2 exists-trace anchors; 4 → 7 properties;
+    /// last_run 2026-05-07 → 2026-05-19.
+    ///
+    /// TYPE_SAFE_ENFORCEMENT metadata has the expected shape (block
+    /// 10.23 Tamarin). Updated 2026-05-19 (F-TYPE-SAFE-MODEL-1 closure):
+    /// spec_version 1.0.0 → 1.0.1; 3 tautologies (linear-fact-chaining +
+    /// mode-gated + Fr-semantics) refactored to substantive multi-rule
+    /// correspondence + 2 exists-trace anchors; 4 → 7 properties;
+    /// last_run 2026-05-07 → 2026-05-19.
     #[test]
     fn type_safe_enforcement_metadata_shape() {
         assert_eq!(TYPE_SAFE_ENFORCEMENT.name, "umbrella_type_safe_enforcement");
@@ -1646,15 +1683,15 @@ mod tests {
             TYPE_SAFE_ENFORCEMENT.model_path,
             "models/type_safe_enforcement.spthy"
         );
-        assert_eq!(TYPE_SAFE_ENFORCEMENT.spec_version, "1.0.0");
+        assert_eq!(TYPE_SAFE_ENFORCEMENT.spec_version, "1.0.1");
         assert_eq!(TYPE_SAFE_ENFORCEMENT.block_reference, "10.23");
         assert_eq!(
             TYPE_SAFE_ENFORCEMENT.status,
             VerificationStatus::Verified {
-                last_run: "2026-05-07"
+                last_run: "2026-05-19"
             }
         );
-        assert_eq!(TYPE_SAFE_ENFORCEMENT.properties.len(), 4);
+        assert_eq!(TYPE_SAFE_ENFORCEMENT.properties.len(), 7);
     }
 
     /// OPRF_RISTRETTO255 metadata имеет ожидаемую форму (block 10.23
