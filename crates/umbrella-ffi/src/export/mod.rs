@@ -24,4 +24,10 @@ pub use call::{CallSessionHandle, CallStateFfi};
 pub use client::{ClientConfigFfi, UmbrellaClientHandle};
 pub use cloud_chat::CloudChatHandle;
 pub use onboarding::{BootstrapOutputFfi, OnboardingHandle, UnlockResultFfi};
+// F-FFI-2 closure: test-rig type re-exported only under the `test-utils`
+// feature so production builds do not surface it (the `#[uniffi::export]`
+// impl block carrying `unlock_with_pin_for_test_rig` is also gated and
+// disappears from scaffolding when the feature is off).
+#[cfg(any(test, feature = "test-utils"))]
+pub use onboarding::UnlockResultTestRigFfi;
 pub use secret_chat::SecretChatHandle;

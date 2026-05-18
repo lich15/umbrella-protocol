@@ -17,6 +17,23 @@ unsafe_code = "warn"
 
 [features]
 default = []
+# F-FFI-2 closure (PhD-B Pass 4 CRITICAL → Pass 5 remediation): gates the
+# `unlock_with_pin_for_test_rig` FFI method that exposes session keys
+# (device_key + master_key) as hex strings across the FFI boundary.
+# Production builds physically cannot expose those bytes because the
+# `#[uniffi::export]` impl block carrying the test-rig method is removed
+# from scaffolding when this feature is off. The R20 lldb measurement
+# harness in `crates/umbrella-client/examples/r20_distributed_identity_lldb_target.rs`
+# calls `umbrella_client::keystore::distributed_identity_client::unlock_with_pin`
+# directly (not via FFI), so test-utils is intended ONLY for integration
+# tests that explicitly opt in to the leak surface to validate the R20
+# attack class against the FFI boundary.
+#
+# F-FFI-2 closure: `unlock_with_pin_for_test_rig` gated behind this
+# feature so production builds physically cannot expose session keys
+# across the FFI boundary. Production Swift / Kotlin apps MUST be
+# compiled without this feature.
+test-utils = []
 # Hybrid post-quantum opt-in (v1.1.0 release production release , production design Решение 7).
 # FFI зонтичный feature пробрасывает pq в umbrella-client (которая сама собирает
 # zonтичный pq для всех downstream крейтов). Активирует FFI surface
