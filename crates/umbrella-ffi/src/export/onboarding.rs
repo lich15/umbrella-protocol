@@ -50,7 +50,7 @@ use rand_chacha::rand_core::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use umbrella_client::keystore::distributed_identity_client::{
     bootstrap_account, unlock_with_pin, BootstrapInput, BootstrapOutput, MockServerCluster,
-    ServerUnwrapClient, UnlockSession,
+    MockServerOprfCluster, ServerOprfClient, ServerUnwrapClient, UnlockSession,
 };
 use umbrella_threshold_identity::{
     duress::is_duress_reverse, key_derivation::DerivationTranscript, pin_kdf,
@@ -100,6 +100,14 @@ pub struct OnboardingHandle {
     // For Stage 2/3 we accept a MockServerCluster — production wires HTTPS
     // unwrap clients via `Arc<dyn ServerUnwrapClient + Send + Sync>`.
     inner: Arc<dyn ServerUnwrapClient>,
+    /// **F-2 closure (PhD-B Pass 5 remediation):** OPRF evaluator cluster
+    /// used by `bootstrap_account` to derive per-server anonymous IDs
+    /// through a 3-of-5 threshold OPRF rather than local HKDF over
+    /// `(PIN, salt)`. For Stage 2/3 we accept [`MockServerOprfCluster`];
+    /// production wires an HTTP/2 OPRF endpoint client (rate-limited +
+    /// attestation-guarded). Both clusters share the same `Arc<dyn ...>`
+    /// dispatch pattern, so swap is a single-line change.
+    oprf_inner: Arc<dyn ServerOprfClient>,
     /// Live unlock sessions keyed by opaque 32-char hex session handle.
     /// `UnlockSession::device_key` and `UnlockSession::master_key` live here
     /// as `MlockedSecret`-wrapped allocations and **never** cross the FFI
@@ -248,8 +256,25 @@ impl OnboardingHandle {
             (root, [0x44; 32]),
             (root, [0x55; 32]),
         ];
+
+        // F-2 closure: instantiate an OPRF mock cluster with a fresh random
+        // master OPRF key (Shamir-split 3-of-5). Seeded from the current
+        // nanosecond clock plus a hash-mix constant so two instances created
+        // within the same nanosecond still get distinct keys. Production
+        // wiring replaces this with an HTTP/2 client to the Sealed Server
+        // OPRF endpoint; the trait surface stays identical.
+        let oprf_seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64;
+        let mut oprf_rng =
+            ChaCha20Rng::seed_from_u64(oprf_seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        let oprf_inner: Arc<dyn ServerOprfClient> =
+            Arc::new(MockServerOprfCluster::new(&mut oprf_rng));
+
         Ok(Arc::new(Self {
             inner: Arc::new(MockServerCluster { shares }),
+            oprf_inner,
             sessions: Mutex::new(HashMap::new()),
         }))
     }
@@ -306,8 +331,10 @@ impl OnboardingHandle {
             .as_nanos() as u64;
         let mut rng = ChaCha20Rng::seed_from_u64(now_seed);
 
-        let out =
-            bootstrap_account(&input, identity_pk, &mut rng).map_err(UmbrellaError::from)?;
+        // F-2 closure: bootstrap routes anon-ID derivation through the 3-of-5
+        // threshold OPRF cluster held by this handle rather than local HKDF.
+        let out = bootstrap_account(&input, identity_pk, &self.oprf_inner, &mut rng)
+            .map_err(UmbrellaError::from)?;
         Ok(out.into())
     }
 

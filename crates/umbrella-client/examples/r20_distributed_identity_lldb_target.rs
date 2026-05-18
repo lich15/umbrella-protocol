@@ -56,9 +56,10 @@ use rand_chacha::ChaCha20Rng;
 use std::sync::Arc;
 
 use umbrella_client::keystore::distributed_identity_client::{
-    bootstrap_account, unlock_with_pin, BootstrapInput, MockServerCluster, ServerUnwrapClient,
+    bootstrap_account, unlock_with_pin, BootstrapInput, MockServerCluster, MockServerOprfCluster,
+    ServerOprfClient, ServerUnwrapClient,
 };
-use umbrella_threshold_identity::{key_derivation::DerivationTranscript, pin_kdf};
+use umbrella_threshold_identity::pin_kdf;
 
 /// Negative-control needle: the 32-byte pattern an attacker would expect to
 /// find if identity_sk leaked. Under round-6 this should yield 0 hits.
@@ -111,7 +112,15 @@ fn main() {
         phone_e164: None,
         otp_secret: None,
     };
-    let boot = bootstrap_account(&input, IDENTITY_PK_NEEDLE, &mut rng)
+    // F-2 closure: bootstrap routes anon-ID derivation through 3-of-5
+    // threshold OPRF rather than local HKDF. For the R20 measurement
+    // target we wire a `MockServerOprfCluster` with a fresh random
+    // master OPRF key; production deploys an HTTP/2 client to the
+    // Sealed Server OPRF endpoint.
+    let mut oprf_rng = ChaCha20Rng::seed_from_u64(0x_2020_F2_BEEF_DEAD_u64);
+    let oprf_cluster: Arc<dyn ServerOprfClient> =
+        Arc::new(MockServerOprfCluster::new(&mut oprf_rng));
+    let boot = bootstrap_account(&input, IDENTITY_PK_NEEDLE, &oprf_cluster, &mut rng)
         .expect("bootstrap should succeed");
 
     eprintln!("[R20] bootstrap output:");

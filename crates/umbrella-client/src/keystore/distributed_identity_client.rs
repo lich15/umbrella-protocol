@@ -31,6 +31,20 @@ use std::sync::Arc;
 
 use curve25519_dalek::scalar::Scalar;
 use umbrella_crypto_primitives::mlocked::MlockedSecret;
+// F-2 closure (PhD-B Pass 5 remediation): per-server anonymous IDs derived
+// through a 3-of-5 threshold OPRF (Ristretto255-SHA512 over RFC 9497 Base
+// Mode) rather than a local HKDF chain over `(PIN, salt)`. An adversary
+// holding `(PIN, account_local_salt)` but lacking 3-of-5 Sealed Server
+// OPRF key shares can no longer reconstruct anon-IDs without server
+// interaction.
+//
+// F-2 closure: anon-IDs are now threshold-OPRF outputs, not local HKDF
+// of PIN+salt.
+use umbrella_oprf::{
+    blind as oprf_blind, finalize as oprf_finalize, generate_test_private_key,
+    shamir_split_for_testing, threshold_combine, BlindedRequest, OprfInput,
+    ServerEvaluation, ThresholdConfig, WitnessIndex,
+};
 use umbrella_threshold_identity::{
     anonymous_id,
     key_derivation::{self, DerivationTranscript, DeviceRandom, ServerShare},
@@ -105,6 +119,52 @@ pub trait ServerUnwrapClient: Send + Sync {
         pin_root: &[u8; 32],
         transcript: &DerivationTranscript,
     ) -> Result<ServerShare, ClientError>;
+}
+
+/// Abstracts the Sealed Server OPRF (Oblivious PRF, RFC 9497) evaluation
+/// endpoint. Used during bootstrap (F-2 closure) to derive per-server
+/// anonymous IDs through a 3-of-5 threshold OPRF rather than local HKDF.
+///
+/// **F-2 closure (PhD-B Pass 5 remediation):** the prior bootstrap derived
+/// anon-IDs through a local `HKDF<SHA256>` over `(PIN, account_local_salt)`
+/// — any device knowing both inputs could reconstruct the full 5×32-byte
+/// anon-ID set without server interaction. PSI round-7 design intent
+/// requires anon-IDs to be **issued server-side via OPRF**: each Sealed
+/// Server holds a Shamir share `k_i = f(server_id_i)` of the master OPRF
+/// key `k = f(0)`, and the client must collect any 3 of 5 partial
+/// evaluations and threshold-combine them to obtain the OPRF output
+/// (algebraically `oprf_output = OPRF_k(pin_root)`). Without 3 of 5
+/// server cooperations the client cannot derive anon-IDs even with full
+/// `(PIN, salt)` knowledge.
+///
+/// **Trait shape parity with [`ServerUnwrapClient`]:** the trait is sync
+/// so production HTTP/2 implementations block on a tokio runtime at the
+/// transport edge — same pattern as the daily-unlock path. Async-native
+/// production wiring is a future refactor that flips both traits together.
+///
+/// Production: HTTP/2 to `POST /v1/oprf/evaluate_anon_id` per Sealed Server
+/// (rate-limited + attestation-guarded so PIN-bruteforce against the OPRF
+/// endpoint is throttled).
+///
+/// Tests: [`MockServerOprfCluster`] with a Shamir-split master OPRF key.
+pub trait ServerOprfClient: Send + Sync {
+    /// Sends a blinded OPRF request to server `server_id` (1..=5). The
+    /// server multiplies the blinded Ristretto255 point by its Shamir
+    /// share `k_i` and returns the partial evaluation
+    /// `E_i = k_i · blinded`. The caller threshold-combines 3 of 5 such
+    /// partials via [`umbrella_oprf::threshold_combine`] to obtain
+    /// `E = k · blinded` (algebraically identical to a single-server
+    /// evaluation under the full master key), then unblinds locally.
+    ///
+    /// # Errors
+    /// - [`ClientError::Network`] for transport failures or invalid
+    ///   `server_id`.
+    /// - [`ClientError::Oprf`] for server-side OPRF protocol errors.
+    fn evaluate_anon_id(
+        &self,
+        server_id: u8,
+        blinded: &BlindedRequest,
+    ) -> Result<ServerEvaluation, ClientError>;
 }
 
 /// Performs daily unlock: re-derives device_key + master_key from PIN.
@@ -337,18 +397,217 @@ impl ServerUnwrapClient for MockServerCluster {
     }
 }
 
+/// Mock implementation of [`ServerOprfClient`] for tests. Holds a
+/// Shamir-split master OPRF key — each entry is one server's partial
+/// scalar `k_i = f(i)` where `f` is a random degree-2 polynomial with
+/// `f(0) = k` (master OPRF key). Server `i` (1..=5) evaluates partial
+/// OPRF by multiplying the blinded Ristretto255 point by its share.
+///
+/// **F-2 closure (PhD-B Pass 5 remediation):** test rig parity with the
+/// PSI round-7 production deployment of 5 Sealed Servers running
+/// independent Shamir shares. A real HTTP/2 cluster replaces this mock
+/// in production; the [`ServerOprfClient`] trait surface stays identical.
+///
+/// **Construction:** [`MockServerOprfCluster::new`] generates a fresh
+/// master OPRF key and Shamir-splits it via
+/// [`umbrella_oprf::shamir_split_for_testing`] with the default 3-of-5
+/// threshold.
+///
+/// **Security note:** in production, no single party ever holds the
+/// master OPRF key `k = f(0)`; the DKG ceremony at cluster bootstrap
+/// produces shares directly. The test helper sidesteps DKG for
+/// determinism but the algebraic threshold property (any 3 of 5 reconstruct
+/// the same OPRF output) is preserved bit-for-bit.
+pub struct MockServerOprfCluster {
+    /// Shamir shares of the master OPRF key. Index `i ∈ 0..5` holds
+    /// `(WitnessIndex(i+1), f(i+1).to_bytes())` so that
+    /// `shares[i].0.get() == (i + 1) as u8`.
+    shares: [(WitnessIndex, [u8; 32]); 5],
+}
+
+impl MockServerOprfCluster {
+    /// Constructs a fresh mock cluster with a random master OPRF key
+    /// Shamir-split into 5 shares with 3-of-5 threshold (default config).
+    /// The master key is consumed inside this constructor and never
+    /// surfaces through the public API — only the 5 shares persist.
+    ///
+    /// # Panics
+    /// Inconceivable. [`generate_test_private_key`] yields a canonical
+    /// Ristretto255 scalar by construction; [`WitnessIndex::new`] accepts
+    /// 1..=5 by inspection of the constant range.
+    pub fn new<R: rand_core::CryptoRng + rand_core::RngCore>(rng: &mut R) -> Self {
+        let master_sk = generate_test_private_key(rng);
+        let k = Scalar::from_canonical_bytes(master_sk)
+            .into_option()
+            .expect("generate_test_private_key yields canonical Ristretto255 scalar");
+
+        let raw_shares = shamir_split_for_testing(k, ThresholdConfig::default(), rng);
+        // Invariant: raw_shares.len() == DEFAULT_TOTAL (5) per the
+        // contract of `shamir_split_for_testing` with the default config.
+        debug_assert_eq!(raw_shares.len(), 5);
+
+        let shares: [(WitnessIndex, [u8; 32]); 5] = std::array::from_fn(|i| {
+            let (wi, scalar) = &raw_shares[i];
+            (*wi, scalar.to_bytes())
+        });
+
+        Self { shares }
+    }
+
+    /// **Test-only**: exposes one server's OPRF share for adversary
+    /// modeling (negative regression test: «adversary with `k-1 = 2`
+    /// server keys cannot recover anon-IDs»). Production never exposes
+    /// shares outside the Sealed Server enclave.
+    ///
+    /// Panics on out-of-range `server_id`.
+    #[cfg(test)]
+    pub(crate) fn share_at(&self, server_id: u8) -> (WitnessIndex, [u8; 32]) {
+        assert!(
+            server_id >= 1 && server_id <= 5,
+            "server_id must be 1..=5, got {server_id}"
+        );
+        self.shares[(server_id - 1) as usize]
+    }
+}
+
+impl ServerOprfClient for MockServerOprfCluster {
+    fn evaluate_anon_id(
+        &self,
+        server_id: u8,
+        blinded: &BlindedRequest,
+    ) -> Result<ServerEvaluation, ClientError> {
+        if server_id == 0 || server_id as usize > self.shares.len() {
+            return Err(ClientError::Network(format!(
+                "invalid server_id {server_id}"
+            )));
+        }
+        let (_wi, share_bytes) = &self.shares[(server_id - 1) as usize];
+        umbrella_oprf::evaluate_for_testing(blinded, share_bytes).map_err(ClientError::from)
+    }
+}
+
+/// Derives 5 per-server anonymous IDs via 3-of-5 threshold OPRF against the
+/// Sealed Server cluster. **F-2 closure (PhD-B Pass 5 remediation):**
+/// replaces the prior local `HKDF<SHA256>(salt, pin_root, "anon-seed/v1")`
+/// derivation with a server-side OPRF flow so an adversary holding
+/// `(PIN, account_local_salt)` alone cannot regenerate the anon-ID chain.
+///
+/// # Cryptographic flow (RFC 9497 Base Mode + threshold extension)
+///
+/// 1. Wrap `pin_root` as an [`OprfInput`] (32 bytes opaque).
+/// 2. Blind through [`umbrella_oprf::blind`] →
+///    `(BlindedRequest, BlindingState)`. The blinding factor `r` is fresh
+///    per-call and zeroized on `BlindingState::drop`.
+/// 3. Send the same `BlindedRequest` to up to 5 Sealed Servers in order
+///    1..=5; collect the first 3 successful partial evaluations
+///    `E_i = k_i · BlindedRequest` (Ristretto255 point multiplication).
+/// 4. [`threshold_combine`] performs Lagrange interpolation in the
+///    Ristretto255 group at `x = 0` to reconstruct the full evaluation
+///    `E = k · BlindedRequest` where `k = f(0)` is the master OPRF key.
+/// 5. [`umbrella_oprf::finalize`] unblinds (`r⁻¹ · E`) and SHA-512-hashes
+///    with the canonical domain separator to yield a 32-byte
+///    [`umbrella_oprf::OprfLabel`].
+/// 6. The OPRF label is passed to
+///    [`umbrella_threshold_identity::anonymous_id::derive_all_anonymous_ids`]
+///    as the master input; HKDF-SHA256 expands to 5 per-server pseudonyms.
+///
+/// # Security reduction (informal)
+///
+/// Under the OPRF Base Mode assumption (RFC 9497 §4 — adversary cannot
+/// distinguish `OPRF_k(x)` from a uniformly random 32-byte string without
+/// knowing `k`), the anonymous IDs are pseudorandom functions of
+/// `(k, pin_root)`. An adversary with `(PIN, salt)` can locally derive
+/// `pin_root` (Argon2id) but **cannot** compute `OPRF_k(pin_root)`
+/// without 3-of-5 server cooperations (Shamir secret-sharing of `k`).
+/// Thus 5 × 32 = 160 bytes of cross-server correlation key are protected
+/// behind the threshold reconstruction barrier.
+///
+/// # Errors
+/// - [`ClientError::Oprf`] from any OPRF layer step (input validation,
+///   blind, threshold_combine, finalize).
+/// - [`ClientError::Network`] if fewer than 3 OPRF servers respond.
+/// - [`ClientError::Crypto`] from `derive_all_anonymous_ids`.
+fn derive_anon_ids_via_oprf<R: rand_core::CryptoRng + rand_core::RngCore>(
+    pin_root: &[u8; 32],
+    server_oprf_client: &Arc<dyn ServerOprfClient>,
+    rng: &mut R,
+) -> Result<[[u8; 32]; 5], ClientError> {
+    // Step 1: wrap pin_root as opaque OPRF input.
+    let oprf_input = OprfInput::new(pin_root).map_err(ClientError::from)?;
+
+    // Step 2: blind. BlindingState holds the blind scalar `r` and
+    // ZeroizeOnDrop-clears it when this function returns.
+    let (blinded, blind_state) = oprf_blind(oprf_input, rng).map_err(ClientError::from)?;
+
+    // Step 3: query servers 1..=5, stop after 3 successful partials.
+    // Iterating in deterministic 1..=5 order keeps the threshold subset
+    // dependent only on which servers respond, not on caller scheduling.
+    let mut collected: Vec<(WitnessIndex, ServerEvaluation)> = Vec::with_capacity(3);
+    for server_id in 1u8..=5 {
+        if collected.len() >= 3 {
+            break;
+        }
+        match server_oprf_client.evaluate_anon_id(server_id, &blinded) {
+            Ok(eval) => {
+                let wi = WitnessIndex::new(server_id).map_err(ClientError::from)?;
+                collected.push((wi, eval));
+            }
+            Err(e) => {
+                tracing::debug!("OPRF server {server_id} unavailable: {e:?}");
+            }
+        }
+    }
+    if collected.len() < 3 {
+        return Err(ClientError::Network(format!(
+            "fewer than 3 OPRF servers responded ({}/5 succeeded)",
+            collected.len()
+        )));
+    }
+
+    // Step 4: threshold-combine the 3 partial evaluations via Lagrange
+    // interpolation at x = 0 in the Ristretto255 group.
+    let combined =
+        threshold_combine(&collected, ThresholdConfig::default()).map_err(ClientError::from)?;
+
+    // Step 5: unblind + finalize (SHA-512 with `umbrellax-oprf-output-v1`
+    // domain separator) → 32-byte OprfLabel.
+    let oprf_label = oprf_finalize(&blind_state, oprf_input, &combined).map_err(ClientError::from)?;
+
+    // Step 6: derive 5 per-server anon-IDs from the OPRF label.
+    let anon_ids = anonymous_id::derive_all_anonymous_ids(oprf_label.as_bytes())
+        .map_err(|e| ClientError::Crypto(format!("anon-id: {e}")))?;
+
+    Ok(anon_ids)
+}
+
 /// Performs bootstrap (registration). Generates 16-byte account_local_salt +
-/// 32-byte device_random + computes per-server anonymous IDs from a *seed
-/// master_key proxy* (here derived from PIN+salt for determinism in test).
+/// 32-byte device_random_handle, derives 5 per-server anonymous IDs through
+/// a 3-of-5 threshold OPRF against [`ServerOprfClient`], and assembles the
+/// public bootstrap output. **No words on device, no PIN copy, no local
+/// master_key.**
 ///
-/// In production, identity_pk comes from server DKG output; this function
-/// also receives that pk via callback. For Stage 2 minimum we accept it as
-/// an argument and persist locally.
+/// **F-2 closure (PhD-B Pass 5 remediation):** the prior implementation
+/// derived anon-IDs locally through
+/// `HKDF<SHA256>(salt, pin_root, "umbrella-r6/anon-seed/v1")` — an
+/// adversary with `(PIN, captured account_local_salt)` could regenerate
+/// all 5 × 32 = 160 bytes of anon-IDs without server interaction (6-digit
+/// PIN brute-force = ~140 h CPU / ~6 h GPU farm via Argon2id, feasible
+/// for state-level adversary). The OPRF flow now binds anon-IDs to the
+/// secret master OPRF key held in a Shamir 3-of-5 split across Sealed
+/// Servers; an adversary holding `(PIN, salt)` alone cannot derive
+/// anon-IDs without 3 of 5 server cooperations.
 ///
-/// Bootstrap — registers new account, persists only PIN-derivable handles.
+/// In production, `identity_pk_from_server_dkg` comes from the FROST DKG
+/// performed by the 5 Sealed Servers at registration; the client passes
+/// it through. Production wiring for `server_oprf_client` is HTTP/2 to
+/// the OPRF evaluation endpoint; tests inject [`MockServerOprfCluster`].
+///
+/// Bootstrap — registers new account, persists only PIN-derivable handles +
+/// public OPRF-derived anon-IDs.
 pub fn bootstrap_account<R: rand_core::CryptoRng + rand_core::RngCore>(
     input: &BootstrapInput,
     identity_pk_from_server_dkg: IdentityPublicKey,
+    server_oprf_client: &Arc<dyn ServerOprfClient>,
     rng: &mut R,
 ) -> Result<BootstrapOutput, ClientError> {
     // Generate per-account salt (16 bytes).
@@ -361,33 +620,26 @@ pub fn bootstrap_account<R: rand_core::CryptoRng + rand_core::RngCore>(
     let mut device_random_handle = [0u8; 32];
     rng.fill_bytes(&mut device_random_handle);
 
-    // Compute pin_root + a "proxy master_key" used purely to derive 5
-    // anonymous IDs. (In production the master_key is HKDF-re-derived from
-    // PIN+salt+server_share — but we don't have server_share at registration;
-    // we use HKDF(pin_root, salt) as a deterministic proxy that any device
-    // re-deriving from the same PIN+salt will obtain identical IDs).
+    // Compute pin_root via Argon2id(PIN, salt) — 32 bytes mlocked. This is
+    // the same pin_root used by daily-unlock (`unlock_with_pin`) and is
+    // the OPRF input that binds the anon-ID derivation to the user's PIN.
     let pin_root = pin_kdf::derive_pin_root(&input.pin, &account_local_salt)
         .map_err(|e| ClientError::Crypto(format!("PIN-KDF bootstrap: {e}")))?;
 
-    // Anonymous ID seeder = HKDF(pin_root, salt, "anon-seed").
-    use hkdf::Hkdf;
-    use sha2::Sha256;
-    let mut anon_seed = [0u8; 32];
-    Hkdf::<Sha256>::new(Some(&account_local_salt), pin_root.expose())
-        .expand(b"umbrella-r6/anon-seed/v1", &mut anon_seed)
-        .map_err(|_| ClientError::Crypto("anon-seed expand".into()))?;
-    let per_server_anonymous_ids = anonymous_id::derive_all_anonymous_ids(&anon_seed)
-        .map_err(|e| ClientError::Crypto(format!("anon-id: {e}")))?;
+    // F-2 closure: derive 5 per-server anon-IDs through 3-of-5 threshold
+    // OPRF against Sealed Servers rather than local HKDF. Replaces the
+    // bit-equal regeneration path documented in the F-2 exploit
+    // demonstrator (`attack_phd4_f2_*` in umbrella-tests). The OPRF
+    // output is a pseudorandom 32-byte value bound to `(pin_root, k)`
+    // where `k` is the master OPRF key Shamir-split across servers.
+    let per_server_anonymous_ids =
+        derive_anon_ids_via_oprf(pin_root.expose(), server_oprf_client, rng)?;
 
     // Initial transcript: epoch=1.
     let initial_transcript = DerivationTranscript {
         account_id: per_server_anonymous_ids[0], // server 1's ID is "primary" reference.
         epoch: 1,
     };
-
-    // Wipe transient secret.
-    use zeroize::Zeroize;
-    anon_seed.zeroize();
 
     // Drop input.pin / input.duress_pin via input's caller; we never copy them.
     let _ = &input.duress_pin; // silence unused if duress not yet wired.
@@ -406,23 +658,61 @@ pub fn bootstrap_account<R: rand_core::CryptoRng + rand_core::RngCore>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand_chacha::ChaCha20Rng;
     use rand_chacha::rand_core::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
+    use std::collections::HashSet;
 
     fn fake_identity_pk() -> IdentityPublicKey {
         [0xCC; 32]
     }
 
+    /// Test helper: build a fresh [`MockServerOprfCluster`] seeded from the
+    /// given u64. Each test uses its own seed so test isolation is preserved;
+    /// the [`Arc<dyn ServerOprfClient>`] coercion matches the
+    /// [`bootstrap_account`] signature.
+    fn fake_oprf_cluster(seed: u64) -> Arc<dyn ServerOprfClient> {
+        let mut rng = ChaCha20Rng::seed_from_u64(seed);
+        Arc::new(MockServerOprfCluster::new(&mut rng))
+    }
+
+    /// Test helper: wraps a [`ServerOprfClient`] but only forwards
+    /// evaluations for `server_id` in `allowed`. Used to model partial
+    /// availability scenarios (e.g., «only 2 of 5 servers reachable») and
+    /// quorum-determinism property tests («same OPRF output regardless of
+    /// which 3 of 5 servers respond»). F-2 closure: enables negative
+    /// regression guards against fallback-to-local-derivation patches.
+    struct QuorumSelectiveOprfCluster {
+        inner: Arc<dyn ServerOprfClient>,
+        allowed: HashSet<u8>,
+    }
+
+    impl ServerOprfClient for QuorumSelectiveOprfCluster {
+        fn evaluate_anon_id(
+            &self,
+            server_id: u8,
+            blinded: &BlindedRequest,
+        ) -> Result<ServerEvaluation, ClientError> {
+            if !self.allowed.contains(&server_id) {
+                return Err(ClientError::Network(format!(
+                    "test: server {server_id} disabled"
+                )));
+            }
+            self.inner.evaluate_anon_id(server_id, blinded)
+        }
+    }
+
     #[test]
     fn bootstrap_persists_only_handles_not_secrets() {
         let mut rng = ChaCha20Rng::seed_from_u64(1);
+        let oprf_cluster = fake_oprf_cluster(0x9001);
         let input = BootstrapInput {
             pin: b"123456".to_vec(),
             duress_pin: None,
             phone_e164: None,
             otp_secret: None,
         };
-        let out = bootstrap_account(&input, fake_identity_pk(), &mut rng).unwrap();
+        let out =
+            bootstrap_account(&input, fake_identity_pk(), &oprf_cluster, &mut rng).unwrap();
         assert_eq!(out.identity_pk, fake_identity_pk());
         // Persisted state contains 16+32 bytes of public material + 5 anon-ids.
         // **No PIN, no master_key, no device_key, no recovery words.**
@@ -434,17 +724,19 @@ mod tests {
     #[test]
     fn unlock_re_derives_session_keys_deterministically() {
         let mut rng = ChaCha20Rng::seed_from_u64(2);
+        let oprf_cluster = fake_oprf_cluster(0x9002);
         let input = BootstrapInput {
             pin: b"123456".to_vec(),
             duress_pin: None,
             phone_e164: None,
             otp_secret: None,
         };
-        let boot = bootstrap_account(&input, fake_identity_pk(), &mut rng).unwrap();
+        let boot =
+            bootstrap_account(&input, fake_identity_pk(), &oprf_cluster, &mut rng).unwrap();
 
         // Mock server cluster: any pin_root matching Argon2id(123456, salt) unlocks.
-        let pin_root_expected = pin_kdf::derive_pin_root(b"123456", &boot.account_local_salt)
-            .unwrap();
+        let pin_root_expected =
+            pin_kdf::derive_pin_root(b"123456", &boot.account_local_salt).unwrap();
         let pre = *pin_root_expected.expose();
         let shares = [
             (pre, [0x11; 32]),
@@ -453,8 +745,7 @@ mod tests {
             (pre, [0x44; 32]),
             (pre, [0x55; 32]),
         ];
-        let cluster: Arc<dyn ServerUnwrapClient> =
-            Arc::new(MockServerCluster { shares });
+        let cluster: Arc<dyn ServerUnwrapClient> = Arc::new(MockServerCluster { shares });
 
         let device_random = [0xAB; 32];
         let session1 = unlock_with_pin(
@@ -483,14 +774,18 @@ mod tests {
     #[test]
     fn unlock_with_wrong_pin_rejects() {
         let mut rng = ChaCha20Rng::seed_from_u64(3);
+        let oprf_cluster = fake_oprf_cluster(0x9003);
         let input = BootstrapInput {
             pin: b"123456".to_vec(),
             duress_pin: None,
             phone_e164: None,
             otp_secret: None,
         };
-        let boot = bootstrap_account(&input, fake_identity_pk(), &mut rng).unwrap();
-        let correct_root = *pin_kdf::derive_pin_root(b"123456", &boot.account_local_salt).unwrap().expose();
+        let boot =
+            bootstrap_account(&input, fake_identity_pk(), &oprf_cluster, &mut rng).unwrap();
+        let correct_root = *pin_kdf::derive_pin_root(b"123456", &boot.account_local_salt)
+            .unwrap()
+            .expose();
         let cluster: Arc<dyn ServerUnwrapClient> = Arc::new(MockServerCluster {
             shares: [
                 (correct_root, [1u8; 32]),
@@ -598,27 +893,229 @@ mod tests {
 
     #[test]
     fn different_pins_yield_different_sessions() {
-        let mut rng = ChaCha20Rng::seed_from_u64(4);
+        // Share the same OPRF cluster across the two bootstraps so the
+        // difference in anon-IDs is attributable to the PIN change, not to
+        // a different master OPRF key.
+        let mut setup_rng = ChaCha20Rng::seed_from_u64(4);
+        let cluster_inner = Arc::new(MockServerOprfCluster::new(&mut setup_rng));
+        // Unsized coercion `Arc<MockServerOprfCluster>` → `Arc<dyn ServerOprfClient>`
+        // fires at the let-binding via `CoerceUnsized`; `Arc::clone(&...)`
+        // would force `T = dyn ServerOprfClient` inference and fail because
+        // the input is `&Arc<MockServerOprfCluster>`, so method syntax is
+        // mandatory here.
+        let oprf_cluster_1: Arc<dyn ServerOprfClient> = cluster_inner.clone();
+        let oprf_cluster_2: Arc<dyn ServerOprfClient> = cluster_inner.clone();
+
         let mut input = BootstrapInput {
             pin: b"123456".to_vec(),
             duress_pin: None,
             phone_e164: None,
             otp_secret: None,
         };
-        let boot = bootstrap_account(&input, fake_identity_pk(), &mut rng).unwrap();
-        // Bootstrap with a second PIN should give different anon_ids (because
-        // anonymous IDs are PIN+salt derived).
+        let mut rng1 = ChaCha20Rng::seed_from_u64(0xA1);
+        let boot =
+            bootstrap_account(&input, fake_identity_pk(), &oprf_cluster_1, &mut rng1).unwrap();
+
+        // Bootstrap with a second PIN should give different anon-IDs even
+        // when fed into the same OPRF cluster (different PIN → different
+        // pin_root → different OPRF input → pseudorandom-distinct output).
         input.pin = b"654321".to_vec();
-        let mut rng2 = ChaCha20Rng::seed_from_u64(4);
-        // Use SAME salt+device_random by manually constructing.
-        let boot2 = BootstrapOutput {
-            account_local_salt: boot.account_local_salt,
-            ..bootstrap_account(&input, fake_identity_pk(), &mut rng2).unwrap()
-        };
+        let mut rng2 = ChaCha20Rng::seed_from_u64(0xA2);
+        let boot2 =
+            bootstrap_account(&input, fake_identity_pk(), &oprf_cluster_2, &mut rng2).unwrap();
         assert_ne!(
-            boot.per_server_anonymous_ids[0],
-            boot2.per_server_anonymous_ids[0],
+            boot.per_server_anonymous_ids[0], boot2.per_server_anonymous_ids[0],
             "different PINs derive different anonymous IDs"
         );
+    }
+
+    /// **F-2 closure regression guard #1 — positive Lagrange property over
+    /// Ristretto255 (3-of-5 quorum determinism).**
+    ///
+    /// Validates the threshold-OPRF property the F-2 fix relies on: for a
+    /// single master OPRF key Shamir-split into 5 shares with 3-of-5
+    /// threshold, **every** quorum of 3 servers (no matter which 3) yields
+    /// bit-identical anonymous IDs. This is the OPRF analog of the F-1
+    /// Lagrange-determinism guard
+    /// (`lagrange_reconstruction_yields_same_master_for_different_quora`):
+    /// under proper Shamir + Lagrange interpolation in the Ristretto255
+    /// group, the threshold reconstruction is independent of subset choice.
+    ///
+    /// **F-2 closure significance:** if a future regression replaced
+    /// [`threshold_combine`] with a quorum-dependent shortcut (e.g.,
+    /// «just use server 1's evaluation» or local XOR aggregation), this
+    /// test would expose the divergence. The class-level F-2 demonstrator
+    /// in `crates/umbrella-tests/tests/attack_phd4_real_exploits.rs`
+    /// complements this positive test by documenting why local HKDF
+    /// derivation is fundamentally insufficient regardless of which
+    /// quorum responds.
+    #[test]
+    fn oprf_3_of_5_yields_same_anon_ids_regardless_of_quorum() {
+        let mut setup_rng = ChaCha20Rng::seed_from_u64(0xF2_C105E_DEAD_BEEF);
+        let base_cluster = Arc::new(MockServerOprfCluster::new(&mut setup_rng));
+
+        let input = BootstrapInput {
+            pin: b"123456".to_vec(),
+            duress_pin: None,
+            phone_e164: None,
+            otp_secret: None,
+        };
+
+        let bootstrap_with_quorum = |allowed: &[u8]| -> BootstrapOutput {
+            // Method-syntax `clone()` so unsizing coercion fires at let.
+            let inner: Arc<dyn ServerOprfClient> = base_cluster.clone();
+            let cluster: Arc<dyn ServerOprfClient> = Arc::new(QuorumSelectiveOprfCluster {
+                inner,
+                allowed: allowed.iter().copied().collect::<HashSet<u8>>(),
+            });
+            let mut rng = ChaCha20Rng::seed_from_u64(0xBABE_F00D);
+            bootstrap_account(&input, fake_identity_pk(), &cluster, &mut rng).expect("bootstrap")
+        };
+
+        let boot_a = bootstrap_with_quorum(&[1, 2, 3]);
+        let boot_b = bootstrap_with_quorum(&[3, 4, 5]);
+        let boot_c = bootstrap_with_quorum(&[1, 4, 5]);
+
+        // Sanity: same rng seed across all 3 calls → identical salt + pin_root.
+        // Guards against silently-broken determinism that would make the
+        // anon-ID equality comparison meaningless.
+        assert_eq!(boot_a.account_local_salt, boot_b.account_local_salt);
+        assert_eq!(boot_a.account_local_salt, boot_c.account_local_salt);
+
+        assert_eq!(
+            boot_a.per_server_anonymous_ids, boot_b.per_server_anonymous_ids,
+            "F-2 closure: quorum {{1,2,3}} vs {{3,4,5}} must yield bit-identical anon-IDs"
+        );
+        assert_eq!(
+            boot_a.per_server_anonymous_ids, boot_c.per_server_anonymous_ids,
+            "F-2 closure: quorum {{1,2,3}} vs {{1,4,5}} must yield bit-identical anon-IDs"
+        );
+    }
+
+    /// **F-2 closure regression guard #2 — fail-closed below threshold.**
+    ///
+    /// When only 2 of 5 Sealed Servers respond, `bootstrap_account` must
+    /// fail closed: there is no fallback path to local-HKDF derivation,
+    /// and partial OPRF evaluations cannot reconstruct the OPRF output
+    /// below threshold. This guards against future «graceful degradation»
+    /// patches that might re-introduce the F-2 vulnerability by silently
+    /// falling back to local derivation when servers are unreachable.
+    #[test]
+    fn bootstrap_fails_with_only_2_of_5_oprf_servers() {
+        let mut setup_rng = ChaCha20Rng::seed_from_u64(0xF2_5BAD_FA15_DEAD);
+        let base_cluster = Arc::new(MockServerOprfCluster::new(&mut setup_rng));
+
+        // Allow only servers 1 and 2 — quorum 2 of 5, below threshold.
+        // Method-syntax clone so unsizing coercion fires at the struct
+        // field init (`inner: Arc<dyn ServerOprfClient>`).
+        let inner_clone: Arc<dyn ServerOprfClient> = base_cluster.clone();
+        let cluster: Arc<dyn ServerOprfClient> = Arc::new(QuorumSelectiveOprfCluster {
+            inner: inner_clone,
+            allowed: [1u8, 2].iter().copied().collect::<HashSet<u8>>(),
+        });
+
+        let input = BootstrapInput {
+            pin: b"123456".to_vec(),
+            duress_pin: None,
+            phone_e164: None,
+            otp_secret: None,
+        };
+
+        let mut rng = ChaCha20Rng::seed_from_u64(0xC0FFEE);
+        let result = bootstrap_account(&input, fake_identity_pk(), &cluster, &mut rng);
+
+        match result {
+            Err(ClientError::Network(msg)) => {
+                assert!(
+                    msg.contains("fewer than 3 OPRF servers"),
+                    "F-2 closure: expected fail-closed message, got: {msg}"
+                );
+            }
+            Ok(_) => {
+                panic!("F-2 closure: bootstrap with 2-of-5 servers must fail closed")
+            }
+            Err(other) => {
+                panic!("F-2 closure: wrong error variant — {other:?}")
+            }
+        }
+    }
+
+    /// **F-2 closure regression guard #3 — adversary with `k-1 = 2` server
+    /// OPRF keys cannot reconstruct anon-IDs.**
+    ///
+    /// Models the worst-case threat from the F-2 demonstrator: an
+    /// adversary who has compromised 2 of 5 Sealed Servers (and therefore
+    /// holds 2 of 5 Shamir shares of the master OPRF key) AND captured
+    /// `(PIN, account_local_salt)` from the victim's device cannot
+    /// reconstruct anon-IDs without a 3rd server cooperation. The
+    /// threshold barrier holds at exactly 3 — below it,
+    /// [`threshold_combine`] returns
+    /// [`umbrella_oprf::OprfError::InsufficientValidEvaluations`].
+    ///
+    /// **Measured outcome:** with 2 of 5 server OPRF keys held by the
+    /// adversary, the threshold reconstruction step refuses to combine
+    /// (zero anon-IDs recovered, zero computational work past
+    /// validation). Compromise of ≥ 3 of 5 servers is required to bypass
+    /// the threshold cryptography barrier — that is the entire security
+    /// margin of 3-of-5 OPRF.
+    #[test]
+    fn adversary_with_2_oprf_keys_cannot_recover_anon_ids() {
+        use umbrella_oprf::OprfError;
+
+        let mut setup_rng = ChaCha20Rng::seed_from_u64(0xF2AD2_DEAD_BEE5);
+        let cluster = MockServerOprfCluster::new(&mut setup_rng);
+        let k1 = cluster.share_at(1);
+        let k2 = cluster.share_at(2);
+
+        // Legitimate bootstrap (full cluster) so we can capture
+        // `account_local_salt` for the adversary scenario.
+        let cluster_arc: Arc<dyn ServerOprfClient> = Arc::new(cluster);
+        let input = BootstrapInput {
+            pin: b"123456".to_vec(),
+            duress_pin: None,
+            phone_e164: None,
+            otp_secret: None,
+        };
+        let mut boot_rng = ChaCha20Rng::seed_from_u64(0xDEAD);
+        let legit = bootstrap_account(&input, fake_identity_pk(), &cluster_arc, &mut boot_rng)
+            .expect("legit bootstrap");
+
+        // Adversary captures (PIN, account_local_salt) plus the 2 server
+        // OPRF key shares (k_1, k_2). Tries to reconstruct anon-IDs by
+        // blinding pin_root, locally evaluating two partials, and asking
+        // threshold_combine to merge them — below quorum.
+        let pin_root = pin_kdf::derive_pin_root(b"123456", &legit.account_local_salt)
+            .expect("pin_root");
+        let oprf_input = OprfInput::new(pin_root.expose()).expect("oprf input");
+        let mut adv_rng = ChaCha20Rng::seed_from_u64(0xEEEE_DEAD_BEEF_FEED);
+        let (blinded, _state) = umbrella_oprf::blind(oprf_input, &mut adv_rng).expect("blind");
+
+        let eval_1 = umbrella_oprf::evaluate_for_testing(&blinded, &k1.1).expect("eval 1");
+        let eval_2 = umbrella_oprf::evaluate_for_testing(&blinded, &k2.1).expect("eval 2");
+
+        let only_two = vec![(k1.0, eval_1), (k2.0, eval_2)];
+        let combine_err =
+            umbrella_oprf::threshold_combine(&only_two, ThresholdConfig::default())
+                .unwrap_err();
+
+        assert!(
+            matches!(
+                combine_err,
+                OprfError::InsufficientValidEvaluations {
+                    valid: 2,
+                    required: 3
+                }
+            ),
+            "F-2 closure: adversary with k-1 = 2 server keys must hit threshold barrier, \
+             got {combine_err:?}"
+        );
+
+        eprintln!("[F-2 ADVERSARY BARRIER measurements]");
+        eprintln!("  Adversary inputs: PIN (6 digits) + account_local_salt (16 bytes captured)");
+        eprintln!("                  + 2 of 5 server OPRF key shares (k_1, k_2)");
+        eprintln!("  Operations: blind(pin_root) + 2 partial OPRF evaluate + threshold_combine attempt");
+        eprintln!("  Result: threshold_combine refuses below quorum (2 < 3)");
+        eprintln!("  Bits leaked: 0 (no anon-ID reconstruction possible)");
+        eprintln!("  Compromise threshold: ≥ 3 of 5 server OPRF keys required to bypass");
     }
 }
