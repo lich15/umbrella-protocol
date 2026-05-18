@@ -38,6 +38,18 @@ pq = [
     "umbrella-kt/pq",
     "umbrella-sealed-sender/pq",
     "umbrella-backup/pq",
+    # F-IDENT-1 + F-IDENT-2 closure (2026-05-19): HwBackedKeyStore impl
+    # references PQ types directly (HybridSignature, SlhDsa128fSignature,
+    # XWING_CIPHERTEXT_LEN, XWING_SHARED_SECRET_LEN, HedgedWitness) in
+    # its `cfg(feature = "pq")` trait-method stubs — pre-closure this
+    # crate consumed PQ types only transitively through
+    # umbrella-identity's trait signatures. The new direct dep makes
+    # the cfg-gated trait impl compile cleanly.
+    #
+    # F-IDENT-1 + F-IDENT-2 closure: HwBackedKeyStore needs direct
+    # access to umbrella-pq types under feature `pq` for cfg-gated
+    # KeyStore trait stub methods.
+    "dep:umbrella-pq",
 ]
 
 [dependencies]
@@ -58,6 +70,17 @@ umbrella-threshold-identity = { workspace = true }
 # umbrella-crypto-primitives provides `MlockedSecret<T>` (round-5 device-
 # capture closure F-PHD-DC-R11-1): RowCipher.master_key + MockHwKeystore.
 umbrella-crypto-primitives = { workspace = true }
+
+# Optional direct dep enabled by feature `pq` — see [features] block above.
+# F-IDENT-1 + F-IDENT-2 closure (2026-05-19): HwBackedKeyStore impl in
+# `keystore::hw_backed` needs direct umbrella-pq access for cfg-gated
+# KeyStore trait stub methods (HybridSignature, SlhDsa128fSignature,
+# XWING_CIPHERTEXT_LEN, XWING_SHARED_SECRET_LEN, HedgedWitness).
+#
+# Optional direct dep enabled by feature `pq` — see [features] above.
+# F-IDENT-1 + F-IDENT-2 closure: HwBackedKeyStore impl needs direct
+# umbrella-pq access for cfg-gated KeyStore trait stub methods.
+umbrella-pq = { workspace = true, optional = true }
 
 # Ed25519 + CSPRNG для `MockHwKeystore` (round-5 device-capture closure
 # F-PHD-DC-R10-1 Component 1). Раньше в [dev-dependencies] (attestation

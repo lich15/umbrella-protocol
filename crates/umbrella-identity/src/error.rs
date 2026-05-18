@@ -119,4 +119,41 @@ pub enum IdentityError {
     #[cfg(feature = "pq")]
     #[error("post-quantum primitive error: {0}")]
     Pq(#[from] umbrella_pq::PqError),
+
+    /// Операция KeyStore не поддерживается в hardware-backed режиме на v1.0.0.
+    ///
+    /// **F-IDENT-1 + F-IDENT-2 closure (PhD-B Pass 5 remediation).**
+    /// `HwBackedKeyStore` (`crates/umbrella-client/src/keystore/hw_backed.rs`)
+    /// реализует только identity-sk операции через
+    /// `PersistentKeyStoreCallback`. Device-key registration, X25519 DH, и PQ
+    /// primitives требуют расширения callback интерфейса (новые методы для
+    /// generate device handle, X25519 DH в TEE, ML-DSA / SLH-DSA / X-Wing
+    /// поверх Secure Enclave / StrongBox) — это отдельный track v1.2.x
+    /// (F-IDENT-DEVICE-1, F-IDENT-X25519-1, F-IDENT-PQ-1). Вариант
+    /// `HwBackedUnsupported` сигналит вызывающему что метод оставлен закрытым
+    /// fail-closed (как `ClientCore::new_with_http2`) до landing callback
+    /// expansion.
+    ///
+    /// KeyStore operation not supported in hardware-backed mode at v1.0.0.
+    ///
+    /// **F-IDENT-1 + F-IDENT-2 closure (PhD-B Pass 5 remediation).**
+    /// `HwBackedKeyStore` (`crates/umbrella-client/src/keystore/hw_backed.rs`)
+    /// implements only identity-sk operations via
+    /// `PersistentKeyStoreCallback`. Device-key registration, X25519 DH, and
+    /// PQ primitives require expanding the callback interface (new methods
+    /// for generating a device handle, X25519 DH inside the TEE, ML-DSA /
+    /// SLH-DSA / X-Wing on top of Secure Enclave / StrongBox) — this is a
+    /// separate v1.2.x track (F-IDENT-DEVICE-1, F-IDENT-X25519-1,
+    /// F-IDENT-PQ-1). The `HwBackedUnsupported` variant signals callers that
+    /// the method is fail-closed (like `ClientCore::new_with_http2`) until
+    /// callback expansion lands.
+    #[error("keystore method {method} not supported in hardware-backed mode at v1.0.0: {reason}")]
+    HwBackedUnsupported {
+        /// Имя метода KeyStore trait который вернул эту ошибку.
+        /// KeyStore trait method that returned this error.
+        method: &'static str,
+        /// Причина / след follow-up findings.
+        /// Reason / pointer to follow-up findings.
+        reason: &'static str,
+    },
 }

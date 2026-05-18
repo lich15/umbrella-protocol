@@ -13,13 +13,14 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use umbrella_backup::cloud_wrap::WrappingParams;
 use umbrella_calls::CallPolicy;
-use umbrella_identity::{IdentityKey, IdentitySeed};
+use umbrella_identity::{IdentityKey, IdentitySeed, KeyStore};
 use umbrella_kt::KtLogState;
 
 use crate::error::{ClientError, Result};
 use crate::facade::chat_common::UMBRELLA_CIPHERSUITE_CLASSICAL_DEFAULT;
 #[cfg(feature = "pq")]
 use crate::facade::chat_common::UMBRELLA_CIPHERSUITE_PQ_HYBRID;
+use crate::keystore::hw_backed::HwBackedKeyStore;
 use crate::keystore::hw_callback::{
     bootstrap_hw_identity, HwKeyHandle, PersistentKeyStoreCallback,
 };
@@ -373,6 +374,44 @@ pub struct ClientCore {
     /// the real verifying-key surfaced at bootstrap-time without round-
     /// tripping to the TEE on every read.
     pub(crate) hw_verifying_key: Option<[u8; 32]>,
+
+    /// Канонический `KeyStore` impl для этого ClientCore.
+    /// `Some(HwBackedKeyStore)` если клиент был bootstrapped через
+    /// [`ClientCore::new_with_hw_callback`] — identity-sk операции
+    /// маршрутизируются через TEE callback. `None` для legacy / test
+    /// path'ей через [`ClientCore::new_for_test`] — Block 7.2 facade
+    /// stubs до сих пор конструируют [`umbrella_identity::InMemoryKeyStore`]
+    /// inline в test wiring.
+    ///
+    /// **F-IDENT-1 + F-IDENT-2 closure (PhD-B Pass 5 remediation
+    /// 2026-05-19):** до closure единственным `KeyStore` impl был
+    /// `umbrella_identity::InMemoryKeyStore`, который держит
+    /// `IdentitySeed` в process heap для lifetime keystore'а (F-IDENT-2
+    /// gap). Closure добавляет [`HwBackedKeyStore`] (нет `seed` поля по
+    /// дизайну) и регистрирует его в этом слоте на hw-bootstrap path —
+    /// production deployment получает каноничный KeyStore без in-heap
+    /// материализации identity_sk. Block 7.4+ facades будут consume
+    /// `core.keystore()` accessor вместо inline `InMemoryKeyStore::open`.
+    ///
+    /// Canonical `KeyStore` impl for this ClientCore. `Some(HwBackedKeyStore)`
+    /// if the client was bootstrapped through
+    /// [`ClientCore::new_with_hw_callback`] — identity-sk operations
+    /// route through the TEE callback. `None` for legacy / test paths
+    /// through [`ClientCore::new_for_test`] — Block 7.2 facade stubs
+    /// still construct [`umbrella_identity::InMemoryKeyStore`] inline in
+    /// test wiring.
+    ///
+    /// **F-IDENT-1 + F-IDENT-2 closure (PhD-B Pass 5 remediation
+    /// 2026-05-19):** before the closure the only `KeyStore` impl was
+    /// `umbrella_identity::InMemoryKeyStore`, which keeps an
+    /// `IdentitySeed` in the process heap for the keystore's lifetime
+    /// (the F-IDENT-2 gap). The closure adds [`HwBackedKeyStore`] (no
+    /// `seed` field by design) and registers it in this slot on the
+    /// hw-bootstrap path — production deployment now gets a canonical
+    /// KeyStore with no in-heap identity_sk materialisation. Block
+    /// 7.4+ facades will consume the `core.keystore()` accessor instead
+    /// of inline `InMemoryKeyStore::open` calls.
+    pub(crate) keystore: Option<Arc<dyn KeyStore>>,
 }
 
 impl ClientCore {
@@ -414,6 +453,10 @@ impl ClientCore {
             hw_callback: None,
             hw_identity_handle: None,
             hw_verifying_key: None,
+            // Legacy/test path: facades still construct InMemoryKeyStore
+            // inline. F-IDENT-1 closure leaves this slot None on legacy
+            // bootstraps; Block 7.4+ facade refactor will consolidate.
+            keystore: None,
         }))
     }
 
@@ -490,6 +533,19 @@ impl ClientCore {
         let unwrap_transport: Arc<dyn AsyncUnwrapTransport + Send + Sync> =
             Arc::new(StubUnwrapTransport::default());
 
+        // F-IDENT-1 + F-IDENT-2 closure: construct the canonical
+        // `HwBackedKeyStore` over the bootstrap byproducts. Identity-sk
+        // operations route through `callback.sign_identity` — no
+        // IdentitySeed materialisation. Account index hardcoded to 0
+        // for Block 7.2; multi-account work is a Block 7.4+ refactor.
+        let hw_keystore = HwBackedKeyStore::new(
+            0,
+            callback.clone(),
+            handle.clone(),
+            verifying_key,
+        )?;
+        let keystore: Arc<dyn KeyStore> = Arc::new(hw_keystore);
+
         Ok(Arc::new(Self {
             identity: None,
             device_index: 0,
@@ -503,6 +559,7 @@ impl ClientCore {
             hw_callback: Some(callback),
             hw_identity_handle: Some(handle),
             hw_verifying_key: Some(verifying_key),
+            keystore: Some(keystore),
         }))
     }
 
@@ -600,6 +657,37 @@ impl ClientCore {
             "ClientCore invariant violated: neither identity nor hw_verifying_key is populated"
                 .to_string(),
         ))
+    }
+
+    /// Канонический `KeyStore` impl для этого ClientCore.
+    ///
+    /// **F-IDENT-1 + F-IDENT-2 closure accessor (PhD-B Pass 5
+    /// remediation 2026-05-19):** на hw-bootstrap path возвращает
+    /// `Some(Arc<HwBackedKeyStore>)` — identity-sk операции
+    /// маршрутизируются через TEE callback, без in-heap материализации.
+    /// На legacy / test path возвращает `None` — Block 7.2 facade
+    /// stubs до сих пор конструируют `InMemoryKeyStore` inline. Block
+    /// 7.4+ facade refactor должен предпочитать `core.keystore()` над
+    /// inline `InMemoryKeyStore::open` чтобы full closure F-IDENT-1
+    /// + F-IDENT-2 был effective end-to-end (в hw-mode no seed
+    /// materialised; в legacy mode keystore lifetime под контролем
+    /// ClientCore).
+    ///
+    /// Canonical `KeyStore` impl for this ClientCore.
+    ///
+    /// **F-IDENT-1 + F-IDENT-2 closure accessor (PhD-B Pass 5
+    /// remediation 2026-05-19):** on the hw-bootstrap path returns
+    /// `Some(Arc<HwBackedKeyStore>)` — identity-sk operations route
+    /// through the TEE callback, no in-heap materialisation. On the
+    /// legacy / test path returns `None` — Block 7.2 facade stubs
+    /// still construct `InMemoryKeyStore` inline. The Block 7.4+
+    /// facade refactor must prefer `core.keystore()` over inline
+    /// `InMemoryKeyStore::open` so the F-IDENT-1 + F-IDENT-2 closure
+    /// is effective end-to-end (in hw-mode no seed is materialised;
+    /// in legacy mode the keystore lifetime is owned by ClientCore).
+    #[must_use]
+    pub fn keystore(&self) -> Option<Arc<dyn KeyStore>> {
+        self.keystore.clone()
     }
 
     /// Закрытая граница неполного HTTP/2 bootstrap.
@@ -999,6 +1087,91 @@ mod production_boundary_tests {
             cached_vk, direct_vk,
             "F-CLIENT-HW-1: cached hw_verifying_key MUST equal callback's verifying_key"
         );
+    }
+
+    /// **F-IDENT-1 + F-IDENT-2 closure: keystore partition invariant.**
+    ///
+    /// `core.keystore` populated on hw bootstrap (HwBackedKeyStore — no
+    /// `IdentitySeed`, no `IdentityKey`, callback-only signing path);
+    /// `None` on legacy bootstrap (Block 7.2 facades construct
+    /// `InMemoryKeyStore` inline in test wiring). The partition is
+    /// total — every correctly-bootstrapped ClientCore is in exactly one
+    /// regime — and the two regimes are disjoint at runtime.
+    ///
+    /// Concrete F-IDENT-2 reduction: pre-closure, `InMemoryKeyStore`
+    /// holds `seed: IdentitySeed` (64 bytes BIP-39 PBKDF2-derived seed)
+    /// for the keystore's lifetime — `add_device` re-derives every
+    /// device key from that seed at request time, so an adversary with
+    /// runtime memory access can regenerate every device_sk plus the
+    /// identity_sk without leaking individual device material directly.
+    /// Post-closure, on the hw path, `core.keystore` is a
+    /// `HwBackedKeyStore` instance whose memory layout contains 0 bytes
+    /// of secret seed material (size_of check in
+    /// `keystore::hw_backed::tests`); signing scalar lives in TEE.
+    #[tokio::test]
+    async fn f_ident_1_2_keystore_partition_total_and_disjoint() {
+        use crate::keystore::hw_callback::{MockHwKeystore, PersistentKeyStoreCallback};
+
+        // Legacy bootstrap: keystore is None (Block 7.2 facades still
+        // use inline InMemoryKeyStore via test wiring).
+        let legacy_core =
+            ClientCore::new_for_test(production_shaped_config(), test_seed())
+                .await
+                .expect("legacy bootstrap");
+        assert!(
+            legacy_core.keystore.is_none(),
+            "F-IDENT-1 closure: legacy bootstrap MUST leave core.keystore None — Block 7.2 \
+             facades still construct InMemoryKeyStore inline; Block 7.4+ refactor will \
+             consolidate via core.keystore() accessor"
+        );
+
+        // HW bootstrap: keystore is Some(HwBackedKeyStore) — F-IDENT-1
+        // closure registers canonical KeyStore impl that routes
+        // identity-sk operations through callback. F-IDENT-2 closure:
+        // HwBackedKeyStore has no `seed` field (see hw_backed.rs tests).
+        let mock = Arc::new(MockHwKeystore::new());
+        let callback: Arc<dyn PersistentKeyStoreCallback> = mock.clone();
+        let hw_core = ClientCore::new_with_hw_callback(
+            production_shaped_config(),
+            callback,
+            "f-ident-1-2.keystore-partition",
+        )
+        .await
+        .expect("hw bootstrap");
+        assert!(
+            hw_core.keystore.is_some(),
+            "F-IDENT-1 closure: hw bootstrap MUST register canonical HwBackedKeyStore in core.keystore"
+        );
+
+        // Round-trip: sign through the registered keystore, verify
+        // under hw_verifying_key. Pre-closure, NO production-suitable
+        // KeyStore impl existed for hw bootstrap (InMemoryKeyStore needs
+        // a seed); post-closure, the hw keystore is fully functional
+        // for identity-sk operations. Verification uses ed25519_dalek
+        // directly because `IdentityKeyPublic::verify` is `pub(crate)`
+        // in umbrella-identity and not reachable across crates — same
+        // pattern as the rest of the F-CLIENT-HW-1 closure regression
+        // suite.
+        let keystore = hw_core.keystore.as_ref().expect("hw keystore");
+        let msg = b"F-IDENT-1 closure keystore round-trip";
+        let sig = keystore.sign_with_identity(msg);
+
+        let hw_vk_bytes = hw_core.hw_verifying_key.expect("hw_verifying_key");
+        let dalek_vk = ed25519_dalek::VerifyingKey::from_bytes(&hw_vk_bytes)
+            .expect("hw_verifying_key decodes as Ed25519 point");
+        let dalek_sig = ed25519_dalek::Signature::from_bytes(&sig.to_bytes());
+        ed25519_dalek::Verifier::verify(&dalek_vk, msg, &dalek_sig)
+            .expect("F-IDENT-1: hw keystore signature MUST verify under cached hw_verifying_key");
+
+        // Sanity: identity_public reported by the keystore matches the
+        // cached hw_verifying_key bytes — no drift between the two
+        // pubkey surfaces on the hw path.
+        assert_eq!(
+            keystore.identity_public().to_bytes(),
+            hw_vk_bytes,
+            "F-IDENT-1: hw keystore identity_public MUST equal cached hw_verifying_key bytes"
+        );
+        assert_eq!(keystore.account(), 0);
     }
 
     /// **F-CLIENT-HW-1 closure: unified accessor invariant.**

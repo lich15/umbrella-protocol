@@ -189,6 +189,133 @@ async fn f_client_hw_1_legacy_accessor_matches_identity_public() {
     );
 }
 
+/// **F-IDENT-1 + F-IDENT-2 closure regression test — canonical
+/// HwBackedKeyStore wiring through public API.**
+///
+/// Public-API view: `core.keystore()` accessor returns
+/// `Some(Arc<dyn KeyStore>)` on hw bootstrap. The returned keystore
+/// signs through the hardware callback (signatures verify under the
+/// keystore's own `identity_public()`) and exposes the consistent
+/// `account()` from bootstrap.
+///
+/// Pre-closure (before F-IDENT-1): no `core.keystore` accessor existed;
+/// facades constructed `InMemoryKeyStore::open(seed, ...)` inline,
+/// which (a) defeated TEE residency for identity_sk and (b) kept the
+/// seed in process heap for the keystore's lifetime (F-IDENT-2 gap).
+/// Post-closure: hw-bootstrapped clients hand consumers a
+/// `HwBackedKeyStore` directly — no seed, callback-routed signing.
+#[tokio::test]
+async fn f_ident_1_2_core_keystore_accessor_returns_hw_backed_on_hw_bootstrap() {
+    use umbrella_identity::KeyStore;
+
+    let mock = Arc::new(MockHwKeystore::new());
+    let callback: Arc<dyn PersistentKeyStoreCallback> = mock.clone();
+    let core = ClientCore::new_with_hw_callback(
+        ClientConfig::default(),
+        callback,
+        "f-ident-1-2.public-api.accessor",
+    )
+    .await
+    .expect("hw bootstrap");
+
+    let keystore: Arc<dyn KeyStore> = core
+        .keystore()
+        .expect("F-IDENT-1: hw bootstrap MUST populate core.keystore");
+
+    // KeyStore round-trip via public API:
+    //   1. sign through keystore (routes into hw_callback.sign_identity)
+    //   2. verify under keystore.identity_public() — verification uses
+    //      ed25519_dalek directly because IdentityKeyPublic::verify is
+    //      pub(crate) in umbrella-identity.
+    let msg = b"F-IDENT-1+F-IDENT-2 closure public-API round-trip";
+    let sig = keystore.sign_with_identity(msg);
+    let pub_bytes = keystore.identity_public().to_bytes();
+    let dalek_vk = ed25519_dalek::VerifyingKey::from_bytes(&pub_bytes)
+        .expect("identity_public decodes as Ed25519 point");
+    let dalek_sig = ed25519_dalek::Signature::from_bytes(&sig.to_bytes());
+    ed25519_dalek::Verifier::verify(&dalek_vk, msg, &dalek_sig)
+        .expect("hw keystore signature verifies under its identity_public");
+
+    // account propagated from bootstrap (currently hardcoded to 0).
+    assert_eq!(keystore.account(), 0);
+
+    // Honest scope of v1.0.0 closure: device-related queries return
+    // "no devices" consistently; `add_device` fails closed with
+    // `HwBackedUnsupported` (device-key in TEE is F-IDENT-DEVICE-1
+    // v1.2.x track).
+    assert!(keystore.active_device_indices().is_empty());
+    assert!(keystore.device_public(0).is_none());
+    assert!(matches!(
+        keystore.add_device(0, None),
+        Err(umbrella_identity::IdentityError::HwBackedUnsupported {
+            method: "add_device",
+            ..
+        })
+    ));
+}
+
+/// **F-IDENT-1 closure regression test — legacy partition.**
+///
+/// Legacy `new_for_test` bootstrap leaves `core.keystore()` as `None`
+/// (Block 7.2 facade stubs construct `InMemoryKeyStore` inline through
+/// test wiring; Block 7.4+ refactor will consolidate via the accessor).
+/// This guard ensures the closure doesn't accidentally wire an
+/// `InMemoryKeyStore` into legacy bootstrap (which would extend the
+/// F-IDENT-2 seed lifetime to `ClientCore`'s lifetime).
+#[tokio::test]
+async fn f_ident_1_2_core_keystore_accessor_is_none_on_legacy_bootstrap() {
+    use umbrella_identity::{IdentitySeed, MnemonicLanguage};
+    let seed = IdentitySeed::generate(&mut rand_core::OsRng, MnemonicLanguage::English);
+    let core = ClientCore::new_for_test(ClientConfig::default(), seed)
+        .await
+        .expect("legacy bootstrap");
+    assert!(
+        core.keystore().is_none(),
+        "F-IDENT-1 closure partition: legacy bootstrap MUST leave core.keystore() None — \
+         pre-closure facades constructed InMemoryKeyStore inline which kept seed in heap"
+    );
+}
+
+/// **F-IDENT-2 closure regression test — keystore from accessor has no
+/// IdentitySeed.**
+///
+/// Indirect, behavioural check via public API: the keystore obtained
+/// from `core.keystore()` on the hw path must NOT round-trip through
+/// any seed-derivative operation (e.g. attempting to `add_device` on it
+/// must NOT silently succeed via a hidden seed-backed derivation; it
+/// must fail closed with `HwBackedUnsupported`). Direct verification of
+/// the absence of a `seed` field lives in
+/// `crates/umbrella-client/src/keystore/hw_backed.rs` unit tests.
+#[tokio::test]
+async fn f_ident_2_hw_keystore_has_no_seed_backed_device_derivation_path() {
+    let mock = Arc::new(MockHwKeystore::new());
+    let callback: Arc<dyn PersistentKeyStoreCallback> = mock.clone();
+    let core = ClientCore::new_with_hw_callback(
+        ClientConfig::default(),
+        callback,
+        "f-ident-2.no-seed-derivation",
+    )
+    .await
+    .expect("hw bootstrap");
+
+    let keystore = core.keystore().expect("hw keystore");
+    // Pre-closure, `InMemoryKeyStore.add_device` would re-derive
+    // `DeviceKey::derive(&self.seed, ...)` and silently succeed —
+    // proof that the seed was kept around for the keystore's
+    // lifetime. Post-closure, on the hw path, `add_device` MUST
+    // fail closed because no seed exists (HwBackedKeyStore by design
+    // has no `seed` field).
+    let result = keystore.add_device(0, None);
+    assert!(
+        matches!(
+            result,
+            Err(umbrella_identity::IdentityError::HwBackedUnsupported { .. })
+        ),
+        "F-IDENT-2 closure: hw keystore add_device MUST fail closed (no seed-derivation path); \
+         pre-closure InMemoryKeyStore.add_device silently re-derived DeviceKey from kept seed"
+    );
+}
+
 /// **F-CLIENT-HW-1 closure regression test — HW path has no leakable
 /// in-heap identity key.**
 ///

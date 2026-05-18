@@ -4310,6 +4310,7 @@ dependencies = [
  "umbrella-mls",
  "umbrella-oprf",
  "umbrella-padding",
+ "umbrella-pq",
  "umbrella-sealed-sender",
  "umbrella-threshold-identity",
  "webrtc-ice",

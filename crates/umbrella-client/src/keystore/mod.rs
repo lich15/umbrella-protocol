@@ -14,6 +14,7 @@
 //!   F-PHD-DC-R10-1).
 
 pub mod distributed_identity_client;
+pub mod hw_backed;
 pub mod hw_callback;
 pub mod migrations;
 pub mod row_cipher;
@@ -21,6 +22,8 @@ pub mod schema;
 pub mod sqlite_store;
 pub mod trait_def;
 
+#[doc(inline)]
+pub use hw_backed::HwBackedKeyStore;
 #[doc(inline)]
 pub use hw_callback::{
     bootstrap_hw_identity, HwKeyHandle, HwKeystoreError, MockHwKeystore,
