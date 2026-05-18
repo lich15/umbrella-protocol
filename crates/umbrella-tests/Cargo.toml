@@ -112,3 +112,17 @@ serde_json = { workspace = true }
 hex = { workspace = true }
 rand_core = { workspace = true, features = ["getrandom"] }
 tokio = { workspace = true }
+# PhD-B Pass 4 real-vs-paperwork closure (2026-05-18 attack_phd4_real_exploits.rs):
+# direct API access to umbrella-threshold-identity::{anonymous_id, pin_kdf} +
+# hkdf::Hkdf + sha2::Sha256 для воспроизведения F-2 анонимной ID-цепочки
+# адверсарской стороны (PIN + salt → anon_ids локально без серверов).
+#
+# PhD-B Pass 4 real-vs-paperwork closure (2026-05-18
+# attack_phd4_real_exploits.rs): direct API access to
+# umbrella-threshold-identity::{anonymous_id, pin_kdf} + hkdf::Hkdf +
+# sha2::Sha256 to reproduce the F-2 anonymous-ID adversary chain (PIN +
+# salt → anon_ids locally without server interaction).
+umbrella-threshold-identity = { workspace = true }
+hkdf = { workspace = true }
+sha2 = { workspace = true }
+rand_chacha = { workspace = true }
