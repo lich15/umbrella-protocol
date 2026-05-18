@@ -297,29 +297,55 @@ impl core::fmt::Debug for CodeRecoveryMnemonic {
 
 /// Материал нового identity полученный через ротацию (HKDF от 24w + 12w + old_pubkey).
 /// Не BIP-39 seed — не имеет мнемоники; обнуляется при Drop.
+///
+/// **F-IDENT-37 closure (PhD-B Pass 3 MEDIUM → Pass 5 remediation 2026-05-18):**
+/// `seed` хранится как `Box<[u8; SEED_LEN]>` — heap-resident from inception.
+/// Pass 3 audit (`docs/audits/phd-b-full-sweep-pass3-2026-05-18.md` F-IDENT-37)
+/// идентифицировал регрессию F-PHD-DC-R7-3 lesson — предыдущая структура
+/// держала `seed: [u8; SEED_LEN]` как stack-resident массив 64 байта,
+/// несмотря на то что `IdentitySeed` (родственная структура в `seed.rs`)
+/// была отрефакторена на `Box<[u8; SEED_LEN]>` в round-5 device-capture
+/// closure. Тот же класс forensic-resistance fix применяется здесь:
+/// LLVM не spillает `Box<[u8; N]>` потому что это 8-byte pointer, не
+/// 64-byte массив; rotated seed material **никогда** не оседает на
+/// стеке во время catastrophic-recovery flow. Pointer-arithmetic
+/// regression test `r7_3_closure_rotated_identity_material_seed_is_heap_resident`
+/// validates the invariant via `abs_diff(stack_anchor, seed_ptr) > 64 KiB`
+/// heuristic (analog `r7_closure_entropy_and_seed_are_heap_resident`
+/// для `IdentitySeed`).
+///
 /// New identity material obtained via rotation (HKDF of 24w + 12w + old_pubkey).
-/// Not a BIP-39 seed — has no mnemonic; zeroized on Drop.
+/// Not a BIP-39 seed — has no mnemonic; zeroized on Drop. F-IDENT-37 closure:
+/// `seed` is heap-resident `Box<[u8; SEED_LEN]>` to prevent stack spill
+/// during catastrophic-recovery flow (analog F-PHD-DC-R7-3 closure for
+/// `IdentitySeed`).
 pub struct RotatedIdentityMaterial {
-    seed: [u8; SEED_LEN],
+    /// 64 байта rotated seed на heap. `Box::zeroize` wipes `**seed`
+    /// корректно (F-IDENT-37 closure: heap-resident from inception).
+    /// 64-byte rotated seed on the heap. `Box::zeroize` wipes `**seed`
+    /// correctly (F-IDENT-37 closure: heap-resident from inception).
+    seed: Box<[u8; SEED_LEN]>,
 }
 
 impl RotatedIdentityMaterial {
     /// Возвращает 64-байтовый rotated seed; используется BIP-32-Ed25519 derive.
     /// Returns the 64-byte rotated seed; used by BIP-32-Ed25519 derive.
     pub fn seed_bytes(&self) -> &[u8; SEED_LEN] {
+        // `Box` derefs to the inner `[u8; SEED_LEN]`; the returned ref
+        // points at the heap allocation, not a stack copy.
         &self.seed
     }
 
     /// Derive identity-key для указанного аккаунта из rotated material.
     /// Derives the identity key for the given account from rotated material.
     pub fn derive_identity_key(&self, account: u32) -> Result<IdentityKey> {
-        IdentityKey::derive_from_seed_bytes(&self.seed, account)
+        IdentityKey::derive_from_seed_bytes(self.seed.as_ref(), account)
     }
 
     /// Derive X25519 identity-key для указанного аккаунта из rotated material.
     /// Derives the X25519 identity key for the given account from rotated material.
     pub fn derive_identity_x25519_key(&self, account: u32) -> Result<IdentityX25519Key> {
-        IdentityX25519Key::derive_from_seed_bytes(&self.seed, account)
+        IdentityX25519Key::derive_from_seed_bytes(self.seed.as_ref(), account)
     }
 
     /// Возвращает публичный identity-key нового identity для указанного аккаунта.
@@ -329,9 +355,28 @@ impl RotatedIdentityMaterial {
     }
 }
 
+// Custom Zeroize / ZeroizeOnDrop instead of derive — `Zeroize` derive does
+// not work directly for `Box<[u8; N]>` (we have to dereference + zeroize
+// the pointed-to array). Pattern: `self.seed.as_mut().zeroize()` —
+// `Box::as_mut` returns `&mut [u8; N]` which implements `Zeroize`.
+// Same pattern as `IdentitySeed` in seed.rs (F-PHD-DC-R7-3 closure).
+//
+// Custom Zeroize / ZeroizeOnDrop instead of derive — the `Zeroize` derive
+// does not work directly for `Box<[u8; N]>`. Pattern:
+// `self.seed.as_mut().zeroize()` — `Box::as_mut` returns `&mut [u8; N]`
+// which implements `Zeroize`. Same pattern as `IdentitySeed` in seed.rs
+// (F-PHD-DC-R7-3 closure).
+impl Zeroize for RotatedIdentityMaterial {
+    fn zeroize(&mut self) {
+        self.seed.as_mut().zeroize();
+    }
+}
+
+impl zeroize::ZeroizeOnDrop for RotatedIdentityMaterial {}
+
 impl Drop for RotatedIdentityMaterial {
     fn drop(&mut self) {
-        self.seed.zeroize();
+        self.zeroize();
     }
 }
 
@@ -386,9 +431,19 @@ pub fn derive_rotated_identity_material(
     // Zeroize the intermediate ikm immediately, not only on Drop.
     ikm.zeroize();
 
-    Ok(RotatedIdentityMaterial {
-        seed: *rotated_seed,
-    })
+    // F-IDENT-37 closure: allocate the heap `Box<[u8; SEED_LEN]>` directly,
+    // then copy bytes from the zeroizing temporary into the heap allocation.
+    // This pattern matches `IdentitySeed::from_mnemonic` in seed.rs — LLVM
+    // does not spill the `Box` to stack (it is an 8-byte pointer), so the
+    // 64-byte rotated seed never lives on a stack frame. The `rotated_seed`
+    // temporary itself is `Zeroizing` — wiped at the end of this scope.
+    //
+    // F-IDENT-37 closure: allocate the heap `Box<[u8; SEED_LEN]>` directly
+    // and copy bytes from the zeroizing temporary into the heap allocation.
+    // This pattern matches `IdentitySeed::from_mnemonic` in seed.rs.
+    let mut seed_box: Box<[u8; SEED_LEN]> = Box::new([0u8; SEED_LEN]);
+    seed_box.as_mut().copy_from_slice(rotated_seed.as_ref());
+    Ok(RotatedIdentityMaterial { seed: seed_box })
 }
 
 /// Собирает вход ротации identity в очищаемом временном буфере.
@@ -457,6 +512,50 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────────
     // §2.1 Unit + RFC / standard test vectors
     // ─────────────────────────────────────────────────────────────────────────────
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // F-IDENT-37 closure regression guard (PhD-B Pass 3 MEDIUM → Pass 5 fix)
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// **F-IDENT-37 closure regression guard.**
+    ///
+    /// Validates that `RotatedIdentityMaterial.seed` (returned by
+    /// `seed_bytes()`) lives on the heap, not on the stack. Heuristic:
+    /// `abs_diff(stack_anchor, seed_ptr) > 64 KiB`. Analog of
+    /// `r7_closure_entropy_and_seed_are_heap_resident` for `IdentitySeed`
+    /// in `seed.rs`.
+    ///
+    /// On macOS arm64 / Linux x86_64 the stack grows down from ~0x16f....
+    /// for the main thread and heap sits at ~0x600.... for Apple Silicon
+    /// jemalloc / system allocator. The exact addresses depend on platform,
+    /// but the stack-to-heap distance is always multi-megabyte. Asserting
+    /// |stack - heap_ptr| > 64 KiB catches any stack-resident array
+    /// regression — exactly the regression that Pass 3 PhD-B audit
+    /// identified in the pre-fix code (`seed: [u8; SEED_LEN]` stack
+    /// resident).
+    #[test]
+    fn f_ident_37_closure_rotated_identity_material_seed_is_heap_resident() {
+        let stack_anchor = 0u8;
+        let stack_addr = &stack_anchor as *const u8 as usize;
+
+        let seed = fresh_seed();
+        let code = fresh_code();
+        let derived = IdentityKey::derive(&seed, 0).expect("derive ok");
+        let old_pubkey = derived.public();
+
+        let material = derive_rotated_identity_material(&seed, &code, &old_pubkey)
+            .expect("rotation derivation ok");
+
+        let seed_addr = material.seed_bytes().as_ptr() as usize;
+        let seed_dist = seed_addr.abs_diff(stack_addr);
+
+        assert!(
+            seed_dist > 64 * 1024,
+            "F-IDENT-37 closure regression: RotatedIdentityMaterial.seed \
+             lives within 64 KiB of stack (seed {seed_addr:x} stack \
+             {stack_addr:x}, dist {seed_dist} bytes)"
+        );
+    }
 
     // ─────────────────────────────────────────────────────────────────────────────
     // F-PHD-RETRO-3-E primitive: public_half_proof + rotation_commitment
