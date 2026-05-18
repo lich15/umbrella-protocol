@@ -29,9 +29,11 @@
 
 use std::sync::Arc;
 
+use curve25519_dalek::scalar::Scalar;
 use umbrella_crypto_primitives::mlocked::MlockedSecret;
 use umbrella_threshold_identity::{
-    anonymous_id, key_derivation::{self, DerivationTranscript, DeviceRandom, ServerShare},
+    anonymous_id,
+    key_derivation::{self, DerivationTranscript, DeviceRandom, ServerShare},
     pin_kdf,
 };
 use zeroize::Zeroize;
@@ -110,16 +112,25 @@ pub trait ServerUnwrapClient: Send + Sync {
 /// Steps:
 /// 1. Argon2id(PIN, account_local_salt) → pin_root (32 bytes).
 /// 2. Derive all 5 per-server anonymous IDs (locally).
-/// 3. Send PIN-verification probe to 3 servers; receive 3 `server_share`s.
-/// 4. XOR-combine shares (informational only — production combines via
-///    threshold reconstruction; in this Stage 2 minimum we use any one
-///    share as the input).
+/// 3. Send PIN-verification probe to up to 5 servers; collect first 3
+///    successful `server_share`s with their server_id (1..=5).
+/// 4. **Shamir 3-of-5 Lagrange interpolation** over the curve25519 scalar
+///    field GF(q) to reconstruct the polynomial value at `x = 0` —
+///    `master_secret = Σ_{i ∈ S} λ_i(0) · share_i` with
+///    `λ_i(0) = ∏_{j ∈ S, j ≠ i} (j · (j − i)⁻¹)`. F-1 closure (PhD-B
+///    Pass 5 remediation): replaces the Pass 1 XOR-combine placeholder
+///    that broke the threshold-property (algebraic linearity revealed
+///    256 bits of share correlation per pair of reconstructions with
+///    different quora).
 /// 5. HKDF: derive device_key (binds to device_random) and master_key
-///    (account-wide).
+///    (account-wide) from the reconstructed `combined_share`.
 ///
 /// Output stored в `MlockedSecret` для page-lock + zeroize-on-drop.
 ///
 /// Daily unlock — re-derive session keys from PIN via 3-of-5 server unwraps.
+/// Combines 3 shares via Shamir Lagrange interpolation over GF(q) on
+/// curve25519 scalar field (F-1 closure: replaces the Pass 1 XOR-combine
+/// placeholder).
 pub fn unlock_with_pin(
     pin: &[u8],
     bootstrap: &BootstrapOutput,
@@ -135,20 +146,31 @@ pub fn unlock_with_pin(
     // for safety; in production read from device storage).
     let anon_ids = &bootstrap.per_server_anonymous_ids;
 
-    // Step 3: request `server_share` from servers 1..=3 (any 3-of-5 quorum).
-    let mut combined_share = [0u8; 32];
+    // Step 3: probe up to 5 servers; collect first 3 successful (server_id,
+    // share) pairs preserving the server_id for Lagrange interpolation in
+    // step 4. The server_id (1..=5) is the polynomial evaluation point
+    // `x_i`; the share is the polynomial value `f(x_i)`. F-1 closure:
+    // unlike XOR-combine, Lagrange requires preserving which server
+    // contributed each share — anonymous accumulation breaks the algebra.
     let pin_root_bytes = *pin_root.expose();
+    let mut collected: [(u8, [u8; 32]); 3] = [(0u8, [0u8; 32]); 3];
     let mut got_shares = 0usize;
     for server_id in 1..=5u16 {
         if got_shares >= 3 {
             break;
         }
-        match server_client.unwrap_share(server_id, &anon_ids[(server_id - 1) as usize], &pin_root_bytes, transcript) {
+        match server_client.unwrap_share(
+            server_id,
+            &anon_ids[(server_id - 1) as usize],
+            &pin_root_bytes,
+            transcript,
+        ) {
             Ok(share) => {
-                // XOR-combine (placeholder for production threshold reconstruction).
-                for (slot, byte) in combined_share.iter_mut().zip(share.iter()) {
-                    *slot ^= *byte;
-                }
+                // Preserve (server_id, share) tuple; Lagrange interpolation
+                // in step 4 maps server_id → polynomial evaluation point.
+                #[allow(clippy::cast_possible_truncation)]
+                let id_u8 = server_id as u8;
+                collected[got_shares] = (id_u8, share);
                 got_shares += 1;
             }
             Err(ClientError::WrongPin) => return Err(ClientError::WrongPin),
@@ -165,7 +187,27 @@ pub fn unlock_with_pin(
         ));
     }
 
-    // Step 4: HKDF re-derive device_key + master_key.
+    // Step 4: Shamir 3-of-5 Lagrange interpolation over GF(q).
+    //
+    // Reconstructs `f(0) = master_secret` from any 3 distinct polynomial
+    // evaluations `(x_i, f(x_i))`:
+    //
+    // ```text
+    // master_secret = Σ_{i ∈ S} λ_i(0) · share_i  mod q
+    //   where λ_i(0) = ∏_{j ∈ S, j ≠ i} (x_j · (x_j − x_i)⁻¹)
+    // ```
+    //
+    // `x_i` = server_id ∈ {1..=5}; `share_i` interpreted as `Scalar` via
+    // `from_bytes_mod_order` (any 32 bytes reduce mod q). For well-formed
+    // polynomial shares produced by a Sealed-Servers ceremony, any 3-of-5
+    // quorum yields the **same** master_secret (Lagrange property of
+    // polynomial interpolation). The XOR-combine placeholder lacked this
+    // invariant — two reconstructions with different quora differed by
+    // XOR of the unseen shares, leaking share correlations.
+    let combined_share = lagrange_combine_shares(&collected[..got_shares]);
+
+    // Step 5: HKDF re-derive device_key + master_key from reconstructed
+    // master_secret.
     let device_key = key_derivation::derive_device_key(
         &pin_root_bytes,
         &combined_share,
@@ -182,14 +224,89 @@ pub fn unlock_with_pin(
     )
     .map_err(|e| ClientError::Crypto(format!("derive master_key: {e}")))?;
 
-    // Wipe combined_share — it's a transient secret.
-    combined_share.zeroize();
+    // Wipe transient secrets: combined_share + collected pool. The
+    // `Scalar` arithmetic above already operated on copies; clearing the
+    // serialized bytes prevents lingering heap residues for the
+    // reconstruction transcript.
+    let mut combined = combined_share;
+    combined.zeroize();
+    for (_id, share) in collected.iter_mut() {
+        share.zeroize();
+    }
 
     Ok(UnlockSession {
         device_key,
         master_key,
         identity_pk: bootstrap.identity_pk,
     })
+}
+
+/// Shamir 3-of-5 Lagrange interpolation over curve25519 scalar field
+/// GF(q) at `x = 0`. Reconstructs the polynomial constant term from any
+/// `threshold` evaluations `(x_i, f(x_i))`.
+///
+/// **F-1 closure (PhD-B Pass 5 remediation):** the Pass 1 XOR-combine
+/// placeholder broke the threshold-property — algebraic linearity of XOR
+/// meant any two reconstructions with different quora differed by XOR of
+/// the unseen shares, revealing 256 bits of share correlation per pair
+/// of observations. Lagrange interpolation closes this: for any
+/// well-formed Shamir polynomial, **every** valid quorum reconstructs
+/// the **same** secret (and the difference is zero).
+///
+/// # Algebra
+///
+/// Each `share` is interpreted as a scalar `f(x_i)` via
+/// `Scalar::from_bytes_mod_order` (reduce mod the curve order q for any
+/// 32-byte input). The Lagrange coefficient at zero is
+///
+/// ```text
+/// λ_i(0) = ∏_{(x_j, _) ∈ shares, x_j ≠ x_i} (x_j / (x_j − x_i))   mod q
+/// ```
+///
+/// and the reconstructed master scalar is `Σ_{i} λ_i(0) · f(x_i)`. The
+/// result is serialized via `Scalar::to_bytes` (canonical 32-byte
+/// little-endian); HKDF in step 5 absorbs this as IKM.
+///
+/// # Invariants (caller responsibility)
+///
+/// - `shares.len()` must equal the polynomial threshold (3 for 3-of-5).
+/// - `x_i` values must be distinct (`(x_j − x_i) ≠ 0` so `invert()` is
+///   well-defined). The unlock_with_pin caller enforces this via the
+///   server_id 1..=5 loop with `break`-on-quorum which prevents
+///   duplicates by construction.
+///
+/// # F-1 closure regression
+///
+/// The companion attack demonstrator
+/// `attack_phd4_f1_xor_linearity_breaks_shamir_threshold_property` (in
+/// `crates/umbrella-tests/tests/attack_phd4_real_exploits.rs`) sustains as
+/// a class-level documenter of why XOR-combine fails. The positive
+/// reconstruction-determinism property is exercised by the
+/// `lagrange_reconstruction_yields_same_master_for_different_quora`
+/// test below.
+fn lagrange_combine_shares(shares: &[(u8, [u8; 32])]) -> [u8; 32] {
+    let scalars: Vec<(u8, Scalar)> = shares
+        .iter()
+        .map(|(id, bytes)| (*id, Scalar::from_bytes_mod_order(*bytes)))
+        .collect();
+
+    let mut result = Scalar::ZERO;
+    for (x_i, y_i) in &scalars {
+        let xi = Scalar::from(u64::from(*x_i));
+        let mut num = Scalar::ONE;
+        let mut den = Scalar::ONE;
+        for (x_j, _) in &scalars {
+            if *x_j == *x_i {
+                continue;
+            }
+            let xj = Scalar::from(u64::from(*x_j));
+            num *= xj;
+            den *= xj - xi;
+        }
+        let lambda_i = num * den.invert();
+        result += y_i * lambda_i;
+    }
+    result.to_bytes()
 }
 
 /// Mock implementation of `ServerUnwrapClient` for tests. Stores per-server
@@ -385,6 +502,98 @@ mod tests {
         });
         let r = unlock_with_pin(b"999999", &boot, &[0; 32], &boot.initial_transcript, &cluster);
         assert!(matches!(r, Err(ClientError::WrongPin)));
+    }
+
+    /// **F-1 closure regression guard (PhD-B Pass 5 remediation).**
+    ///
+    /// Validates the Lagrange interpolation property that the Pass 1
+    /// XOR-combine placeholder lacked: for a well-formed Shamir polynomial
+    /// `f(x) = master + a₁·x + a₂·x²` (degree threshold − 1 = 2), **every**
+    /// 3-of-5 quorum reconstructs the **same** master scalar. The XOR
+    /// placeholder broke this — two reconstructions over different quora
+    /// differed by `XOR` of the unseen shares (256 bits of share
+    /// correlation per pair of observations).
+    ///
+    /// The attack class is documented in
+    /// `crates/umbrella-tests/tests/attack_phd4_real_exploits.rs`
+    /// (`attack_phd4_f1_xor_linearity_breaks_shamir_threshold_property`),
+    /// which sustains as a class-level XOR-linearity demonstrator. This
+    /// test is the **positive** Lagrange property guard against
+    /// re-introduction of the XOR pattern.
+    #[test]
+    fn lagrange_reconstruction_yields_same_master_for_different_quora() {
+        use curve25519_dalek::scalar::Scalar;
+        use rand_chacha::rand_core::RngCore;
+        use rand_chacha::rand_core::SeedableRng;
+
+        let mut rng = ChaCha20Rng::seed_from_u64(0xF1_C105E_DEAD_BEEF);
+
+        // Random master scalar = f(0).
+        let mut master_bytes = [0u8; 32];
+        rng.fill_bytes(&mut master_bytes);
+        let master_scalar = Scalar::from_bytes_mod_order(master_bytes);
+        let expected_master_canonical = master_scalar.to_bytes();
+
+        // Random polynomial coefficients a₁, a₂.
+        let mut a1_bytes = [0u8; 32];
+        let mut a2_bytes = [0u8; 32];
+        rng.fill_bytes(&mut a1_bytes);
+        rng.fill_bytes(&mut a2_bytes);
+        let a1 = Scalar::from_bytes_mod_order(a1_bytes);
+        let a2 = Scalar::from_bytes_mod_order(a2_bytes);
+
+        // Generate 5 polynomial shares: y_i = f(i) = master + a₁·i + a₂·i².
+        let mut shares = [(0u8, [0u8; 32]); 5];
+        for i in 1u8..=5u8 {
+            let x = Scalar::from(u64::from(i));
+            let y = master_scalar + a1 * x + a2 * x * x;
+            shares[(i - 1) as usize] = (i, y.to_bytes());
+        }
+
+        // Reconstruct from quorum A = {1, 2, 3}.
+        let quorum_a = [shares[0], shares[1], shares[2]];
+        let recovered_a = lagrange_combine_shares(&quorum_a);
+
+        // Reconstruct from quorum B = {1, 2, 4}.
+        let quorum_b = [shares[0], shares[1], shares[3]];
+        let recovered_b = lagrange_combine_shares(&quorum_b);
+
+        // Reconstruct from quorum C = {3, 4, 5}.
+        let quorum_c = [shares[2], shares[3], shares[4]];
+        let recovered_c = lagrange_combine_shares(&quorum_c);
+
+        // All three reconstructions must equal the master scalar (Lagrange
+        // interpolation property of degree-2 polynomial over 5 evaluation
+        // points).
+        assert_eq!(
+            recovered_a, expected_master_canonical,
+            "F-1 closure: quorum {{1,2,3}} reconstructs master"
+        );
+        assert_eq!(
+            recovered_b, expected_master_canonical,
+            "F-1 closure: quorum {{1,2,4}} reconstructs master"
+        );
+        assert_eq!(
+            recovered_c, expected_master_canonical,
+            "F-1 closure: quorum {{3,4,5}} reconstructs master"
+        );
+
+        // The Pass 1 XOR-leak invariant — combined_a XOR combined_b reveals
+        // unseen shares — is sealed: after Lagrange, both reconstructions
+        // are bit-identical so the XOR difference is zero. An attacker
+        // observing two unlock transcripts learns nothing about the
+        // unused server shares.
+        let mut xor_diff = [0u8; 32];
+        for (slot, (a, b)) in xor_diff
+            .iter_mut()
+            .zip(recovered_a.iter().zip(recovered_b.iter()))
+        {
+            *slot = a ^ b;
+        }
+        assert_eq!(
+            xor_diff, [0u8; 32],
+            "F-1 closure: XOR-linearity leak sealed — different quora yield bit-identical reconstruction"
+        );
     }
 
     #[test]

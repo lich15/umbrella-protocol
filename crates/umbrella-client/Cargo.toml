@@ -68,6 +68,18 @@ umbrella-crypto-primitives = { workspace = true }
 ed25519-dalek = { workspace = true }
 rand_core = { workspace = true }
 
+# F-1 closure (PhD-B Pass 5 remediation): Shamir 3-of-5 Lagrange
+# interpolation over curve25519 scalar field GF(q) in
+# `keystore::distributed_identity_client::unlock_with_pin`. Replaces the
+# Pass 1 XOR-combine placeholder that broke threshold-property of the
+# round-7 distributed identity protocol (algebraic linearity leak: any
+# two reconstructions with different quora differ by XOR of unseen
+# shares, revealing share correlations).
+#
+# F-1 closure: Shamir 3-of-5 Lagrange interpolation over curve25519
+# scalar field in `keystore::distributed_identity_client::unlock_with_pin`.
+curve25519-dalek = { workspace = true }
+
 
 # Async runtime (production design Решение 3) и async-trait для UnwrapTransport impls.
 # Async runtime (production design Decision 3) and async-trait for UnwrapTransport impls.
