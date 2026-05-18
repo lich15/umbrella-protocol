@@ -50,6 +50,80 @@
 //!   уровень не используется по historical reasons (debug stack traces
 //!   + faster compile cycle); `--release` overrides per-call.
 //!
+//! # Sub-100ns sites: bounded fixture pools per Track E
+//!
+//! **F-DUDECT-METHODOLOGY-1 / F-DUDECT-HKDF-BORDERLINE-1 /
+//! F-DUDECT-PADDING-OBSERVATION-1 closure (PhD-B Pass 5 remediation,
+//! 2026-05-19):** sites measuring sub-100ns operations (raw
+//! `[u8; 32]::ct_eq`, HKDF-SHA256 wrapper, `strip_padding` tail check)
+//! must use bounded-pool fixtures для BOTH Fixed AND Random classes
+//! при sample budgets ≥ 100K. Pre-closure паттерн с single-buffer
+//! Fixed pool + `samples`-sized Random pool produces measurement
+//! artifacts: cache asymmetry (Fixed cache-hot vs Random cache-cold
+//! misses at 3.2+ MB working set) dominates over the sub-100ns
+//! operation timing, injecting false-positive |t| signals (6.8 — 20.0
+//! observed at 1M samples). Reparaz et al. §3 Figure 4 sample-
+//! saturation regime amplifies sub-nanosecond mean bias к significant
+//! |t| even for truly-CT primitives.
+//!
+//! **Bounded-pool methodology** (см. Site 6 reference + Sites 2/3/4
+//! post-closure в `tests/dudect_constant_time.rs`):
+//!
+//! 1. **Sub-100ns sites**: Fixed AND Random pools обе bounded к 32
+//!    fixtures × ≤256 bytes ≈ 16 KB total, fits L1d cache 16-32 KB.
+//!    Both classes cycle `idx % 32`. CT discriminator preserved
+//!    через 32 independent secrets per class.
+//! 2. **μs-scale sites** (Site 6 `RowCipher::decrypt_row` ~2.7 μs):
+//!    Fixed может re-use single fixture; Random bounded к 32.
+//!    Operation timing dominates cache asymmetry (~3 ns / 2670 ns =
+//!    0.11% relative).
+//! 3. **ms-scale sites** (Sites 5/8/10/11 OPRF/ML-KEM/X-Wing): cache
+//!    effect sub-noise-floor; current `pre_allocate_random_32(samples)`
+//!    либо bounded 32-pool оба acceptable per ADR-015 Решение 5
+//!    criterion 6.
+//!
+//! Per-operation-timing-tier gauge для добавления нового site:
+//! если operation < 100ns → bounded 32-pool symmetric; 100ns–1μs →
+//! bounded 32-pool symmetric или single-fixed-+-32-random; ≥1μs →
+//! pattern flexible.
+//!
+//! # Sub-100ns sites: bounded fixture pools per Track E
+//!
+//! **F-DUDECT-METHODOLOGY-1 / F-DUDECT-HKDF-BORDERLINE-1 /
+//! F-DUDECT-PADDING-OBSERVATION-1 closure (PhD-B Pass 5 remediation,
+//! 2026-05-19):** sites measuring sub-100 ns operations (raw
+//! `[u8; 32]::ct_eq`, the HKDF-SHA256 wrapper, the `strip_padding`
+//! tail check) must use bounded-pool fixtures for BOTH the Fixed AND
+//! Random classes at sample budgets ≥ 100 000. The pre-closure pattern
+//! with a single-buffer Fixed pool plus a `samples`-sized Random pool
+//! produced measurement artifacts: cache asymmetry (Fixed cache-hot
+//! vs Random cache-cold misses at 3.2+ MB working set) dominated the
+//! sub-100 ns operation timing, injecting false-positive |t| signals
+//! (6.8 — 20.0 observed at 1M samples). The Reparaz et al. §3 Figure 4
+//! sample-saturation regime amplifies a sub-nanosecond mean bias into
+//! a significant |t| even for truly-CT primitives.
+//!
+//! **Bounded-pool methodology** (see Site 6 reference + Sites 2/3/4
+//! post-closure in `tests/dudect_constant_time.rs`):
+//!
+//! 1. **Sub-100 ns sites**: BOTH Fixed and Random pools bounded to
+//!    32 fixtures × ≤256 bytes ≈ 16 KB total, fitting an L1d cache
+//!    of 16–32 KB. Both classes cycle `idx % 32`. The CT discriminator
+//!    is preserved by 32 independent secrets per class.
+//! 2. **μs-scale sites** (Site 6 `RowCipher::decrypt_row` ~2.7 μs):
+//!    Fixed may re-use a single fixture; Random is bounded to 32.
+//!    Operation timing dominates the cache asymmetry (~3 ns / 2670 ns
+//!    = 0.11 % relative).
+//! 3. **ms-scale sites** (Sites 5/8/10/11 OPRF / ML-KEM / X-Wing):
+//!    cache effect is below the noise floor; the current
+//!    `pre_allocate_random_32(samples)` or a bounded 32-pool both
+//!    acceptable per ADR-015 Decision 5 criterion 6.
+//!
+//! Per-operation-timing-tier gauge for adding a new site: if the
+//! operation runs in < 100 ns → bounded 32-pool symmetric for both
+//! classes; 100 ns – 1 μs → bounded 32-pool symmetric or single-fixed
+//! plus 32-random; ≥ 1 μs → pattern is flexible.
+//!
 //! Block 10.24 (Stage 10 Phase 3 cross-cutting) — statistical
 //! constant-time test through interleaving two input classes and
 //! Welch's t-test.
