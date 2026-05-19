@@ -396,6 +396,76 @@ impl CallSession {
         self.srtp_pipeline.is_keyed().await
     }
 
+    /// **F-CLIENT-FACADE-1 session 10e (2026-05-19):** шифрует RTP-пакет
+    /// под outbound SRTP Context для одной сессии (AEAD_AES_256_GCM, RFC
+    /// 7714 §14). Вход — полный RTP пакет (12+ byte header + payload);
+    /// возвращает SRTP wire-format: `RTP header (unchanged) || ciphertext
+    /// || 16-byte AEAD tag`.
+    ///
+    /// Делегирует в [`SrtpPipeline::encrypt_rtp`]; гарантия fail-closed
+    /// pre-keying (`install_srtp_keying` обязан предшествовать) consistent
+    /// с `mark_connected` gate (session 10c) — без keyed pipeline'а media
+    /// path не должен advertise готовность.
+    ///
+    /// # Errors
+    ///
+    /// - [`ClientError::Internal`] если SRTP pipeline ещё не keyed.
+    /// - [`ClientError::Internal`] для прочих webrtc-srtp ошибок
+    ///   (malformed RTP header, etc).
+    ///
+    /// **F-CLIENT-FACADE-1 session 10e (2026-05-19):** encrypts an RTP
+    /// packet under the outbound SRTP Context for this session
+    /// (AEAD_AES_256_GCM, RFC 7714 §14). Input is the full RTP packet
+    /// (12+ byte header + payload); returns SRTP wire-format: `RTP header
+    /// (unchanged) || ciphertext || 16-byte AEAD tag`.
+    ///
+    /// Delegates to [`SrtpPipeline::encrypt_rtp`]; fail-closed pre-keying
+    /// invariant consistent with the `mark_connected` gate (session 10c) —
+    /// without a keyed pipeline the media path must not advertise
+    /// readiness.
+    ///
+    /// # Errors
+    ///
+    /// - [`ClientError::Internal`] if the SRTP pipeline is not yet keyed.
+    /// - [`ClientError::Internal`] for other webrtc-srtp failures
+    ///   (malformed RTP header, etc.).
+    pub async fn srtp_encrypt_rtp(&self, plaintext: &[u8]) -> Result<Vec<u8>, ClientError> {
+        self.srtp_pipeline.encrypt_rtp(plaintext).await
+    }
+
+    /// **F-CLIENT-FACADE-1 session 10e (2026-05-19):** расшифровывает
+    /// SRTP-пакет под inbound SRTP Context для одной сессии
+    /// (AEAD_AES_256_GCM). Вход — полный SRTP wire-format пакет; на
+    /// выходе — оригинальный RTP пакет (header + plaintext payload). С
+    /// 64-кадровым sliding-window replay protection (per-SSRC).
+    ///
+    /// # Errors
+    ///
+    /// - [`ClientError::Internal`] если SRTP pipeline не keyed.
+    /// - [`ClientError::Call`]`(CallError::AeadAuthFailure)` при
+    ///   tampered ciphertext/tag/header либо неверном ключе.
+    /// - [`ClientError::Internal`] при replay detection (ssrc + sequence
+    ///   number в сообщении), out-of-window sequence numbers, и прочих
+    ///   webrtc-srtp ошибках.
+    ///
+    /// **F-CLIENT-FACADE-1 session 10e (2026-05-19):** decrypts an SRTP
+    /// packet under the inbound SRTP Context for this session
+    /// (AEAD_AES_256_GCM). Input is the full SRTP wire-format packet;
+    /// output is the original RTP packet (header + plaintext payload).
+    /// Uses a 64-frame sliding-window replay protection per SSRC.
+    ///
+    /// # Errors
+    ///
+    /// - [`ClientError::Internal`] if the SRTP pipeline is not keyed.
+    /// - [`ClientError::Call`]`(CallError::AeadAuthFailure)` on tampered
+    ///   ciphertext/tag/header or a wrong key.
+    /// - [`ClientError::Internal`] on replay detection (ssrc + sequence
+    ///   number in the message), out-of-window sequence numbers, and other
+    ///   webrtc-srtp failures.
+    pub async fn srtp_decrypt_rtp(&self, srtp: &[u8]) -> Result<Vec<u8>, ClientError> {
+        self.srtp_pipeline.decrypt_rtp(srtp).await
+    }
+
     /// **F-CLIENT-FACADE-1 session 10c (2026-05-19):** transition the
     /// session state from [`CallState::Signalling`] to
     /// [`CallState::IceGathering`]. Called by the signalling driver

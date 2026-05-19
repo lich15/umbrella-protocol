@@ -138,6 +138,22 @@ r2d2_sqlite = { workspace = true }
 # the production tree until a maintained path exists without bincode.
 webrtc-ice = { workspace = true }
 
+# F-CLIENT-FACADE-1 session 10e (2026-05-19): real SRTP encrypt/decrypt
+# integration in `call::srtp_pipeline::SrtpPipeline`. Two `Context` instances
+# (one-way per direction: outbound encrypts with local master key/salt,
+# inbound decrypts with remote master key/salt) implement the
+# `AEAD_AES_256_GCM` protection profile (RFC 7714 §14 code `0x0008`)
+# consistent с the SFrame `Aes256GcmSha512` choice (Stage 6). The
+# higher-level `webrtc-srtp::session::Session` API couples UDP socket
+# I/O via `Conn` + a tokio task; we deliberately use the lower-level
+# `Context` so the network plane stays decoupled from the crypto plane.
+# `Context::encrypt_rtp(&[u8])` / `decrypt_rtp(&[u8])` parse the RTP
+# header internally — we do not need a direct `rtp` crate dep.
+#
+# F-CLIENT-FACADE-1 session 10e (2026-05-19): real SRTP encrypt/decrypt
+# integration. Two one-way Context instances over AEAD_AES_256_GCM.
+webrtc-srtp = { workspace = true }
+
 # Symmetric AEAD для per-row encryption в SqliteMetadataStore (production release)
 # и zeroize/secrecy для секретов. HKDF-SHA512 — deterministic nonce derive
 # из (master_key, context||row_id) для RowCipher (production design Решение 5.1.2).
