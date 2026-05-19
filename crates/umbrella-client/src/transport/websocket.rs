@@ -644,7 +644,7 @@ fn parse_negotiated_subprotocol(
     }
 }
 
-fn build_client_envelope(seq: u64, payload: ClientPayload) -> proto::ClientEnvelope {
+pub(crate) fn build_client_envelope(seq: u64, payload: ClientPayload) -> proto::ClientEnvelope {
     use proto::client_envelope::Payload;
     let payload = Some(match payload {
         ClientPayload::Ping { client_ts_ms } => Payload::Ping(proto::ClientPing { client_ts_ms }),
@@ -673,7 +673,7 @@ fn build_client_envelope(seq: u64, payload: ClientPayload) -> proto::ClientEnvel
     proto::ClientEnvelope { seq, payload }
 }
 
-fn decode_server_envelope(env: proto::ServerEnvelope) -> Result<ServerFrame, WsTransportError> {
+pub(crate) fn decode_server_envelope(env: proto::ServerEnvelope) -> Result<ServerFrame, WsTransportError> {
     use proto::server_envelope::Payload;
     let seq = env.seq;
     let payload = env.payload.ok_or(WsTransportError::UnknownServerPayload)?;

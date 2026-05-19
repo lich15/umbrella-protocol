@@ -12,11 +12,13 @@ pub mod async_unwrap;
 pub mod blind_postman;
 pub mod call_relay;
 pub mod cloud_backup;
+pub mod gateway;
 pub mod http2_client;
 pub mod kt_transport;
 pub mod pinning;
 #[doc(hidden)]
 pub mod proto_ws;
+pub mod quic;
 pub mod retry;
 pub mod stub;
 pub mod websocket;
@@ -36,6 +38,14 @@ pub use pinning::{
     SpkiPinningVerifier, SPKI_PIN_LEN,
 };
 pub use retry::{is_reqwest_retryable, retry_with_backoff, DEFAULT_MAX_ATTEMPTS};
+pub use gateway::{
+    default_quic_fallback_budget, GatewayConnection, GatewayTransport, GatewayTransportError,
+    NegotiatedTransport,
+};
+pub use quic::{
+    QuicConfig, QuicConnection, QuicTransport, QuicTransportError, ALPN_UMX_QUIC_V1,
+    QUIC_MAX_FRAME_BYTES,
+};
 pub use websocket::{
     ClientPayload, NegotiatedSubprotocol, ServerFrame, ServerPayload, WebSocketConnection,
     WebSocketTransport, WsConfig, WsTlsConfig, WsTransportError,

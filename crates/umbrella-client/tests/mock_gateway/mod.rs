@@ -40,6 +40,8 @@
 #![allow(dead_code, reason = "test-only helpers; not every contract test uses every behavior variant")]
 #![allow(clippy::result_large_err, reason = "tokio-tungstenite Callback trait fixes the Result<Response, ErrorResponse> signature; we cannot box the Err side")]
 
+pub mod quic;
+
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};

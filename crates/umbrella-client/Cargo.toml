@@ -176,6 +176,17 @@ tokio-tungstenite = { workspace = true }
 prost = { workspace = true }
 futures-util = { workspace = true }
 
+# F-CLIENT-FACADE-1 closure session 2 (2026-05-19): QUIC transport to the
+# gateway-svc UDP 443 endpoint (ALPN `umx-quic-v1`). Shares the SPKI-pinning
+# `rustls::ClientConfig` with the HTTP/2 and WebSocket transports so a single
+# cert-pin rotation flow covers all three. See
+# `docs/integration/gateway-svc-contract.md §2.1`.
+#
+# F-CLIENT-FACADE-1 closure session 2: QUIC transport to gateway-svc UDP 443
+# endpoint (ALPN umx-quic-v1).
+quinn = { workspace = true }
+bytes = { workspace = true }
+
 # Errors + structured logs.
 thiserror = { workspace = true }
 tracing = { workspace = true }
