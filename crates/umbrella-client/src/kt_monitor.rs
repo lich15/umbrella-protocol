@@ -205,3 +205,57 @@ pub async fn verify_kt_witness_signatures_for_epoch(
     let witness_set = core.kt_witness_set().await;
     verify_signed_epoch(&signed, &witness_set, threshold).map_err(ClientError::Kt)
 }
+
+/// **F-CLIENT-FACADE-1 session 8c2 (2026-05-19):** объединённый
+/// (combined) on-demand KT self-monitor проход на эпоху —
+/// последовательно вызывает [`verify_own_kt_entry_for_epoch`] и
+/// [`verify_kt_witness_signatures_for_epoch`]. Закрывает full SPEC-09 §6
+/// self-monitoring контракт single-call surface'ом: каждый tick
+/// (foreground refresh / background scheduled wake-up) должен запустить
+/// обе проверки за одну атомарную операцию.
+///
+/// **Short-circuit semantics** (постулат 14 fail-fast): если own-entry
+/// verify падает (ghost participant / device injection / account_id
+/// corruption / denial-of-device / entry absent), helper **сразу**
+/// возвращает ошибку — witness threshold check не выполняется. Логика:
+/// если log серверы УЖЕ обманывают конкретно нашу запись, witness
+/// quorum для этой эпохи не имеет смысла checking (atak уже доказан);
+/// + minor optimisation (избегаем fetch+verify witness sigs).
+///
+/// **Ordering rationale**:
+/// 1. Own-entry verify проверяет SPECIFIC к Alice scope: identity_pks,
+///    device-set, account_id consistency. Если этот провалился —
+///    Alice's own data is being manipulated; alert immediately.
+/// 2. Witness threshold проверяет GLOBAL scope: epoch root consistency
+///    across pinned 5-witness quorum. Защищает от split-view атак
+///    которые могут не повлиять на Alice's specific entry но
+///    компрометируют integrity всего log'а.
+///
+/// Production deployment: native UI thread / OS-scheduled background
+/// task (iOS BGProcessingTask, Android WorkManager) calls этот helper
+/// на интервале `ClientConfig.kt_monitor_interval_secs` (default 3600 =
+/// hourly). In-process tokio periodic task — НЕ best practice для
+/// мобильных платформ (battery + OS lifecycle management ограничения);
+/// session 8c2 deliberately exports synchronous-callable async helper
+/// rather than spawning Rust runtime task. Foreground polling +
+/// scheduled background wake-up — native layer responsibility.
+///
+/// **F-CLIENT-FACADE-1 session 8c2:** combined single-call KT self-
+/// monitor — runs own-entry verify then witness threshold verify with
+/// short-circuit on first failure. Replaces the need for callers to
+/// orchestrate the two helpers manually.
+///
+/// # Errors
+///
+/// - Любая ошибка [`verify_own_kt_entry_for_epoch`] (см. её docs) —
+///   propagated as-is, witness check skipped.
+/// - Любая ошибка [`verify_kt_witness_signatures_for_epoch`] (см. её
+///   docs) — propagated после успешного own-entry verify.
+pub async fn run_kt_self_monitor_once(
+    core: &Arc<ClientCore>,
+    epoch: u64,
+    threshold: usize,
+) -> Result<()> {
+    verify_own_kt_entry_for_epoch(core, epoch).await?;
+    verify_kt_witness_signatures_for_epoch(core, epoch, threshold).await
+}
