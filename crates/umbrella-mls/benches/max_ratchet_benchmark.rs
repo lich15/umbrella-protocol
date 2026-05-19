@@ -154,11 +154,42 @@ fn bench_spqr_hmac_256b(c: &mut Criterion) {
     });
 }
 
+/// SPQR HMAC over varying payload sizes — characterize bandwidth scaling.
+fn bench_spqr_hmac_payload_sizes(c: &mut Criterion) {
+    let key = [0x42u8; 32];
+    let mut group = c.benchmark_group("spqr_compute_hmac_scaling");
+    for size in [64usize, 256, 1024, 4096, 16384] {
+        let message = vec![0u8; size];
+        group.bench_function(format!("payload_{}_bytes", size), |b| {
+            b.iter(|| {
+                let mac = spqr::compute_hmac(black_box(&key), black_box(&message));
+                black_box(mac);
+            });
+        });
+    }
+    group.finish();
+}
+
+/// SPQR HMAC verify (constant-time) — should be same order как compute.
+fn bench_spqr_verify_hmac_256b(c: &mut Criterion) {
+    let key = [0x42u8; 32];
+    let message = vec![0u8; 256];
+    let mac = spqr::compute_hmac(&key, &message);
+    c.bench_function("spqr_verify_hmac_256B", |b| {
+        b.iter(|| {
+            let ok = spqr::verify_hmac(black_box(&key), black_box(&message), black_box(&mac));
+            black_box(ok);
+        });
+    });
+}
+
 criterion_group!(
     benches,
     bench_baseline_encrypt,
     bench_force_rekey,
     bench_max_ratchet_full,
-    bench_spqr_hmac_256b
+    bench_spqr_hmac_256b,
+    bench_spqr_hmac_payload_sizes,
+    bench_spqr_verify_hmac_256b
 );
 criterion_main!(benches);

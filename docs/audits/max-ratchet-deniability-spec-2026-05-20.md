@@ -177,9 +177,22 @@ Criterion 0.8.2, 30 samples, 8s measurement time per bench. Запуск: `cargo
 | `UmbrellaGroup::encrypt_application` (baseline) | **27.04 μs** | [26.68, 27.46] |
 | `UmbrellaGroup::force_rekey` (MLS commit + merge) | **140.03 μs** | [138.67, 141.26] |
 | `spqr::compute_hmac` (256-byte ciphertext) | **261 ns** | [260.68, 261.75] |
+| `spqr::verify_hmac` (256-byte, constant-time) | **262 ns** | [261.20, 263.48] |
 | **Total `MaxRatchetGroup::encrypt_with_rekey_authenticated`** | **167.36 μs** | [166.90, 167.92] |
 
 **Overhead vs baseline:** **+140.32 μs (6.2x)** — доминируется `force_rekey` (140 μs из 140 μs overhead). SPQR HMAC контрибутирует **0.26 μs (0.16% от overhead)** — practically free.
+
+### 5.1.1 SPQR HMAC scaling — `compute_hmac` bandwidth (Apple M2)
+
+| Payload size | Time | Effective bandwidth |
+|---|---|---|
+| 64 bytes | **153.46 ns** | 417 MB/s |
+| 256 bytes | **261.16 ns** | 980 MB/s |
+| 1024 bytes | **708.00 ns** | 1.45 GB/s |
+| 4096 bytes | **2.50 μs** | 1.64 GB/s |
+| 16384 bytes | **9.71 μs** | 1.69 GB/s |
+
+**HMAC-SHA256 cost model:** ~150 ns fixed overhead + ~0.6 ns/byte steady-state (1.6+ GB/s bandwidth на Apple M2 arm64 с SHA crypto extensions). Verify ≈ compute (same hash compute path; only return value differs). Даже 16KB payload контрибутирует только ~10 μs к total send overhead — пренебрежимо мало.
 
 ### 5.2 Сравнение «expected vs real» (Apple M2)
 
