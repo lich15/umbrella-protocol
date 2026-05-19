@@ -26,9 +26,14 @@ tls_codec = { workspace = true }
 zeroize = { workspace = true }
 secrecy = { workspace = true }
 thiserror = { workspace = true }
+# HMAC-SHA256 для SPQR deniable authentication (max_ratchet модуль).
+# HKDF-SHA256 берётся через umbrella-crypto-primitives (single source of truth).
+# HMAC-SHA256 for SPQR deniable authentication (max_ratchet module).
+# HKDF-SHA256 is consumed via umbrella-crypto-primitives (single source of truth).
+hmac = { workspace = true }
+sha2 = { workspace = true }
 # Зависимости HPKE base mode RFC 9180 §5.1 для DHKEM(X-Wing) — только под feature `pq`.
 # HPKE base mode RFC 9180 §5.1 dependencies for DHKEM(X-Wing) — only under feature `pq`.
-sha2 = { workspace = true, optional = true }
 hkdf = { workspace = true, optional = true }
 chacha20poly1305 = { workspace = true, optional = true }
 rand_core = { workspace = true, optional = true }
@@ -47,7 +52,6 @@ default = []
 pq = [
     "dep:umbrella-pq",
     "umbrella-pq/ml-kem",
-    "dep:sha2",
     "dep:hkdf",
     "dep:chacha20poly1305",
     "dep:rand_core",

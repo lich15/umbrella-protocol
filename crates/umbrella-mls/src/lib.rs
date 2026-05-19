@@ -37,6 +37,7 @@ pub mod error;
 pub mod group;
 pub mod group_policy;
 pub mod key_package;
+pub mod max_ratchet;
 pub mod parser;
 pub mod provider;
 pub mod screenshot_policy;
@@ -48,6 +49,7 @@ pub use error::{MlsError, Result};
 pub use group::{IncomingMessage, MemberChangeOutcome, UmbrellaGroup, MAX_EXPORTER_LEN};
 pub use group_policy::{GroupPolicy, KEY_PACKAGE_LIFETIME_SECS, PRIVATE_GROUP_MAX_LIFETIME_SECS};
 pub use key_package::{build_device_key_package, UmbrellaKeyPackageBundle};
+pub use max_ratchet::{MaxRatchetConfig, MaxRatchetGroup, MaxRatchetOutgoing};
 pub use parser::{
     parse_key_package_safe, parse_mls_message_safe, KEY_PACKAGE_MIN_BYTES, MLS_MESSAGE_MIN_BYTES,
 };
