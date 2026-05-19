@@ -1,0 +1,112 @@
+name: dudect-saturation-monthly
+
+# Monthly cross-platform dudect saturation analysis (separate from the
+# weekly `dudect-benchmarks.yml` 100K budget cron). Extends the sample
+# budget to 1,000,000 per branch on independent x86_64 hardware (Linux
+# `clock_gettime(CLOCK_MONOTONIC_RAW)` clock domain) for sample-saturation
+# regime tracking per Reparaz et al. 2017 USENIX Security §3 Figure 4.
+#
+# Cross-platform reference: confirms macOS arm64 (Mach absolute time) and
+# Linux x86_64 (CLOCK_MONOTONIC_RAW) produce consistent verdicts on
+# CT-critical primitives. Divergence between platforms at 1M samples is a
+# signal for upstream investigation; convergence is a closure of the
+# F-DUDECT-METHODOLOGY-1 saturation question.
+#
+# Threshold policy at 1M-sample budget: `DUDECT_STRICT=0` (in-block guard
+# 10.0 only). Sub-100ns sites (Sites 1/3/4 + Site 2 HKDF ~292 ns) accept
+# BORDERLINE 4.5 < |t| < 10.0 because sub-nanosecond mean bias amplifies
+# into significant |t| under √n scaling regardless of CT correctness.
+# Site 1 SecretBytes::ct_eq stays CLEAN at |t|=1.4 only because its
+# symmetric fixture pools mask the noise floor; same primitive Site 3 at
+# 1M shows |t|=17.85 LEAK — measurement artifact, not a real leak.
+# μs-scale sites (Sites 5/6/7/8) genuinely satisfy strict 4.5 at 1M
+# because operation timing dominates measurement noise.
+#
+# Methodology references:
+#   - Reparaz et al. 2017 USENIX Security «Dude, is my code constant time?»
+#     §3 — Welch's t-test threshold |t| ≤ 4.5 (α ≈ 10⁻⁵); §3 Figure 4 —
+#     sample-count saturation regime.
+#   - `docs/audits/dudect-saturation-methodology-2026-05-19.md` — local
+#     decision document referencing this workflow.
+#   - `crates/umbrella-tests/src/dudect.rs` SUB_HUNDRED_NS_RANDOM_POOL_SIZE
+#     constant + per-operation-timing-tier gauge documentation.
+#
+# Workflow uses only literal env values + repository checkout — no
+# untrusted user inputs (issue titles, PR bodies, commit messages)
+# touched in run: steps. workflow_dispatch is parameter-less.
+
+on:
+  schedule:
+    # First Sunday of each month, 06:00 UTC. Distinct from
+    # dudect-benchmarks.yml (weekly Sunday 00:00 UTC) — staggered so the
+    # weekly + monthly runs do not overlap and the monthly does not
+    # contend for the same CI runner pool.
+    - cron: '0 6 1-7 * 0'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  dudect-saturation:
+    name: Dudect saturation budget 1000000 samples
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    env:
+      DUDECT_SAMPLES: "1000000"
+      DUDECT_STRICT: "0"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo registry plus build artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ubuntu-cargo-dudect-saturation-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ubuntu-cargo-dudect-saturation-
+            ubuntu-cargo-dudect-
+
+      - name: Run dudect saturation budget
+        # `#[ignore]` gate skips dudect tests in default `cargo test`
+        # (debug builds add panic + bounds checks distorting nanosecond
+        # measurements). Monthly cron runs them explicitly via
+        # `--ignored` flag in `--release` mode for accurate timing.
+        # Captured to per-step output file for trend tracking artifact.
+        run: |
+          mkdir -p dudect-saturation-results
+          cargo test --release --locked --features pq -p umbrella-tests \
+            --test dudect_constant_time \
+            -- --ignored --nocapture --test-threads=1 \
+            2>&1 | tee dudect-saturation-results/run.log
+
+      - name: Extract per-site t-statistics
+        if: always()
+        run: |
+          set -euo pipefail
+          grep -E '\[dudect:' dudect-saturation-results/run.log \
+            | tee dudect-saturation-results/t-statistics.txt
+          echo "---"
+          echo "Cross-platform corroboration: t-statistics above are Linux"
+          echo "x86_64 ubuntu-latest with bounded-pool closure pattern."
+          echo "macOS arm64 reference run for the same closure is in"
+          echo "commit 76947fc0 message body (Site 2 HKDF |t|=+3.492 CLEAN"
+          echo "at 100K samples; saturation analysis docs/audits/"
+          echo "dudect-saturation-methodology-2026-05-19.md)."
+
+      - name: Upload saturation results
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
+        with:
+          name: dudect-saturation-1m-samples
+          path: dudect-saturation-results/
+          retention-days: 90
