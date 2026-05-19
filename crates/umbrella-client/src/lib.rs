@@ -55,6 +55,7 @@ pub mod core;
 pub mod error;
 pub mod facade;
 pub mod keystore;
+pub mod kt_monitor;
 pub mod lifecycle;
 pub mod transport;
 

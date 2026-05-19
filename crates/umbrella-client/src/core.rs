@@ -1086,6 +1086,21 @@ impl ClientCore {
         self.stub_unwrap_transport.clone()
     }
 
+    /// **F-CLIENT-FACADE-1 session 8a (2026-05-19):** typed-Arc accessor для
+    /// stub KT transport. Используется test rigs которые stage'ят
+    /// `KtEntry` через [`StubKtTransport::push_staged_entry`] для facade
+    /// self-monitor verify (`umbrella_client::kt_monitor::verify_own_kt_entry_for_epoch`).
+    /// В production (session 8c+) ClientCore переедет на `Arc<dyn
+    /// KtTransport + Send + Sync>` trait abstraction; этот accessor либо
+    /// станет `cfg(test)`-only либо trait-typed.
+    ///
+    /// Typed accessor for stub KT transport — session 8a test scaffold.
+    /// Will be retyped to `Arc<dyn KtTransport>` in session 8c.
+    #[must_use]
+    pub fn kt_transport(&self) -> Arc<StubKtTransport> {
+        self.kt_transport.clone()
+    }
+
     /// **F-CLIENT-FACADE-1 session 6c (2026-05-19):** allocate the next
     /// monotonic `msg_seq` для Cloud-mode at-rest write на указанный
     /// `chat_id`. Counter starts at 0; first call returns 0, next 1, etc.

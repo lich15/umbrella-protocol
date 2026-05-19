@@ -46,6 +46,7 @@ use umbrella_backup::cloud_wrap::signed_request::SignedUnwrapRequest;
 use umbrella_backup::cloud_wrap::transport::UnwrapTransport;
 use umbrella_backup::cloud_wrap::wire::WrappedKey;
 use umbrella_backup::error::BackupError;
+use umbrella_kt::KtEntry;
 
 use crate::transport::async_unwrap::AsyncUnwrapTransport;
 
@@ -308,6 +309,51 @@ pub struct StubKtTransport {
     /// Записи, «опубликованные» в stub log.
     /// Entries that were "published" to the stub log.
     pub published_entries: Mutex<Vec<Vec<u8>>>,
+
+    /// **F-CLIENT-FACADE-1 session 8a (2026-05-19):** typed staging для
+    /// self-monitoring tests. Map `(account_id, epoch) → KtEntry`.
+    /// Аналог `cloud_history` в [`StubPostmanTransport`] — test stages
+    /// concrete entries которые facade self-monitor затем fetch'ит и
+    /// сравнивает против `OwnExpectations`. Production:
+    /// `Http2KtTransport::fetch_epoch` возвращает raw bytes, codec в
+    /// `umbrella-kt` парсит → `KtEntry`; здесь codec обходится
+    /// сохранением Rust value напрямую (canonical_encoding round-trip
+    /// деferred до production wire-deserialization wiring в session 8c+).
+    ///
+    /// **F-CLIENT-FACADE-1 session 8a:** typed staging map
+    /// `(account_id, epoch) → KtEntry` для facade self-monitor tests.
+    /// Mirrors the `cloud_history` pattern in `StubPostmanTransport`.
+    /// Production: HTTP/2 transport returns raw bytes and codec
+    /// deserialises; here we skip the round-trip by storing Rust values.
+    pub staged_entries: Mutex<HashMap<([u8; 32], u64), KtEntry>>,
+}
+
+impl StubKtTransport {
+    /// **F-CLIENT-FACADE-1 session 8a (2026-05-19):** stage a `KtEntry` для
+    /// последующего fetch'а через [`Self::fetch_staged_entry`]. Перезаписывает
+    /// existing entry под тем же `(account_id, epoch)` key (last write wins;
+    /// тесты ставят либо honest entry либо substituted entry для проверки
+    /// `verify_own_entry` paths). Idempotent по `(account_id, epoch)`.
+    ///
+    /// **F-CLIENT-FACADE-1 session 8a:** stage a `KtEntry` for later fetch.
+    /// Overwrites any existing entry under the same `(account_id, epoch)` key.
+    pub fn push_staged_entry(&self, account_id: [u8; 32], epoch: u64, entry: KtEntry) {
+        let mut guard = self.staged_entries.lock().expect("poisoned");
+        guard.insert((account_id, epoch), entry);
+    }
+
+    /// **F-CLIENT-FACADE-1 session 8a (2026-05-19):** fetch staged entry для
+    /// `(account_id, epoch)`. Returns `None` если ничего не staged — facade
+    /// self-monitor maps это в `ClientError::Kt(KtError::SelfMonitoringMismatch
+    /// { field: "no_entry_staged" })`-shaped diagnostic либо аналог.
+    ///
+    /// **F-CLIENT-FACADE-1 session 8a:** fetch a staged entry. Returns `None`
+    /// when nothing was staged for that (account_id, epoch) key.
+    #[must_use]
+    pub fn fetch_staged_entry(&self, account_id: &[u8; 32], epoch: u64) -> Option<KtEntry> {
+        let guard = self.staged_entries.lock().expect("poisoned");
+        guard.get(&(*account_id, epoch)).cloned()
+    }
 }
 
 /// Stub call-relay-svc. Счётчик аллокаций TURN relay (SPEC-06 §3). Реальная
