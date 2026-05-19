@@ -289,6 +289,101 @@ impl CallSession {
         *self.state.write().await = CallState::Terminated(CallTerminationReason::LocalHangup);
         Ok(())
     }
+
+    /// **F-CLIENT-FACADE-1 session 10b (2026-05-19):** local DTLS
+    /// identity-bound fingerprint — for inclusion in the outgoing
+    /// signalling offer (so the peer can derive the expected fingerprint
+    /// from our identity_pubkey + session_nonce). Cloned, не reference,
+    /// — DtlsRunner sits behind a `tokio::sync::Mutex` (handshake
+    /// driving will take the lock); cloning the fingerprint avoids
+    /// blocking on a lock that protects unrelated state during a
+    /// read-only public-half accessor.
+    ///
+    /// Returns the freshly-derived [`IdentityDtlsFingerprint`] —
+    /// determined at session construction from
+    /// `core.identity_verifying_key() + random session_nonce`.
+    ///
+    /// **F-CLIENT-FACADE-1 session 10b (2026-05-19):** local DTLS
+    /// identity-bound fingerprint, for inclusion in the outgoing
+    /// signalling offer.
+    pub async fn local_dtls_fingerprint(&self) -> umbrella_calls::IdentityDtlsFingerprint {
+        self.dtls_runner.lock().await.local_fingerprint().clone()
+    }
+
+    /// **F-CLIENT-FACADE-1 session 10b (2026-05-19):** session nonce
+    /// used in DTLS fingerprint derivation. The peer needs this value
+    /// to derive the expected fingerprint от our identity_pubkey —
+    /// included alongside `local_dtls_fingerprint()` в the outgoing
+    /// signalling offer.
+    ///
+    /// Session nonce used in DTLS fingerprint derivation. Included in
+    /// the outgoing signalling offer alongside `local_dtls_fingerprint`.
+    pub async fn dtls_session_nonce(&self) -> [u8; 16] {
+        *self.dtls_runner.lock().await.session_nonce()
+    }
+
+    /// **F-CLIENT-FACADE-1 session 10b (2026-05-19):** verify a remote
+    /// DTLS fingerprint against `peer_identity_pubkey` + our
+    /// `session_nonce`. Called from signalling layer when the peer's
+    /// answer arrives — confirms the DTLS certificate the peer will
+    /// present matches the identity they claim в KT.
+    ///
+    /// Constant-time comparison via
+    /// [`IdentityDtlsFingerprint::verify_or_err`] (delegated through
+    /// [`DtlsRunner::verify_remote`]).
+    ///
+    /// # Errors
+    ///
+    /// - [`ClientError::Call`]`(CallError::IdentityBindingFailed)` if
+    ///   the remote fingerprint does not match the expected derivation.
+    ///
+    /// **F-CLIENT-FACADE-1 session 10b (2026-05-19):** verify the remote
+    /// peer's DTLS fingerprint against their KT-published identity_pubkey
+    /// + our session_nonce. Constant-time; fails closed on mismatch.
+    pub async fn verify_remote_dtls_fingerprint(
+        &self,
+        peer_identity_pubkey: &[u8; 32],
+        remote_fingerprint: &umbrella_calls::IdentityDtlsFingerprint,
+    ) -> Result<(), ClientError> {
+        self.dtls_runner
+            .lock()
+            .await
+            .verify_remote(peer_identity_pubkey, remote_fingerprint)
+    }
+
+    /// **F-CLIENT-FACADE-1 session 10b (2026-05-19):** install SRTP
+    /// keying material exported from the DTLS handshake (RFC 5764 §4.2).
+    /// Caller (DTLS handshake driver) extracts the keying material from
+    /// the negotiated DTLS session via `use_srtp` extension и forwards
+    /// it here.
+    ///
+    /// `material.key` MUST be `client_write_SRTP_master_key ||
+    /// server_write_SRTP_master_key` (32 + 32 = 64 bytes for the
+    /// `AEAD_AES_256_GCM` profile). `material.salt` MUST be
+    /// `client_write_SRTP_master_salt || server_write_SRTP_master_salt`
+    /// (12 + 12 = 24 bytes).
+    ///
+    /// # Errors
+    ///
+    /// Currently infallible (Block 7.6 scaffolding); Block 7.10
+    /// integration may surface profile-mismatch errors from
+    /// `SrtpPipeline::set_keying`.
+    ///
+    /// **F-CLIENT-FACADE-1 session 10b (2026-05-19):** install SRTP
+    /// keying material derived from the DTLS handshake exporter.
+    pub async fn install_srtp_keying(
+        &self,
+        material: crate::call::srtp_pipeline::SrtpKeyingMaterial,
+    ) -> Result<(), ClientError> {
+        self.srtp_pipeline.set_keying(material).await
+    }
+
+    /// **F-CLIENT-FACADE-1 session 10b (2026-05-19):** `true` iff SRTP
+    /// keying material has been installed via [`Self::install_srtp_keying`].
+    /// Used by signalling driver to gate the `Connected` state transition.
+    pub async fn is_srtp_keyed(&self) -> bool {
+        self.srtp_pipeline.is_keyed().await
+    }
 }
 
 /// **F-CLIENT-FACADE-1 session 10a (2026-05-19):** map enforcement mode +
