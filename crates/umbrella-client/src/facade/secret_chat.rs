@@ -69,7 +69,7 @@ use crate::call::{CallSession, MediaSink, MediaSource, ModeEnforcement};
 use crate::core::ClientCore;
 use crate::error::Result;
 use crate::facade::chat_common::{
-    send_mls_text, ChatId, ChatSettings, DecryptedMessage, MessageId, PeerId,
+    fetch_mls_inbox, send_mls_text, ChatId, ChatSettings, DecryptedMessage, MessageId, PeerId,
 };
 
 /// Secret-чат. Зеркало [`CloudChat`] по shared методам, но **без**
@@ -188,7 +188,7 @@ impl SecretChat {
     ///
     /// `ClientError::Network / Mls / SealedSender` in Block 7.4.
     pub async fn fetch_inbox(&self) -> Result<Vec<DecryptedMessage>> {
-        Ok(Vec::new())
+        fetch_mls_inbox(&self.core, self.chat_id).await
     }
 
     /// Добавить участника в Secret-чат. MLS Add proposal + Commit,

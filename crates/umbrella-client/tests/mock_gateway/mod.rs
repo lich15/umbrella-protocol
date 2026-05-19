@@ -104,6 +104,36 @@ pub enum MockBehavior {
         /// Auth token gate for connections beyond `fail_count`.
         accept_token: Option<String>,
     },
+    /// Behaves like [`MockBehavior::Standard`] but, after the `AuthOk`
+    /// envelope, immediately pushes the supplied `messages` as
+    /// `IncomingMessage` envelopes (one per element, in order). Used by
+    /// session-4 `fetch_inbox` contract tests to drive the receive flow.
+    ///
+    /// Standard server that also pushes pre-baked IncomingMessage envelopes
+    /// after AuthOk for fetch_inbox tests.
+    PushInboxAfterAuth {
+        /// Auth gate (`None` = accept any).
+        accept_token: Option<String>,
+        /// IncomingMessage tuples `(from_user_id, ciphertext, sent_ts_ms, msg_id_hex)`
+        /// pushed in order after AuthOk.
+        messages: Vec<MockIncomingMessage>,
+    },
+}
+
+/// Builder tuple for [`MockBehavior::PushInboxAfterAuth`] — `(from_user_id,
+/// ciphertext, sent_ts_ms, msg_id)`.
+///
+/// Builder tuple for `PushInboxAfterAuth`.
+#[derive(Clone, Debug)]
+pub struct MockIncomingMessage {
+    /// 32-byte sender UserId.
+    pub from_user_id: Vec<u8>,
+    /// Opaque payload bytes (in session 4 tests typically `b"plaintext-ish"`).
+    pub ciphertext: Vec<u8>,
+    /// Wall-clock millisecond timestamp recorded by the sender.
+    pub sent_ts_ms: u64,
+    /// Server-issued 32-char lowercase hex message id (16 bytes).
+    pub msg_id: String,
 }
 
 impl MockBehavior {
@@ -290,8 +320,8 @@ async fn handle_connection(
             Some(p) => p,
             None => continue,
         };
-        let response = build_server_response(payload, &behavior, &mut authenticated, &mut next_server_seq);
-        if let Some(resp_env) = response {
+        let responses = build_server_response(payload, &behavior, &mut authenticated, &mut next_server_seq);
+        for resp_env in responses {
             let mut buf = Vec::with_capacity(resp_env.encoded_len());
             if resp_env.encode(&mut buf).is_err() {
                 return;
@@ -320,11 +350,11 @@ fn build_server_response(
     behavior: &MockBehavior,
     authenticated: &mut bool,
     next_seq: &mut u64,
-) -> Option<proto::ServerEnvelope> {
+) -> Vec<proto::ServerEnvelope> {
     use proto::client_envelope::Payload as C;
     use proto::server_envelope::Payload as S;
 
-    let seq = {
+    let mut alloc_seq = || {
         let s = *next_seq;
         *next_seq = s.wrapping_add(1);
         s
@@ -338,7 +368,25 @@ fn build_server_response(
             };
             if token_ok {
                 *authenticated = true;
-                S::AuthOk(proto::AuthOk {})
+                let auth_ok = proto::ServerEnvelope {
+                    seq: alloc_seq(),
+                    payload: Some(S::AuthOk(proto::AuthOk {})),
+                };
+                let mut out = vec![auth_ok];
+                if let MockBehavior::PushInboxAfterAuth { messages, .. } = behavior {
+                    for m in messages {
+                        out.push(proto::ServerEnvelope {
+                            seq: alloc_seq(),
+                            payload: Some(S::Inbound(proto::IncomingMessage {
+                                from_user_id: m.from_user_id.clone(),
+                                ciphertext: m.ciphertext.clone(),
+                                sent_ts_ms: m.sent_ts_ms,
+                                msg_id: m.msg_id.clone(),
+                            })),
+                        });
+                    }
+                }
+                return out;
             } else {
                 S::Error(proto::ErrorEnvelope {
                     code: "auth.invalid".to_string(),
@@ -353,26 +401,26 @@ fn build_server_response(
             code: "auth.required".to_string(),
         }),
         C::SendMessage(_) => S::SendAck(proto::SendMessageAck {
-            msg_id: format!("{:032x}", seq),
+            msg_id: format!("{:032x}", alloc_seq()),
         }),
         C::DeliveryProbe(p) => S::DeliveryProbe(proto::DeliveryProbe {
             probe_id: p.probe_id,
             sent_ts_ms: p.sent_ts_ms,
         }),
-        C::Presence(_) => return None,
-        C::Close(_) => return None,
+        C::Presence(_) | C::Close(_) => return Vec::new(),
     };
 
-    Some(proto::ServerEnvelope {
-        seq,
+    vec![proto::ServerEnvelope {
+        seq: alloc_seq(),
         payload: Some(server_payload),
-    })
+    }]
 }
 
 fn behavior_token_gate(behavior: &MockBehavior) -> Option<&str> {
     match behavior {
         MockBehavior::Standard { accept_token } => accept_token.as_deref(),
         MockBehavior::CloseFirstNThenStandard { accept_token, .. } => accept_token.as_deref(),
+        MockBehavior::PushInboxAfterAuth { accept_token, .. } => accept_token.as_deref(),
         _ => None,
     }
 }

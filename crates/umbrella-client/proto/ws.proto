@@ -33,7 +33,49 @@ message ServerEnvelope {
     DeliveryProbe delivery_probe = 12;
     ErrorEnvelope error = 13;
     AuthOk auth_ok = 14;
+    // F-CLIENT-FACADE-1 session 4 (2026-05-19): CLIENT-SIDE FORWARD-COMPAT
+    // EXTENSION. Backend `rust_1mlrd/proto/umbrellax/gateway/v1/ws.proto`
+    // does NOT currently emit field 15; receive flow is served via the
+    // separate blind-postman-svc HTTP/2 fetch path. The client side adds
+    // this variant ahead of the backend so the facade `fetch_inbox` can
+    // be implemented + tested end-to-end without waiting on the backend
+    // protocol bump.
+    //
+    // Protobuf 3 guarantees forward-compat: an old backend that does not
+    // emit field 15 leaves the oneof empty (Payload::None on the client,
+    // surfaced as `WsTransportError::UnknownServerPayload`); a future
+    // backend emitting field 15 is decoded correctly by both old and new
+    // clients (old clients see Unknown). No risk to backend interop.
+    //
+    // When the backend adopts this variant the source files in both repos
+    // become identical again per the §4.1 lockstep rule documented in
+    // `docs/integration/gateway-svc-contract.md`. Until then, the
+    // production path keeps using blind-postman-svc and the client uses
+    // this variant only inside the mock-driven contract tests in
+    // `tests/facade_fetch_inbox_gateway.rs`.
+    IncomingMessage inbound = 15;
   }
+}
+
+message IncomingMessage {
+  // SPEC-09 32-byte sender UserId (the same shape SendMessageRequest
+  // accepts on the outbound path). After session 4+ sealed-sender wiring
+  // (session 7) this slot carries the unwrapped sender identity rather
+  // than raw bytes from the postman envelope.
+  bytes from_user_id = 1;
+  // Opaque ciphertext bytes — MLS application message (RFC 9420
+  // §9.1) wrapped per chat mode (Cloud-wrap for CloudChat, sealed-sender
+  // for SecretChat). Session 4 contract tests treat this as opaque bytes;
+  // session 5+ wires the real MLS decrypt path.
+  bytes ciphertext = 2;
+  // Wall-clock millisecond timestamp recorded by the sender at send time.
+  // Server may rewrite this on store-and-forward; client treats it as
+  // advisory display-time metadata only.
+  uint64 sent_ts_ms = 3;
+  // Server-issued 16-byte message id formatted as 32-char lowercase hex,
+  // matching SendMessageAck.msg_id. Lets the recipient correlate to
+  // server-side delivery state.
+  string msg_id = 4;
 }
 
 message ClientAuth {

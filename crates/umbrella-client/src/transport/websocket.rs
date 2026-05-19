@@ -362,6 +362,30 @@ pub enum ServerPayload {
         /// Sender-side timestamp.
         sent_ts_ms: u64,
     },
+    /// `IncomingMessage { from_user_id, ciphertext, sent_ts_ms, msg_id }` —
+    /// inbound chat message routed by the gateway.
+    ///
+    /// **F-CLIENT-FACADE-1 session 4 (2026-05-19):** client-side forward-
+    /// compatibility variant. The backend `gateway-svc` does NOT currently
+    /// push this envelope — receive flow is served via blind-postman-svc
+    /// HTTP/2. The variant exists so the facade `fetch_inbox` can be wired
+    /// + tested ahead of the backend protocol bump. Mock gateway
+    /// (`tests/mock_gateway/mod.rs`) emits it; production gateway does
+    /// not yet. See `proto/ws.proto` field-15 doc-comment for the full
+    /// rationale.
+    ///
+    /// Inbound chat message routed by the gateway (forward-compat slot).
+    IncomingMessage {
+        /// 32-byte sender UserId (same shape as outbound `SendMessageRequest.to_user_id`).
+        from_user_id: Vec<u8>,
+        /// Opaque ciphertext bytes — MLS application message wrapped per chat
+        /// mode (Cloud-wrap for CloudChat, sealed-sender for SecretChat).
+        ciphertext: Vec<u8>,
+        /// Wall-clock millisecond timestamp recorded by the sender.
+        sent_ts_ms: u64,
+        /// Server-issued message id (32-char lowercase hex of 16 bytes).
+        msg_id: String,
+    },
 }
 
 /// Wrapper bundling the inbound payload with the server-issued sequence
@@ -688,6 +712,12 @@ pub(crate) fn decode_server_envelope(env: proto::ServerEnvelope) -> Result<Serve
         Payload::DeliveryProbe(p) => ServerPayload::DeliveryProbe {
             probe_id: p.probe_id,
             sent_ts_ms: p.sent_ts_ms,
+        },
+        Payload::Inbound(m) => ServerPayload::IncomingMessage {
+            from_user_id: m.from_user_id,
+            ciphertext: m.ciphertext,
+            sent_ts_ms: m.sent_ts_ms,
+            msg_id: m.msg_id,
         },
     };
     Ok(ServerFrame {

@@ -20,6 +20,7 @@
 //! [`SecretChat`]: crate::facade::SecretChat
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::core::ClientCore;
 use crate::error::{ClientError, Result};
@@ -193,6 +194,17 @@ impl core::fmt::Debug for DecryptedMessage {
 /// a 32-char lowercase hex string per contract §4.1.
 const SERVER_MSG_ID_HEX_LEN: usize = 32;
 
+/// Бюджет на drain одной итерации `fetch_inbox`-helper'а из gateway recv.
+/// Tradeoff: слишком короткий — упустим сетевые сообщения in-flight; слишком
+/// длинный — facade-вызов застревает когда нечего fetch'ить. 100 мс
+/// эмпирически достаточно на loopback + покрывает 3G/4G RTT canary под
+/// мобильными сетями (RFC 9001 §1-RTT typical < 50 ms).
+///
+/// One-iteration drain budget for the `fetch_inbox` helper. 100 ms balances
+/// loopback latency, mobile RTT (RFC 9001 §1-RTT typical <50 ms), and the
+/// facade caller's desire for prompt return when nothing is pending.
+const FETCH_INBOX_DRAIN_TIMEOUT: Duration = Duration::from_millis(100);
+
 /// Внутренний helper: routes facade-уровневое текстовое сообщение через
 /// активный gateway connection. Если `core.gateway()` is `None` —
 /// возвращает legacy stub `MessageId([0u8; 16])`, сохраняя
@@ -274,6 +286,107 @@ pub(crate) async fn send_mls_text(
             "expected SendAck after SendMessage, got: {other:?}"
         ))),
     }
+}
+
+/// Внутренний helper: drain ALL pending `IncomingMessage` envelopes из
+/// gateway recv side, переводит каждое в [`DecryptedMessage`] и возвращает
+/// список. Если `core.gateway()` is `None` — возвращает пустой `Vec`
+/// (legacy stub поведение для test fixtures без networking).
+///
+/// Petля:
+///   - `tokio::time::timeout(drain_budget, gateway.recv_envelope())`
+///   - `Ok(Ok(ServerPayload::IncomingMessage{...}))` → конвертируем,
+///      добавляем в result, продолжаем
+///   - `Ok(Ok(other))` → не наше — log + continue (production refactor
+///      session 7+ wires multiplexing routing layer)
+///   - `Ok(Err(_))` либо timeout → break, return result
+///
+/// ## Session-4 ограничения (полностью out-of-scope)
+///
+/// - **Real MLS decrypt**: `text` поле в session 4 — placeholder
+///   `String::from_utf8_lossy(&ciphertext).into_owned()`. Реальный MLS
+///   decrypt с handle ratchet появится в session 5 когда `UmbrellaGroup`
+///   будет wired.
+/// - **Sender identity verification**: session 4 кладёт первые 32 байта
+///   `from_user_id` напрямую в `PeerId` без KT proof lookup. Real KT
+///   self-monitoring + 3-of-5 witness sig wiring — session 8.
+/// - **Recv-side multiplexing**: gateway recv mutex shared с `send_text` —
+///   concurrent fetch_inbox + send_text serialise друг друга через Mutex.
+///   Background-task multiplexer с per-seq oneshot channels — session 7+.
+///
+/// Internal helper: drains ALL pending `IncomingMessage` envelopes from the
+/// gateway recv side, translates each to `DecryptedMessage`, and returns
+/// the list. Returns empty `Vec` when `core.gateway()` is `None` (legacy
+/// stub for test fixtures without networking).
+///
+/// Session 4 placeholders (out-of-scope): real MLS decrypt (session 5+),
+/// sender identity KT verification (session 8), recv-side multiplexing
+/// for concurrent fetch_inbox + send_text (session 7+).
+pub(crate) async fn fetch_mls_inbox(
+    core: &Arc<ClientCore>,
+    chat_id: ChatId,
+) -> Result<Vec<DecryptedMessage>> {
+    let Some(gateway) = core.gateway().await else {
+        return Ok(Vec::new());
+    };
+
+    let mut out = Vec::new();
+    loop {
+        let recv_future = gateway.recv_envelope();
+        match tokio::time::timeout(FETCH_INBOX_DRAIN_TIMEOUT, recv_future).await {
+            Ok(Ok(frame)) => match frame.payload {
+                ServerPayload::IncomingMessage {
+                    from_user_id,
+                    ciphertext,
+                    sent_ts_ms,
+                    msg_id,
+                } => {
+                    let message_id = decode_server_msg_id(&msg_id)?;
+                    let sender = parse_peer_id_from_bytes(&from_user_id)?;
+                    let text = String::from_utf8_lossy(&ciphertext).into_owned();
+                    out.push(DecryptedMessage {
+                        message_id,
+                        chat_id,
+                        sender,
+                        timestamp: sent_ts_ms,
+                        text,
+                    });
+                }
+                // Non-inbox envelopes can arrive on shared recv side when
+                // concurrent send/auth is in flight. Session-4 strict
+                // serialisation: tests sequence operations, so a stray
+                // SendAck or Pong here is unexpected — log and drop. The
+                // session 7+ multiplexer will route these to their
+                // waiters.
+                // Stray non-inbox envelope on shared recv — log and drop.
+                _other => {
+                    tracing::debug!(
+                        "fetch_mls_inbox: discarded non-IncomingMessage envelope from shared recv"
+                    );
+                }
+            },
+            Ok(Err(e)) => {
+                return Err(ClientError::Network(format!(
+                    "fetch_mls_inbox: gateway recv failed: {e}"
+                )));
+            }
+            Err(_timeout) => return Ok(out),
+        }
+    }
+}
+
+/// Parse a sender 32-byte UserId out of an `IncomingMessage.from_user_id`
+/// field (allowed to be longer or shorter — fail closed).
+///
+/// Parse 32-byte sender UserId from IncomingMessage.from_user_id field.
+fn parse_peer_id_from_bytes(bytes: &[u8]) -> Result<PeerId> {
+    let arr: [u8; 32] = bytes.try_into().map_err(|_| {
+        ClientError::Network(format!(
+            "IncomingMessage.from_user_id wrong length: got {} bytes (expected 32)",
+            bytes.len()
+        ))
+    })?;
+    Ok(PeerId(arr))
 }
 
 /// Decode `SendMessageAck.msg_id` (32-char lowercase hex) into a

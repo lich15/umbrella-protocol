@@ -38,7 +38,8 @@ use crate::call::{CallSession, MediaSink, MediaSource, ModeEnforcement};
 use crate::core::ClientCore;
 use crate::error::Result;
 use crate::facade::chat_common::{
-    send_mls_text, ChatId, ChatSettings, DecryptedMessage, MessageId, PeerId, Timestamp,
+    fetch_mls_inbox, send_mls_text, ChatId, ChatSettings, DecryptedMessage, MessageId, PeerId,
+    Timestamp,
 };
 
 /// Cloud-чат. Тонкая обёртка над `Arc<ClientCore>` + `ChatId` + effective
@@ -167,7 +168,7 @@ impl CloudChat {
     ///
     /// `ClientError::Network / Backup / Mls / SealedSender` in Block 7.4.
     pub async fn fetch_inbox(&self) -> Result<Vec<DecryptedMessage>> {
-        Ok(Vec::new())
+        fetch_mls_inbox(&self.core, self.chat_id).await
     }
 
     /// Cloud-only: синхронизация истории при bootstrap нового устройства.
