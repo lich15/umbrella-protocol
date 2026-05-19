@@ -20,7 +20,14 @@
 //! [`SecretChat`]: crate::facade::SecretChat
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use openmls_traits::OpenMlsProvider;
+use rand::RngCore;
+use tokio::sync::Mutex as TokioMutex;
+use umbrella_mls::{
+    parse_key_package_safe, IncomingMessage, MlsError, UmbrellaCiphersuite, UmbrellaGroup,
+};
 
 use crate::core::ClientCore;
 use crate::error::{ClientError, Result};
@@ -267,9 +274,34 @@ pub(crate) async fn send_mls_text(
         return Ok(MessageId([0u8; 16]));
     };
 
+    // F-CLIENT-FACADE-1 session 5: real MLS encrypt iff an MLS group is
+    // registered for `chat_id` in `ClientCore.groups`. Backwards compat:
+    // если группа не зарегистрирована (e.g. test через `CloudChat::open(
+    // ChatId([0u8; 32]))` без предварительного `create`), сохраняем
+    // legacy path text-as-bytes — session 3 wire-format остаётся
+    // exercised mock'ом.
+    //
+    // F-CLIENT-FACADE-1 session 5: real MLS encrypt when a group is
+    // registered; otherwise raw text bytes (legacy/test backwards compat).
+    let ciphertext = if let Some(group_arc) = core.get_group(chat_id).await {
+        let mut group = group_arc.lock().await;
+        // MLS AEAD encrypt + signing — sync. Lock держим only during
+        // crypto, не во время network I/O. Result Vec<u8> освобождает
+        // lock после `?`.
+        // MLS AEAD encrypt + sign — sync; the lock is dropped before
+        // network I/O.
+        group.encrypt_application(
+            core.mls_provider.as_ref(),
+            core.mls_keystore.as_ref(),
+            text.as_bytes(),
+        )?
+    } else {
+        text.into_bytes()
+    };
+
     let payload = ClientPayload::SendMessage {
         to_user_id: chat_id.0.to_vec(),
-        ciphertext: text.into_bytes(),
+        ciphertext,
     };
     gateway.send_envelope(payload).await.map_err(|e| {
         ClientError::Network(format!("send_envelope: {e}"))
@@ -330,6 +362,17 @@ pub(crate) async fn fetch_mls_inbox(
         return Ok(Vec::new());
     };
 
+    // F-CLIENT-FACADE-1 session 5: pre-fetch group state once (avoid
+    // re-locking ClientCore.groups RwLock per envelope). MLS decrypt
+    // attempts iff group is Some AND `process_incoming` succeeds — иначе
+    // fallback на legacy UTF-8 lossy путь (test fixtures без real MLS
+    // ciphertext).
+    //
+    // F-CLIENT-FACADE-1 session 5: pre-fetch group state once. MLS decrypt
+    // attempted iff a group is registered AND `process_incoming` succeeds;
+    // otherwise legacy UTF-8 lossy fallback.
+    let group_opt = core.get_group(chat_id).await;
+
     let mut out = Vec::new();
     loop {
         let recv_future = gateway.recv_envelope();
@@ -343,7 +386,8 @@ pub(crate) async fn fetch_mls_inbox(
                 } => {
                     let message_id = decode_server_msg_id(&msg_id)?;
                     let sender = parse_peer_id_from_bytes(&from_user_id)?;
-                    let text = String::from_utf8_lossy(&ciphertext).into_owned();
+                    let text =
+                        decrypt_text_with_fallback(core, group_opt.as_ref(), &ciphertext).await;
                     out.push(DecryptedMessage {
                         message_id,
                         chat_id,
@@ -373,6 +417,161 @@ pub(crate) async fn fetch_mls_inbox(
             Err(_timeout) => return Ok(out),
         }
     }
+}
+
+/// F-CLIENT-FACADE-1 session 5 helper: попытка MLS-decrypt `ciphertext` если
+/// `group` is `Some`, иначе UTF-8 lossy. Honest fallback на decrypt failure:
+/// логирует в tracing::debug и возвращает UTF-8 lossy. Это **transitional**
+/// поведение session 5 — будущий session 7+ tightens до strict-MLS-only
+/// (CommitApplied + ProposalQueued также handle).
+///
+/// Возвращает plaintext String. MLS payload UTF-8 lossy-decoded аналогично
+/// legacy fallback path — application-level encoding выбор лежит на стороне
+/// chat protocol (Block 8.6 will introduce MIME-typed payload framing).
+///
+/// F-CLIENT-FACADE-1 session 5: try MLS decrypt if group is Some, otherwise
+/// UTF-8 lossy fallback. Transitional behaviour for session 5; tightens to
+/// strict-MLS-only in session 7+.
+async fn decrypt_text_with_fallback(
+    core: &Arc<ClientCore>,
+    group: Option<&Arc<TokioMutex<UmbrellaGroup>>>,
+    ciphertext: &[u8],
+) -> String {
+    if let Some(group_arc) = group {
+        let mut g = group_arc.lock().await;
+        match g.process_incoming(core.mls_provider.as_ref(), ciphertext) {
+            Ok(IncomingMessage::Application { payload, .. }) => {
+                return String::from_utf8_lossy(&payload).into_owned();
+            }
+            Ok(_other) => {
+                tracing::debug!(
+                    "fetch_mls_inbox: non-Application MLS message variant, falling back to UTF-8 lossy"
+                );
+            }
+            Err(_) => {
+                tracing::debug!(
+                    "fetch_mls_inbox: MLS decrypt failed on payload, falling back to UTF-8 lossy (legacy/test fixture path)"
+                );
+            }
+        }
+    }
+    String::from_utf8_lossy(ciphertext).into_owned()
+}
+
+/// **F-CLIENT-FACADE-1 session 5 (2026-05-19):** create a real MLS group for a
+/// fresh `ChatId`. Generates a 32-byte random chat_id (used as the MLS
+/// GroupId per RFC 9420 §13.1.1 opaque), constructs
+/// [`UmbrellaGroup::create_private`] with single-device `device_index = 0`
+/// (Block 7.2 wiring), registers the group inside `ClientCore.groups`, and
+/// returns the chat_id.
+///
+/// Ciphersuite validation: `ciphersuite_raw` must be in the Umbrella
+/// whitelist (Ed25519 / Ed448 only — ECDSA forbidden per ETK attack
+/// mitigation Cremers et al 2025/229). `UmbrellaCiphersuite::from_raw_id`
+/// returns `Err(MlsError::Capabilities)` on rejected values; propagated via
+/// `?` to `ClientError::Mls`.
+///
+/// **F-CLIENT-FACADE-1 session 5:** create a real MLS group for a fresh
+/// `ChatId` and register it in `ClientCore.groups`.
+pub(crate) async fn create_mls_group(
+    core: &Arc<ClientCore>,
+    ciphersuite_raw: u16,
+) -> Result<ChatId> {
+    let cs = UmbrellaCiphersuite::from_raw_id(ciphersuite_raw)?;
+
+    // 32-byte random chat_id (also used as the MLS GroupId). CSPRNG via
+    // `rand::thread_rng()` — Per-thread `ThreadRng` seeded from OS;
+    // adequate for groupid uniqueness vs collision (2^256 birthday bound).
+    let mut chat_id_bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut chat_id_bytes);
+    let chat_id = ChatId(chat_id_bytes);
+
+    let group_id = openmls::group::GroupId::from_slice(&chat_id_bytes);
+    let group = UmbrellaGroup::create_private(
+        core.mls_provider.as_ref(),
+        core.mls_keystore.as_ref(),
+        0,
+        cs,
+        group_id,
+        unix_now_secs(),
+    )?;
+
+    core.register_group(chat_id, Arc::new(TokioMutex::new(group)))
+        .await;
+    Ok(chat_id)
+}
+
+/// **F-CLIENT-FACADE-1 session 5 (2026-05-19):** real MLS Add proposal +
+/// Commit для зарегистрированной группы под `chat_id`. Parses + validates
+/// `key_package_bytes`, проверяет что credential.identity_pk == peer.0
+/// (anti-substitution: adversary не может slip'нуть KeyPackage не от
+/// заявленного peer'а), затем `UmbrellaGroup::add_members(&[kp])` →
+/// auto-merge → `Welcome` bytes для distribution.
+///
+/// Production: Welcome bytes маршрутизируются через blind-postman-svc
+/// session 6+; тесты получают Welcome напрямую через return value и
+/// передают в `UmbrellaGroup::join_from_welcome`.
+///
+/// **F-CLIENT-FACADE-1 session 5:** real MLS Add + Commit on the
+/// registered group. Validates the KeyPackage and checks the
+/// credential.identity_pk matches the claimed peer, then runs
+/// `add_members(&[kp])`. Returns the TLS-serialized Welcome bytes.
+pub(crate) async fn mls_add_member(
+    core: &Arc<ClientCore>,
+    chat_id: ChatId,
+    peer: PeerId,
+    key_package_bytes: &[u8],
+) -> Result<Vec<u8>> {
+    let group_arc = core.get_group(chat_id).await.ok_or_else(|| {
+        ClientError::Mls(MlsError::GroupOperation {
+            kind: "add_member: no MLS group registered for chat_id",
+        })
+    })?;
+
+    // Parse via F-37-safe wrapper, then openmls validate (credential sig +
+    // capabilities + lifetime). Errors map to MlsError::KeyPackage.
+    let kp_in = parse_key_package_safe(key_package_bytes)?;
+    let kp = kp_in
+        .validate(core.mls_provider.crypto(), openmls::versions::ProtocolVersion::Mls10)
+        .map_err(|_| MlsError::KeyPackage {
+            kind: "KeyPackageIn::validate failed (signature, capabilities, or lifetime)",
+        })?;
+
+    // Anti-substitution: credential payload is `identity_pk (32) ||
+    // device_index_BE (4)` — see umbrella-mls/src/credential.rs. Reject
+    // KeyPackage whose claimed identity does not match the `peer` argument
+    // (caller's expectation). This blocks an adversary-controlled key-svc
+    // from returning a KeyPackage with a different identity_pk than the
+    // peer the caller actually intends to add.
+    //
+    // Anti-substitution check: credential.identity_pk == peer.0.
+    let cred_bytes = kp.leaf_node().credential().serialized_content();
+    if cred_bytes.len() < 32 || cred_bytes[..32] != peer.0 {
+        return Err(ClientError::Mls(MlsError::KeyPackage {
+            kind: "KeyPackage credential.identity_pk does not match peer parameter",
+        }));
+    }
+
+    let mut group = group_arc.lock().await;
+    let outcome = group.add_members(
+        core.mls_provider.as_ref(),
+        core.mls_keystore.as_ref(),
+        &[kp],
+        unix_now_secs(),
+    )?;
+
+    outcome.welcome.ok_or_else(|| {
+        ClientError::Mls(MlsError::GroupOperation {
+            kind: "add_members returned no Welcome (Add proposal did not produce new member)",
+        })
+    })
+}
+
+fn unix_now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// Parse a sender 32-byte UserId out of an `IncomingMessage.from_user_id`

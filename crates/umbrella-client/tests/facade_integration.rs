@@ -83,16 +83,26 @@ async fn cloud_chat_create_open_roundtrip() {
         },
     )
     .await
-    .expect("CloudChat::create stub is infallible");
+    .expect("CloudChat::create returns real MLS group_id (session 5 wire-up)");
 
-    // Stub `CloudChat::create` в Блоке 7.2 всегда возвращает ChatId([0u8; 32]).
-    // В Блоке 7.4 это станет MLS group_id, и assertion изменится.
-    assert_eq!(cloud.chat_id(), ChatId([0u8; 32]));
+    // F-CLIENT-FACADE-1 session 5: `CloudChat::create` теперь возвращает
+    // random 32-byte MLS GroupId (chat_id) — больше не stub `[0u8; 32]`.
+    // Assertion обновлена: chat_id обязан быть non-zero (the 2^-256
+    // probability collision is dominated by the 2^-128 birthday bound on
+    // session test count).
+    assert_ne!(
+        cloud.chat_id(),
+        ChatId([0u8; 32]),
+        "session 5: CloudChat::create MUST generate a non-zero MLS group_id"
+    );
 
-    // open должен работать для тех же stub chat_id'ов.
+    // `open` остаётся stub: возвращает CloudChat handle с переданным chat_id
+    // без lookup в ClientCore.groups (Block 7.4 wire-up materialises MLS
+    // state from persistent storage; session 5 in-memory только). Tests
+    // используют zero chat_id для stub-only path coverage.
     let reopened = CloudChat::open(client.core(), ChatId([0u8; 32]))
         .await
-        .expect("CloudChat::open stub is infallible");
+        .expect("CloudChat::open stub returns handle for any chat_id");
     assert_eq!(reopened.chat_id(), ChatId([0u8; 32]));
 }
 
@@ -112,12 +122,17 @@ async fn secret_chat_create_open_roundtrip() {
         },
     )
     .await
-    .expect("SecretChat::create stub is infallible");
-    assert_eq!(secret.chat_id(), ChatId([0u8; 32]));
+    .expect("SecretChat::create returns real MLS group_id (session 5 wire-up)");
+    // F-CLIENT-FACADE-1 session 5: same as CloudChat — chat_id теперь random.
+    assert_ne!(
+        secret.chat_id(),
+        ChatId([0u8; 32]),
+        "session 5: SecretChat::create MUST generate a non-zero MLS group_id"
+    );
 
     let reopened = SecretChat::open(client.core(), ChatId([0u8; 32]))
         .await
-        .expect("SecretChat::open stub is infallible");
+        .expect("SecretChat::open stub returns handle for any chat_id");
     assert_eq!(reopened.chat_id(), ChatId([0u8; 32]));
 }
 

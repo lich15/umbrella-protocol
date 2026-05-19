@@ -29,7 +29,7 @@ use mock_gateway::{
 use rand::rngs::OsRng;
 use umbrella_backup::cloud_wrap::{ThresholdConfig, WrappingParams};
 use umbrella_client::facade::chat_common::{
-    ChatSettings, PeerId, UMBRELLA_CIPHERSUITE_CLASSICAL_DEFAULT,
+    ChatId, ChatSettings, PeerId, UMBRELLA_CIPHERSUITE_CLASSICAL_DEFAULT,
 };
 use umbrella_client::transport::{GatewayTransport, WebSocketTransport, WsConfig, WsTlsConfig};
 use umbrella_client::{ClientConfig, CloudChat, SecretChat, UmbrellaClient};
@@ -170,10 +170,14 @@ async fn cloud_chat_fetch_inbox_drains_single_pushed_message() {
     );
     assert_eq!(msg.timestamp, 1_700_000_000_123);
     assert_eq!(msg.text, "hello session 4");
-    // chat_id field on DecryptedMessage must match the CloudChat instance
-    // the caller invoked fetch_inbox on (stub Block-7.2 CloudChat::create
-    // uses chat_id [0u8; 32]).
-    assert_eq!(msg.chat_id.0, [0u8; 32]);
+    // F-CLIENT-FACADE-1 session 5: `CloudChat::create` теперь генерирует
+    // random MLS group_id. DecryptedMessage.chat_id мирора cloud.chat_id()
+    // (instance-scoped, не глобальный zero stub).
+    //
+    // Session 5: DecryptedMessage.chat_id mirrors the CloudChat instance's
+    // real (random, non-zero) MLS group_id.
+    assert_eq!(msg.chat_id, cloud.chat_id());
+    assert_ne!(msg.chat_id, ChatId([0u8; 32]));
 }
 
 #[tokio::test]

@@ -4403,6 +4403,8 @@ dependencies = [
  "futures-util",
  "hex",
  "hkdf 0.13.0",
+ "openmls",
+ "openmls_traits",
  "proptest",
  "prost",
  "prost-build",

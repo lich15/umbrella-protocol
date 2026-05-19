@@ -8,16 +8,21 @@
 //! production `UmbrellaClient::bootstrap` with a hardware-backed KeyStore and
 //! real HTTP/2 transports.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
-use tokio::sync::RwLock;
+use rand_core::OsRng;
+use tokio::sync::{Mutex as TokioMutex, RwLock};
 use umbrella_backup::cloud_wrap::WrappingParams;
 use umbrella_calls::CallPolicy;
-use umbrella_identity::{IdentityKey, IdentitySeed, KeyStore};
+use umbrella_identity::{
+    Clock, IdentityKey, IdentitySeed, InMemoryKeyStore, KeyStore, MnemonicLanguage, SystemClock,
+};
 use umbrella_kt::KtLogState;
+use umbrella_mls::{UmbrellaGroup, UmbrellaProvider};
 
 use crate::error::{ClientError, Result};
-use crate::facade::chat_common::UMBRELLA_CIPHERSUITE_CLASSICAL_DEFAULT;
+use crate::facade::chat_common::{ChatId, UMBRELLA_CIPHERSUITE_CLASSICAL_DEFAULT};
 #[cfg(feature = "pq")]
 use crate::facade::chat_common::UMBRELLA_CIPHERSUITE_PQ_HYBRID;
 use crate::keystore::hw_backed::HwBackedKeyStore;
@@ -451,6 +456,79 @@ pub struct ClientCore {
     /// `Arc<GatewayConnection>` under a brief read-lock and performs network
     /// I/O outside the lock.
     pub(crate) gateway: RwLock<Option<Arc<GatewayConnection>>>,
+
+    /// MLS RFC 9420 provider (RustCrypto AEAD/HPKE/Sig + in-memory storage). Один
+    /// instance на `ClientCore` — все MLS-группы внутри одного клиента используют
+    /// одну общую storage area (KeyPackage privates, group state, signing keys).
+    ///
+    /// **F-CLIENT-FACADE-1 session 5 (2026-05-19):** Wire-up для real MLS encrypt/
+    /// decrypt через [`UmbrellaGroup`] вместо placeholder text-as-bytes. См.
+    /// [`Self::mls_provider`] accessor для consumer-facing API; внутренний slot
+    /// `pub(crate)` чтобы фасады могли передавать `&UmbrellaProvider` в
+    /// `UmbrellaGroup::encrypt_application` / `process_incoming` без acquiring
+    /// дополнительных lock-ов.
+    ///
+    /// MLS RFC 9420 provider (RustCrypto AEAD/HPKE/Sig + in-memory storage). One
+    /// instance per `ClientCore` — all MLS groups inside a single client share
+    /// one storage area (KeyPackage privates, group state, signing keys).
+    pub(crate) mls_provider: Arc<UmbrellaProvider>,
+
+    /// Каноничный MLS [`KeyStore`] этого `ClientCore`. Содержит identity-key и
+    /// `device_index = 0` (Block 7.2 single-device); используется
+    /// [`UmbrellaGroup::create_private`] / `encrypt_application` /
+    /// `add_members` для credential binding + device signing.
+    ///
+    /// Поле **отдельно** от [`Self::keystore`] (F-IDENT-1 partition invariant): тот
+    /// слот остаётся `None` на legacy path и `Some(HwBackedKeyStore)` на hw path
+    /// и описывает identity-sk storage policy. `mls_keystore` — всегда
+    /// `Some(InMemoryKeyStore)` независимо от bootstrap path; на hw path
+    /// derive'ится из независимого random seed (production HW MLS device-key
+    /// callback — F-IDENT-DEVICE-1 v1.2.x, scope outside session 5).
+    ///
+    /// Canonical MLS [`KeyStore`] for this `ClientCore`. Holds identity-key and
+    /// `device_index = 0` (Block 7.2 single-device); consumed by
+    /// [`UmbrellaGroup::create_private`] / `encrypt_application` /
+    /// `add_members` for credential binding + device signing.
+    ///
+    /// This field is **separate** from [`Self::keystore`] (F-IDENT-1 partition
+    /// invariant): the latter stays `None` on the legacy path and is
+    /// `Some(HwBackedKeyStore)` on the hw path, describing the identity-sk
+    /// storage policy. `mls_keystore` is always populated regardless of
+    /// bootstrap path; on the hw path it derives from an independent random
+    /// seed (production HW MLS device-key callback is F-IDENT-DEVICE-1, tracked
+    /// for v1.2.x — outside session 5 scope).
+    pub(crate) mls_keystore: Arc<dyn KeyStore>,
+
+    /// Map `ChatId -> UmbrellaGroup` — active MLS group state per chat.
+    /// `Arc<TokioMutex<UmbrellaGroup>>` per value — каждой группе нужна
+    /// exclusive mut access для encrypt/decrypt/add_members; разные группы
+    /// независимы и могут оперировать concurrently (read-lock на outer map).
+    ///
+    /// **F-CLIENT-FACADE-1 session 5 (2026-05-19):** новое поле. До session 5
+    /// `CloudChat::create` / `SecretChat::create` возвращали `ChatId([0u8; 32])`
+    /// stub; теперь генерируют random 32-byte chat_id, конструируют real
+    /// `UmbrellaGroup::create_private` и регистрируют её здесь. `send_mls_text`
+    /// и `fetch_mls_inbox` (chat_common) lookup группы по `chat_id` и используют
+    /// `encrypt_application` / `process_incoming`. Backwards-compat: если
+    /// `chat_id` отсутствует в map (e.g. test, который открыл chat через
+    /// stub `CloudChat::open(ChatId([0u8; 32]))`), facade fall-back в legacy
+    /// raw-bytes path (без MLS).
+    ///
+    /// Map `ChatId -> UmbrellaGroup` — active MLS group state per chat.
+    /// `Arc<TokioMutex<UmbrellaGroup>>` per value: each group needs exclusive
+    /// mut access for encrypt/decrypt/add_members; distinct groups are
+    /// independent and can operate concurrently (the outer map is read-locked).
+    ///
+    /// **F-CLIENT-FACADE-1 session 5 (2026-05-19):** new field. Prior to
+    /// session 5 `CloudChat::create` / `SecretChat::create` returned
+    /// `ChatId([0u8; 32])` stub; now they generate a random 32-byte chat_id,
+    /// construct a real `UmbrellaGroup::create_private`, and register it here.
+    /// `send_mls_text` and `fetch_mls_inbox` (chat_common) look the group up by
+    /// `chat_id` and use `encrypt_application` / `process_incoming`. Backwards-
+    /// compat: if `chat_id` is absent (e.g. a test that opened a chat via the
+    /// stub `CloudChat::open(ChatId([0u8; 32]))`), the facade falls back to the
+    /// legacy raw-bytes path (no MLS).
+    pub(crate) groups: RwLock<HashMap<ChatId, Arc<TokioMutex<UmbrellaGroup>>>>,
 }
 
 impl ClientCore {
@@ -479,6 +557,20 @@ impl ClientCore {
         let unwrap_transport: Arc<dyn AsyncUnwrapTransport + Send + Sync> =
             Arc::new(StubUnwrapTransport::default());
 
+        // F-CLIENT-FACADE-1 session 5: MLS keystore shares the same BIP-39
+        // seed as `identity`, so the MLS credential payload (`identity_pk |
+        // device_index_BE`) matches `IdentityKey::derive(&seed, 0).public()`
+        // — wire-format consistency across identity-layer and MLS-layer
+        // surfaces. `InMemoryKeyStore::open` re-derives identity internally
+        // (small CPU cost, no semantic divergence). Device 0 registered
+        // so `UmbrellaGroup::create_private` / `encrypt_application` can
+        // build the device-key signer.
+        let mls_keystore_inner =
+            InMemoryKeyStore::open(seed, 0, Arc::new(SystemClock) as Arc<dyn Clock>)?;
+        mls_keystore_inner.add_device(0, None)?;
+        let mls_keystore: Arc<dyn KeyStore> = Arc::new(mls_keystore_inner);
+        let mls_provider = Arc::new(UmbrellaProvider::default());
+
         Ok(Arc::new(Self {
             identity: Some(identity),
             device_index: 0,
@@ -501,6 +593,9 @@ impl ClientCore {
             // construct a mock GatewayTransport and install it here.
             // F-CLIENT-FACADE-1 session 3: gateway is set post-bootstrap.
             gateway: RwLock::new(None),
+            mls_provider,
+            mls_keystore,
+            groups: RwLock::new(HashMap::new()),
         }))
     }
 
@@ -590,6 +685,36 @@ impl ClientCore {
         )?;
         let keystore: Arc<dyn KeyStore> = Arc::new(hw_keystore);
 
+        // F-CLIENT-FACADE-1 session 5: на hw path нет shared IdentitySeed —
+        // identity-sk физически в TEE. MLS device-keys требуют отдельный
+        // seed-backed `InMemoryKeyStore` (production HW MLS device-key
+        // callback — F-IDENT-DEVICE-1 в v1.2.x, outside session 5 scope).
+        // Эта material — fresh random Ed25519/X25519/HKDF-derived с
+        // CSPRNG `OsRng`; на этом keystore credential.identity_pk ≠
+        // `hw_verifying_key`, поэтому MLS-уровневая идентичность
+        // на hw path **отделена** от identity-уровневой до F-IDENT-DEVICE-1
+        // closure. Документировано в memory project_phd_b_pass5_complete
+        // как session-5 transitional gap.
+        // `IdentitySeed::generate` deprecated для production identity path
+        // (round-6 distributed identity предписывает `bootstrap_account`); здесь
+        // используется ТОЛЬКО для throwaway MLS device-keystore seed на hw path
+        // — это **не** identity_sk. Identity_sk остаётся в TEE через
+        // `callback`. F-IDENT-DEVICE-1 v1.2.x устранит need в этом seed
+        // когда HW MLS device-key callback будет wired.
+        //
+        // `IdentitySeed::generate` deprecation deliberately suppressed: this is
+        // a throwaway MLS device-key seed for the hw bootstrap path, NOT the
+        // user's identity_sk (which stays in TEE via `callback`).
+        // F-IDENT-DEVICE-1 (v1.2.x) will remove the need for this seed once
+        // a HW MLS device-key callback is wired.
+        #[allow(deprecated)]
+        let mls_seed = IdentitySeed::generate(&mut OsRng, MnemonicLanguage::English);
+        let mls_keystore_inner =
+            InMemoryKeyStore::open(mls_seed, 0, Arc::new(SystemClock) as Arc<dyn Clock>)?;
+        mls_keystore_inner.add_device(0, None)?;
+        let mls_keystore: Arc<dyn KeyStore> = Arc::new(mls_keystore_inner);
+        let mls_provider = Arc::new(UmbrellaProvider::default());
+
         Ok(Arc::new(Self {
             identity: None,
             device_index: 0,
@@ -606,6 +731,9 @@ impl ClientCore {
             keystore: Some(keystore),
             // F-CLIENT-FACADE-1 session 3: gateway is set post-bootstrap.
             gateway: RwLock::new(None),
+            mls_provider,
+            mls_keystore,
+            groups: RwLock::new(HashMap::new()),
         }))
     }
 
@@ -770,6 +898,71 @@ impl ClientCore {
     /// Clear the active gateway connection.
     pub async fn clear_gateway(&self) {
         *self.gateway.write().await = None;
+    }
+
+    /// MLS provider shared between groups (F-CLIENT-FACADE-1 session 5).
+    /// `Arc<UmbrellaProvider>` чтобы фасадам не приходилось клонировать
+    /// in-memory storage — все группы внутри одного ClientCore используют
+    /// одну общую storage area (KeyPackage privates, signing keys).
+    ///
+    /// MLS provider shared between groups (F-CLIENT-FACADE-1 session 5).
+    #[must_use]
+    pub fn mls_provider(&self) -> Arc<UmbrellaProvider> {
+        self.mls_provider.clone()
+    }
+
+    /// MLS keystore (Block 7.2 device 0 single-device). Используется фасадами
+    /// в комбинации с [`Self::mls_provider`] для create / encrypt / decrypt /
+    /// add_members. См. doc-comment поля [`Self::mls_keystore`] для partition
+    /// invariant vs [`Self::keystore`].
+    ///
+    /// MLS keystore (Block 7.2 device 0 single-device). See the field
+    /// doc-comment for the partition invariant vs [`Self::keystore`].
+    #[must_use]
+    pub fn mls_keystore(&self) -> Arc<dyn KeyStore> {
+        self.mls_keystore.clone()
+    }
+
+    /// Извлечь `Arc<TokioMutex<UmbrellaGroup>>` для данного `chat_id`. Возвращает
+    /// `None` если группа не зарегистрирована (e.g. test, который открыл chat
+    /// через stub `CloudChat::open(ChatId([0u8; 32]))` без предварительного
+    /// `create`). Read-only path для facade-уровневых send/fetch operations.
+    ///
+    /// Look up the `Arc<TokioMutex<UmbrellaGroup>>` for `chat_id`. Returns
+    /// `None` when no group is registered for this id.
+    pub async fn get_group(&self, chat_id: ChatId) -> Option<Arc<TokioMutex<UmbrellaGroup>>> {
+        self.groups.read().await.get(&chat_id).cloned()
+    }
+
+    /// Регистрирует MLS-группу для `chat_id`. Перезапишет существующую группу
+    /// под тем же chat_id (последний `create` / restore wins). Используется
+    /// [`CloudChat::create`] / [`SecretChat::create`] после `UmbrellaGroup::create_private`.
+    ///
+    /// Register an MLS group for `chat_id`. Overwrites any existing group
+    /// under the same id (last write wins). Called by `CloudChat::create` /
+    /// `SecretChat::create` after `UmbrellaGroup::create_private`.
+    pub async fn register_group(
+        &self,
+        chat_id: ChatId,
+        group: Arc<TokioMutex<UmbrellaGroup>>,
+    ) {
+        self.groups.write().await.insert(chat_id, group);
+    }
+
+    /// Удалить MLS-группу для `chat_id`. Возвращает `Arc<TokioMutex<UmbrellaGroup>>`
+    /// если была, чтобы caller мог решить какое финальное состояние нужно
+    /// (например serialize в persistent storage). На текущем этапе используется
+    /// только тестами; production cleanup (logout, remove last device) появится
+    /// в session 6+.
+    ///
+    /// Remove the MLS group for `chat_id`. Returns the group if present so the
+    /// caller can decide on final state handling. Tests-only today; production
+    /// cleanup (logout, remove last device) arrives in session 6+.
+    pub async fn unregister_group(
+        &self,
+        chat_id: ChatId,
+    ) -> Option<Arc<TokioMutex<UmbrellaGroup>>> {
+        self.groups.write().await.remove(&chat_id)
     }
 
     /// Закрытая граница неполного HTTP/2 bootstrap.

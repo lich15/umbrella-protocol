@@ -69,7 +69,8 @@ use crate::call::{CallSession, MediaSink, MediaSource, ModeEnforcement};
 use crate::core::ClientCore;
 use crate::error::Result;
 use crate::facade::chat_common::{
-    fetch_mls_inbox, send_mls_text, ChatId, ChatSettings, DecryptedMessage, MessageId, PeerId,
+    create_mls_group, fetch_mls_inbox, mls_add_member, send_mls_text, ChatId, ChatSettings,
+    DecryptedMessage, MessageId, PeerId,
 };
 
 /// Secret-чат. Зеркало [`CloudChat`] по shared методам, но **без**
@@ -144,10 +145,18 @@ impl SecretChat {
         _participants: Vec<PeerId>,
         settings: ChatSettings,
     ) -> Result<Self> {
-        let chat_id = ChatId([0u8; 32]);
         let effective_ciphersuite = settings
             .ciphersuite
             .unwrap_or_else(|| core.default_ciphersuite());
+        // F-CLIENT-FACADE-1 session 5: real MLS group create (same code path as
+        // CloudChat::create). Secret-mode-specific divergence (sealed-sender
+        // envelope wrapping on send, no Sealed Servers wrap for keys) lives
+        // in send_mls_text / fetch_mls_inbox session 7 + cloud_sync_history
+        // session 6 — those are mode-aware while the group create primitive
+        // itself is shared. ADR-006 Variant C type-safety is enforced via
+        // method-presence asymmetry (cloud_sync_history / add_bot exist on
+        // CloudChat only).
+        let chat_id = create_mls_group(&core, effective_ciphersuite).await?;
         Ok(Self {
             core,
             chat_id,
@@ -191,19 +200,39 @@ impl SecretChat {
         fetch_mls_inbox(&self.core, self.chat_id).await
     }
 
-    /// Добавить участника в Secret-чат. MLS Add proposal + Commit,
-    /// `WelcomeMessage` напрямую через blind-postman-svc.
+    /// Добавить участника в Secret-чат. См. doc-comment
+    /// [`crate::facade::CloudChat::add_participant`] — поведение mirror'ит
+    /// CloudChat: stub `Ok(())` до wire-up blind-postman session 6+, real
+    /// MLS Add через [`Self::add_member`] (peer + serialized KeyPackage).
     ///
-    /// Add a participant to the Secret chat. MLS Add proposal + Commit;
-    /// `WelcomeMessage` delivered directly via blind-postman-svc.
+    /// Add a participant to the Secret chat. Same behaviour as
+    /// [`crate::facade::CloudChat::add_participant`].
     ///
     /// # Errors
     ///
-    /// `ClientError::Mls / SealedSender / Network` в Блоке 7.4.
-    ///
-    /// `ClientError::Mls / SealedSender / Network` in Block 7.4.
+    /// `ClientError::Mls / SealedSender / Network` once wired in session 6+.
     pub async fn add_participant(&self, _peer: PeerId) -> Result<()> {
         Ok(())
+    }
+
+    /// **F-CLIENT-FACADE-1 session 5 (2026-05-19):** real MLS Add для Secret-чата.
+    /// Identical в семантике с [`crate::facade::CloudChat::add_member`] (см.
+    /// doc-comment там) — Secret-mode-specific divergence (Welcome через
+    /// blind-postman вместо Sealed Servers fan-out) лежит в layered transport
+    /// session 6+ scope.
+    ///
+    /// **F-CLIENT-FACADE-1 session 5:** real MLS Add for the Secret chat.
+    /// Same semantics as [`crate::facade::CloudChat::add_member`].
+    ///
+    /// # Errors
+    ///
+    /// Same as [`crate::facade::CloudChat::add_member`].
+    pub async fn add_member(
+        &self,
+        peer: PeerId,
+        key_package_bytes: Vec<u8>,
+    ) -> Result<Vec<u8>> {
+        mls_add_member(&self.core, self.chat_id, peer, &key_package_bytes).await
     }
 
     /// Удалить участника. MLS Remove + Commit.

@@ -56,6 +56,16 @@ pq = [
 umbrella-identity = { workspace = true }
 umbrella-mls = { workspace = true }
 umbrella-kt = { workspace = true }
+# F-CLIENT-FACADE-1 session 5 (2026-05-19): direct openmls deps for facade
+# create_group + add_member wire-up — GroupId construction from chat_id
+# bytes, KeyPackageIn validate, ProtocolVersion enum, leaf_node credential
+# inspection. Previously openmls was a transitive dep through umbrella-mls;
+# session 5 facade methods need its types at API boundary.
+#
+# F-CLIENT-FACADE-1 session 5: direct openmls deps for facade group create +
+# add_member wire-up.
+openmls = { workspace = true }
+openmls_traits = { workspace = true }
 umbrella-oprf = { workspace = true }
 umbrella-sealed-sender = { workspace = true }
 umbrella-padding = { workspace = true }

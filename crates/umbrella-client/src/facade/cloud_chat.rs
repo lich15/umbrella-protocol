@@ -38,8 +38,8 @@ use crate::call::{CallSession, MediaSink, MediaSource, ModeEnforcement};
 use crate::core::ClientCore;
 use crate::error::Result;
 use crate::facade::chat_common::{
-    fetch_mls_inbox, send_mls_text, ChatId, ChatSettings, DecryptedMessage, MessageId, PeerId,
-    Timestamp,
+    create_mls_group, fetch_mls_inbox, mls_add_member, send_mls_text, ChatId, ChatSettings,
+    DecryptedMessage, MessageId, PeerId, Timestamp,
 };
 
 /// Cloud-чат. Тонкая обёртка над `Arc<ClientCore>` + `ChatId` + effective
@@ -121,10 +121,17 @@ impl CloudChat {
         _participants: Vec<PeerId>,
         settings: ChatSettings,
     ) -> Result<Self> {
-        let chat_id = ChatId([0u8; 32]);
         let effective_ciphersuite = settings
             .ciphersuite
             .unwrap_or_else(|| core.default_ciphersuite());
+        // F-CLIENT-FACADE-1 session 5: real MLS group create. Random 32-byte
+        // chat_id as MLS GroupId (RFC 9420 §13.1.1 opaque). `_participants`
+        // intentionally ignored at create-time: production add flow goes
+        // through `add_member(peer, key_package_bytes)` after fetching
+        // KeyPackages from key-svc (session 6+). Block 7.2 callers that pass
+        // peer list at create do not actually add members yet — same as
+        // pre-session-5 stub behaviour.
+        let chat_id = create_mls_group(&core, effective_ciphersuite).await?;
         Ok(Self {
             core,
             chat_id,
@@ -215,18 +222,62 @@ impl CloudChat {
     }
 
     /// Добавить участника (human device) в Cloud-чат. В Блоке 7.4 делает
-    /// MLS Add proposal + Commit, публикует `WelcomeMessage`.
+    /// MLS Add proposal + Commit, публикует `WelcomeMessage` через
+    /// blind-postman-svc. До wire-up к key-svc / blind-postman (sessions 6+)
+    /// этот метод stub `Ok(())` — реальная MLS Add логика доступна через
+    /// [`Self::add_member`] (peer + serialized KeyPackage).
     ///
     /// Add a participant (human device) to the Cloud chat. In Block 7.4 emits
-    /// an MLS Add proposal + Commit and publishes the `WelcomeMessage`.
+    /// an MLS Add proposal + Commit and publishes the `WelcomeMessage` via
+    /// blind-postman-svc. Pending key-svc / blind-postman wiring (sessions
+    /// 6+) this method is a `Ok(())` stub — the real MLS Add logic is
+    /// available through [`Self::add_member`] (peer + serialized KeyPackage).
     ///
     /// # Errors
     ///
-    /// `ClientError::Mls / SealedSender / Network` в Блоке 7.4.
-    ///
-    /// `ClientError::Mls / SealedSender / Network` in Block 7.4.
+    /// `ClientError::Mls / SealedSender / Network` once wired in session 6+.
     pub async fn add_participant(&self, _peer: PeerId) -> Result<()> {
         Ok(())
+    }
+
+    /// **F-CLIENT-FACADE-1 session 5 (2026-05-19):** real MLS Add operation на
+    /// зарегистрированной группе. `peer` — Ed25519 identity pubkey того, кого
+    /// добавляем (проверяется против `key_package.leaf_node.credential` —
+    /// первые 32 байта payload), `key_package_bytes` — TLS-serialized
+    /// `KeyPackage` (RFC 9420 §10.1, обычно ~300+ байт) этого устройства.
+    ///
+    /// Возвращает `Vec<u8>` — TLS-serialized `Welcome` сообщение которое
+    /// caller (production: blind-postman-svc; тесты: явная передача в
+    /// [`umbrella_mls::UmbrellaGroup::join_from_welcome`]) должен доставить
+    /// новому участнику.
+    ///
+    /// **Производственный путь** (session 6+): KeyPackage'и fetch'аются из
+    /// key-svc по `peer`, Welcome маршрутизируется через blind-postman-svc.
+    /// Текущий signature `(peer, key_package_bytes) -> Welcome` отражает
+    /// контракт между MLS-layer и transport-layer, готовый к session 6+
+    /// wire-up.
+    ///
+    /// **F-CLIENT-FACADE-1 session 5:** real MLS Add operation on the
+    /// registered group. `peer` is the Ed25519 identity pubkey of the addee
+    /// (verified against `key_package.leaf_node.credential` — first 32
+    /// bytes of payload); `key_package_bytes` is the TLS-serialized
+    /// `KeyPackage` (RFC 9420 §10.1, typically ~300+ bytes) of that device.
+    ///
+    /// Returns the TLS-serialized `Welcome` message; the caller (production:
+    /// blind-postman-svc; tests: explicit hand-off to
+    /// `umbrella_mls::UmbrellaGroup::join_from_welcome`) must deliver it
+    /// to the new member.
+    ///
+    /// # Errors
+    ///
+    /// - `ClientError::Mls` если группа не зарегистрирована, KeyPackage
+    ///   некорректный, или credential.identity_pk не равен `peer.0`.
+    pub async fn add_member(
+        &self,
+        peer: PeerId,
+        key_package_bytes: Vec<u8>,
+    ) -> Result<Vec<u8>> {
+        mls_add_member(&self.core, self.chat_id, peer, &key_package_bytes).await
     }
 
     /// Удалить участника. Emit MLS Remove proposal + Commit; ratchet-tree
