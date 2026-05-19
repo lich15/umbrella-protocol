@@ -423,3 +423,345 @@ async fn counter_increments_on_each_send_authentication_path() {
         assert_eq!(group.epoch(), i, "epoch must equal send number");
     }
 }
+
+// =============================================================================
+// Active-mode security claim tests — Task 6 + max_ratchet v3 real evidence
+// (per [[feedback-real-not-paperwork]] правило 2026-05-19)
+// =============================================================================
+
+/// **SPQR deniability — property test (real cryptographic evidence, not paperwork).**
+///
+/// Cryptographic claim: SPQR authentication uses HMAC-SHA256 keyed с epoch_secret,
+/// который **shared симметрично** между sender и receiver через MLS exporter chain.
+/// Любая сторона knowing epoch_secret может compute_hmac над arbitrary message →
+/// MAC бесполезен как proof of authorship в court (third-party adversary cannot
+/// distinguish который из двух сторон produced the MAC).
+///
+/// Это в contrast к signing (Ed25519 над session key) — signed messages have
+/// non-repudiable authorship через verifiable signature. SPQR sacrifice'ит
+/// non-repudiation за deniability — design goal per OTR (Borisov-Goldberg-Brewer 2004).
+///
+/// Test demonstrates property: given same epoch_secret + same message, MAC bit-equal
+/// regardless of computing party. Forgery over fabricated message succeeds against
+/// verify_hmac. Это **mathematical evidence** deniability claim в spec §3.4.
+#[test]
+fn spqr_deniability_either_party_can_forge_mac_over_arbitrary_payload() {
+    // Симулируем shared epoch_secret — Alice и Bob оба derive один и тот же
+    // 32-byte secret через exporter_secret из MLS group state. В тесте этот
+    // factor reduces до literal: оба знают bytes.
+    let shared_epoch_secret = [0xABu8; 32];
+
+    // Authentic flow: Alice authors message, computes MAC. Bob verifies.
+    let alice_authentic_payload = b"alice's real message";
+    let mac_by_alice = spqr::compute_hmac(&shared_epoch_secret, alice_authentic_payload);
+    assert!(
+        spqr::verify_hmac(&shared_epoch_secret, alice_authentic_payload, &mac_by_alice),
+        "Authentic MAC must verify"
+    );
+
+    // Deniability claim #1: identical MAC от Alice и от Bob (если бы Bob воспроизвёл
+    // computation) over same message — НИКАКОГО distinguisher. HMAC deterministic.
+    let mac_by_bob_replaying = spqr::compute_hmac(&shared_epoch_secret, alice_authentic_payload);
+    assert_eq!(
+        mac_by_alice, mac_by_bob_replaying,
+        "Deniability property #1: HMAC deterministic from shared secret + message → MAC \
+         bit-equal regardless of party. Third party cannot attribute authorship."
+    );
+
+    // Deniability claim #2: forgery property. Bob может fabricate compromising
+    // payload + valid MAC. Court receiving (payload, mac) cannot distinguish
+    // genuine Alice message from Bob's fabrication.
+    let fabricated_compromising_payload = b"fabricated 'evidence' message ostensibly from Alice";
+    let forgery_mac = spqr::compute_hmac(&shared_epoch_secret, fabricated_compromising_payload);
+    assert!(
+        spqr::verify_hmac(
+            &shared_epoch_secret,
+            fabricated_compromising_payload,
+            &forgery_mac,
+        ),
+        "Deniability property #2: forgery accepts verify — no cryptographic distinguisher exists \
+         between genuine Alice message and Bob's fabrication"
+    );
+
+    // Contrast: different secret → different MAC. SPQR HMAC is per-epoch fresh, so
+    // forgeries don't transfer across epochs (forward-secret deniability).
+    let next_epoch_secret = [0xCDu8; 32];
+    let mac_next_epoch = spqr::compute_hmac(&next_epoch_secret, alice_authentic_payload);
+    assert_ne!(
+        mac_by_alice, mac_next_epoch,
+        "Deniability property #3: per-epoch fresh — MAC tied to current epoch_secret, no \
+         cross-epoch transfer"
+    );
+}
+
+/// **V3 envelope decoder robustness — adversarial input fuzz-like test.**
+///
+/// Wire format codec MUST not panic on arbitrary attacker-controlled bytes. Decoder
+/// strict-checks structure (marker, version, lengths consistent, no trailing); ALL
+/// other inputs return `None` gracefully → caller falls back на legacy MLS path.
+///
+/// Crucially, no `panic!` / `unwrap` / arithmetic overflow possible. Tests cover:
+/// truncation, wrong marker, wrong version, length-prefix inflation, trailing
+/// junk, max-size values (u16::MAX commit_len with insufficient buffer).
+#[test]
+fn v3_envelope_decoder_robust_to_adversarial_inputs() {
+    // 1. Empty blob.
+    assert!(max_ratchet_envelope::try_decode_v3(&[]).is_none());
+
+    // 2. Single byte 0xFF (marker only, no rest).
+    assert!(max_ratchet_envelope::try_decode_v3(&[0xFF]).is_none());
+
+    // 3. Marker + version + zero-everything truncated.
+    assert!(max_ratchet_envelope::try_decode_v3(&[0xFF, 0x03]).is_none());
+
+    // 4. Minimum-size shell (marker + version + zero-len fields + zero mac) — должен
+    //    decode'ить как empty commit + empty ct + zero mac.
+    let mut minimum = vec![0xFF, 0x03, 0x00, 0x00]; // marker, version, commit_len = 0
+    minimum.extend_from_slice(&0u32.to_be_bytes()); // ct_len = 0
+    minimum.extend_from_slice(&[0u8; 32]); // mac
+    let decoded = max_ratchet_envelope::try_decode_v3(&minimum).expect("minimum decodes");
+    assert!(decoded.commit_bytes.is_none());
+    assert_eq!(decoded.ciphertext_bytes.len(), 0);
+    assert_eq!(decoded.spqr_mac, [0u8; 32]);
+
+    // 5. Inflated commit_len без backing bytes (u16::MAX = 65535).
+    let mut inflated_commit = vec![0xFF, 0x03];
+    inflated_commit.extend_from_slice(&u16::MAX.to_be_bytes());
+    inflated_commit.resize(inflated_commit.len() + 10, 0); // only 10 bytes of "commit" available
+    assert!(
+        max_ratchet_envelope::try_decode_v3(&inflated_commit).is_none(),
+        "decoder must reject inflated commit_len без backing bytes"
+    );
+
+    // 6. Random bytes starting with 0xFF — overwhelming majority should return None.
+    // Generated по predictable pattern для test determinism.
+    for i in 0..=255u8 {
+        let mut blob = vec![0xFF, 0x03];
+        // Vary commit_len and trailing data; most won't form valid structure.
+        blob.extend_from_slice(&(i as u16).to_be_bytes());
+        for j in 0..i {
+            blob.push(j);
+        }
+        // ct_len + ct + mac slots intentionally missing для большинства i.
+        let result = max_ratchet_envelope::try_decode_v3(&blob);
+        // No panic — это главный invariant. Result либо None либо Some, both acceptable.
+        let _ = result;
+    }
+
+    // 7. Bytes mimicking MLS message (ProtocolVersion 0x0100 BE first 2 bytes) — never v3.
+    let mls_lookalike = vec![0x01, 0x00, 0xAA, 0xBB, 0xCC, 0xDD];
+    assert!(
+        max_ratchet_envelope::try_decode_v3(&mls_lookalike).is_none(),
+        "MLS message lookalike не должен decode'иться как v3"
+    );
+
+    // 8. Trailing byte after valid structure — must reject (strict equality).
+    let mut valid_with_trailing = max_ratchet_envelope::encode_v3(
+        Some(&[0xAA; 4]),
+        &[0xBB; 8],
+        Some(&[0xCC; max_ratchet_envelope::SPQR_MAC_LEN]),
+    );
+    valid_with_trailing.push(0xDE);
+    assert!(
+        max_ratchet_envelope::try_decode_v3(&valid_with_trailing).is_none(),
+        "trailing byte must cause decode rejection (anti-trailing-data attack)"
+    );
+}
+
+/// **V3 envelope boundary: large-size PQ commit (X-Wing) + medium ciphertext.**
+///
+/// Real-world PQ commit ~1100 bytes (X-Wing ML-KEM-768 ciphertext); ciphertext
+/// может быть multi-KB для большого application payload. Test verifies codec
+/// handles realistic upper bounds без overflow / panic.
+#[test]
+fn v3_envelope_large_pq_sized_commit_and_multi_kb_ciphertext_roundtrip() {
+    // PQ commit ~1100 bytes (X-Wing realistic size).
+    let pq_commit = vec![0x55; 1100];
+    // Ciphertext 4096 bytes — представляет большой application message (~4KB plaintext).
+    let large_ct = vec![0x77; 4096];
+    let mac = [0xEEu8; max_ratchet_envelope::SPQR_MAC_LEN];
+
+    let bundle = max_ratchet_envelope::encode_v3(Some(&pq_commit), &large_ct, Some(&mac));
+
+    // Wire-size sanity: marker(1) + ver(1) + commit_len(2) + commit(1100) +
+    // ct_len(4) + ct(4096) + mac(32) = 5236 bytes total.
+    assert_eq!(
+        bundle.len(),
+        1 + 1 + 2 + 1100 + 4 + 4096 + 32,
+        "v3 wire size accounting must match for PQ-sized inputs"
+    );
+
+    let decoded = max_ratchet_envelope::try_decode_v3(&bundle).expect("large bundle decodes");
+    assert_eq!(decoded.commit_bytes.unwrap().len(), 1100);
+    assert_eq!(decoded.ciphertext_bytes.len(), 4096);
+    assert_eq!(decoded.spqr_mac, mac);
+}
+
+/// **Idle window attack defence — timer rekey end-to-end через MaxRatchetState.**
+///
+/// Scenario: Alice idle на чате > 5 минут. Adversary рассчитывает что symmetric
+/// ratchet keys stale → window для side-channel extraction расширяется. Defence:
+/// `check_timer_and_rekey` forces rekey при elapsed ≥ timer_rekey_seconds, что
+/// advances epoch + invalidates все ранее-derived chain keys.
+///
+/// Test: setup chat с timer=60s, simulate 90s elapsed, verify check_timer_and_rekey
+/// returns Some(commit_bytes) + epoch advances.
+#[tokio::test]
+async fn idle_window_attack_defence_timer_rekey_advances_epoch_after_pause() {
+    use umbrella_mls::{MaxRatchetConfig, MaxRatchetState};
+
+    let client = bootstrap_alice_facade().await;
+    let chat = CloudChat::create(client.core(), Vec::new(), ChatSettings::default())
+        .await
+        .expect("create");
+
+    let group_arc = client.core().get_group(chat.chat_id()).await.unwrap();
+
+    // Test-only config: timer 60s вместо production 300s чтобы test быстрый.
+    // Заменяем auto-created state на test-config вариант.
+    let test_state = Arc::new(tokio::sync::Mutex::new(MaxRatchetState::with_config(
+        MaxRatchetConfig::with_overrides(true, 60, 3, true),
+    )));
+
+    let initial_epoch = {
+        let group = group_arc.lock().await;
+        group.epoch()
+    };
+
+    // Phase 1: первый send устанавливает last_rekey_at_unix = T0+1.
+    {
+        let mut group = group_arc.lock().await;
+        let mut state = test_state.lock().await;
+        let _ = state
+            .encrypt_with_rekey_authenticated(
+                &mut *group,
+                client.core().mls_provider().as_ref(),
+                client.core().mls_keystore().as_ref(),
+                b"first message",
+                T0 + 1,
+            )
+            .expect("first send");
+    }
+
+    let epoch_after_first = {
+        let group = group_arc.lock().await;
+        group.epoch()
+    };
+    assert_eq!(epoch_after_first, initial_epoch + 1, "force_rekey advances epoch");
+
+    // Phase 2: idle period 90s. Timer (60s) должен trigger при check.
+    {
+        let mut group = group_arc.lock().await;
+        let mut state = test_state.lock().await;
+        let timer_commit = state
+            .check_timer_and_rekey(
+                &mut *group,
+                client.core().mls_provider().as_ref(),
+                client.core().mls_keystore().as_ref(),
+                T0 + 1 + 90, // 90 секунд после last rekey
+            )
+            .expect("check_timer_and_rekey");
+
+        assert!(
+            timer_commit.is_some(),
+            "Idle window defence: timer (60s) MUST trigger force_rekey at elapsed 90s"
+        );
+        assert!(
+            !timer_commit.unwrap().is_empty(),
+            "Returned commit_bytes must be non-empty TLS-serialized MlsMessage"
+        );
+    }
+
+    let epoch_after_timer = {
+        let group = group_arc.lock().await;
+        group.epoch()
+    };
+    assert_eq!(
+        epoch_after_timer,
+        epoch_after_first + 1,
+        "Idle timer rekey advances epoch by 1 (chain key fully refreshed)"
+    );
+
+    // Phase 3: immediately re-check — should NOT trigger again (idempotent внутри window).
+    {
+        let mut group = group_arc.lock().await;
+        let mut state = test_state.lock().await;
+        let no_double_trigger = state
+            .check_timer_and_rekey(
+                &mut *group,
+                client.core().mls_provider().as_ref(),
+                client.core().mls_keystore().as_ref(),
+                T0 + 1 + 90 + 5, // 5s after timer rekey
+            )
+            .expect("second check");
+        assert!(
+            no_double_trigger.is_none(),
+            "Timer не должен double-trigger в 5s после last rekey (idempotent)"
+        );
+    }
+}
+
+/// **Forward secrecy: aggressive DH per message — каждое сообщение в новом epoch'е.**
+///
+/// Scenario: adversary получает long-term identity key (R7 device capture). С
+/// classical MLS только: forward secrecy сохраняется для прошлых сообщений
+/// (chain keys deleted after use). С max_ratchet aggressive DH: даже compromised
+/// process memory at epoch N не помогает decrypt messages at N+1 потому что
+/// каждое сообщение это NEW epoch с full DH ratchet step.
+///
+/// Demonstrable property: epoch strictly monotonic, +1 per send (не +0 как в
+/// vanilla MLS application messages которые stay в одном epoch).
+#[tokio::test]
+async fn forward_secrecy_aggressive_dh_each_send_in_new_epoch() {
+    let client = bootstrap_alice_facade().await;
+    let chat = CloudChat::create(client.core(), Vec::new(), ChatSettings::default())
+        .await
+        .expect("create");
+
+    let group_arc = client.core().get_group(chat.chat_id()).await.unwrap();
+    let state_arc = client.core().get_ratchet_state(chat.chat_id()).await.unwrap();
+
+    let initial_epoch = {
+        let group = group_arc.lock().await;
+        group.epoch()
+    };
+
+    // Send 10 messages — verify каждое в новом epoch.
+    let mut epochs_seen = Vec::with_capacity(10);
+    for i in 1..=10u64 {
+        let mut group = group_arc.lock().await;
+        let mut state = state_arc.lock().await;
+        let outgoing = state
+            .encrypt_with_rekey_authenticated(
+                &mut *group,
+                client.core().mls_provider().as_ref(),
+                client.core().mls_keystore().as_ref(),
+                format!("message {}", i).as_bytes(),
+                T0 + i,
+            )
+            .expect("send");
+        epochs_seen.push(outgoing.epoch_after_send);
+    }
+
+    // Strict monotonic +1 per send — это и есть aggressive DH defence.
+    // В vanilla MLS multiple application messages в одном epoch имели бы equal epoch_after_send.
+    for (i, epoch) in epochs_seen.iter().enumerate() {
+        let expected = initial_epoch + (i as u64) + 1;
+        assert_eq!(
+            *epoch, expected,
+            "Aggressive DH defence: send #{} must be in epoch {} (initial + {}), got {}",
+            i + 1,
+            expected,
+            i + 1,
+            epoch
+        );
+    }
+
+    // Все epochs distinct (no replay window).
+    let unique_count = epochs_seen.iter().collect::<std::collections::HashSet<_>>().len();
+    assert_eq!(
+        unique_count,
+        epochs_seen.len(),
+        "Forward secrecy property: каждое сообщение в DISTINCT epoch (no two sends share epoch)"
+    );
+}
