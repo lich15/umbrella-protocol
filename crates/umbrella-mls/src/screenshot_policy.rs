@@ -61,7 +61,13 @@ pub enum ReceiverViewState {
     /// Not yet viewed.
     NotViewed,
     /// Viewed at given UNIX seconds.
-    Viewed { at_secs: u64 },
+    Viewed {
+        /// UNIX-seconds timestamp когда message впервые viewed на receiver side.
+        /// Используется retention policy для compute expiration deadline.
+        /// UNIX-seconds timestamp when the message was first viewed; used by the
+        /// retention policy to compute the expiration deadline.
+        at_secs: u64,
+    },
     /// Expired — content has been wiped.
     Expired,
 }

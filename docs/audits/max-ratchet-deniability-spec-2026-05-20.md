@@ -271,6 +271,22 @@ Snapdragon 8 Gen 4 (current flagship) ~1.5-2x slower vs Apple M2 на crypto wor
 
 **Total coverage:** 36 тестов покрывают конфигурацию, индивидуальные техники, граничные случаи и комбинированный сценарий по умолчанию.
 
+### Active-mode security claim tests (2026-05-20 evidence package)
+
+Добавлены **17 dedicated security claim tests** demonstrating каждое spec claim с
+measurable outcomes per [[feedback-real-not-paperwork]]:
+
+- **6 PQ integration tests** (`tests/test_max_ratchet_pq_real.rs`, feature `pq`):
+  real X-Wing combine + PQ-extended SPQR HMAC keying (Task 4.7 closure)
+- **10 facade integration tests** (`tests/facade_max_ratchet_v3.rs`):
+  - 5 baseline (auto-registration, v3 wire format, end-to-end round-trip, counter)
+  - 5 active-mode security claims (deniability, codec robustness, PQ-size boundary,
+    idle window timer, forward secrecy aggressive DH)
+- **1 collision-free invariant test** (`max_ratchet_envelope.rs::tests`): v3 marker
+  `0xFF` collision-free с MLS ProtocolVersion (first byte `0x01`)
+
+Coverage matrix + numerical bounds per claim — см. `docs/audits/max-ratchet-v3-security-evidence-2026-05-20.md`.
+
 ---
 
 ## 7. Открытые вопросы / Carry-over
@@ -430,7 +446,12 @@ Carry-over: Android/iOS device-native benchmarks через NDK toolchain (vne s
 
 ### Plan + handoffs
 - `docs/superpowers/plans/2026-05-20-max-ratchet-deniability.md` — original implementation plan
-- Carry-over handoffs (будут созданы для Tasks 4 partial / 6 / 7) — TODO
+- ~~Carry-over handoffs~~ — все 3 Tasks (4.7 / 6 / 7) closed in-session 2026-05-20
+
+### Security evidence
+- `docs/audits/max-ratchet-v3-security-evidence-2026-05-20.md` — evidence matrix
+  mapping каждое spec claim к real test + measured outcome + numerical bound (per
+  [[feedback-real-not-paperwork]] правило)
 
 ---
 
