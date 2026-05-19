@@ -19,9 +19,52 @@
 
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use reqwest::{Client, Url};
 
 use crate::error::ClientError;
+
+/// **F-CLIENT-FACADE-1 session 8c3 (2026-05-19):** abstraction над «fetch raw
+/// length-prefixed-decoded signed root frames для эпохи». Реализуется
+/// производственным [`Http2KtTransport`] (HTTP/2 к kt-svc) и mock-fetcher-ом
+/// в тестах ([`crate::kt_monitor::verify_kt_witness_signatures_for_epoch_via_fetcher`]).
+///
+/// Поверхность интерфейса минимальна: единственный async-метод, возвращающий
+/// `Vec<Vec<u8>>` — каждый внутренний `Vec<u8>` — wire-bytes одного
+/// `SignedEpochRoot` (декодируется через
+/// [`umbrella_kt::codec::decode_signed_epoch_root`]). Семантика
+/// «one frame per epoch» (canonical bundle of N signatures) — single-frame
+/// invariant enforce'ится на стороне caller'а (verifier'а), не на стороне
+/// transport'а; transport фактически отвечает только за раскодирование
+/// length-prefixed stream'а от kt-svc, не за content validation.
+///
+/// **F-CLIENT-FACADE-1 session 8c3:** abstraction over "fetch raw
+/// length-prefixed-decoded signed-root frames for an epoch". Implemented by
+/// the production `Http2KtTransport` and by mock fetchers in tests. Surface
+/// is minimal: a single async method returning `Vec<Vec<u8>>` where each
+/// inner `Vec<u8>` is the wire bytes of one `SignedEpochRoot`. Single-frame
+/// invariant is enforced by the verifier, not the transport.
+#[async_trait]
+pub trait KtSignedRootsFetcher: Send + Sync {
+    /// Получить length-prefixed-decoded raw frames для signed roots в эпоху.
+    /// Каждый frame — wire-encoded `SignedEpochRoot`.
+    ///
+    /// Fetch length-prefixed-decoded raw frames for signed roots in the
+    /// epoch. Each frame is a wire-encoded `SignedEpochRoot`.
+    ///
+    /// # Errors
+    ///
+    /// - [`ClientError::Network`] при DNS/TCP/TLS/HTTP errors, status != 2xx,
+    ///   либо truncated length-prefixed stream от kt-svc.
+    async fn fetch_signed_root_frames(&self, epoch: u64) -> Result<Vec<Vec<u8>>, ClientError>;
+}
+
+#[async_trait]
+impl KtSignedRootsFetcher for Http2KtTransport {
+    async fn fetch_signed_root_frames(&self, epoch: u64) -> Result<Vec<Vec<u8>>, ClientError> {
+        self.fetch_signed_roots(epoch).await
+    }
+}
 
 /// Длина `account_id` в байтах (SPEC-09 §3 — hash-of-identity-pubkey).
 /// `account_id` length in bytes (SPEC-09 §3 — hash of identity pubkey).

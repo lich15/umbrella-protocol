@@ -72,6 +72,7 @@
 #![warn(missing_docs)]
 
 pub mod authorization_entries;
+pub mod codec;
 pub mod entry;
 #[cfg(feature = "pq")]
 pub mod entry_v2;
@@ -88,6 +89,11 @@ pub use authorization_entries::{
     lookup_device_entry, DeviceAuthorizationApproval, DeviceAuthorizationRevocation,
     DeviceEntryRef, DeviceEntryState, DeviceEntryStateFlag, EntryType, IdentityRotationRecord,
     KtLogState, RotationReason, DEVICE_PUBKEY_LEN,
+};
+pub use codec::{
+    decode_signed_epoch_root, encode_signed_epoch_root, signed_epoch_root_wire_len,
+    MAX_WITNESSES_PER_EPOCH, SIGNATURE_WIRE_LEN, SIGNED_EPOCH_ROOT_HEADER_LEN,
+    SIGNED_EPOCH_ROOT_WIRE_VERSION,
 };
 pub use entry::{DeviceAttestationRef, KtEntry, MAX_ENTRY_ENCODED_LEN};
 #[cfg(feature = "pq")]

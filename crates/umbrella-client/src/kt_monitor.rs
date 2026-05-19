@@ -48,10 +48,14 @@
 
 use std::sync::Arc;
 
-use umbrella_kt::{verify_own_entry, verify_signed_epoch, KtEntry, KtError, OwnExpectations};
+use umbrella_kt::{
+    decode_signed_epoch_root, verify_own_entry, verify_signed_epoch, KtEntry, KtError,
+    OwnExpectations,
+};
 
 use crate::core::ClientCore;
 use crate::error::{ClientError, Result};
+use crate::transport::KtSignedRootsFetcher;
 
 /// **F-CLIENT-FACADE-1 session 8a (2026-05-19):** verify Alice's own KT entry
 /// для epoch against локальных expectations. Alice знает свой
@@ -258,4 +262,85 @@ pub async fn run_kt_self_monitor_once(
 ) -> Result<()> {
     verify_own_kt_entry_for_epoch(core, epoch).await?;
     verify_kt_witness_signatures_for_epoch(core, epoch, threshold).await
+}
+
+/// **F-CLIENT-FACADE-1 session 8c3 (2026-05-19):** production-path witness
+/// 3-of-5 verification через [`KtSignedRootsFetcher`] abstraction вместо
+/// stub-typed staging map. Эквивалент [`verify_kt_witness_signatures_for_epoch`]
+/// по семантике, но pulls bytes-frame от async-fetcher (production:
+/// [`crate::transport::Http2KtTransport`] HTTP/2 к `kt-svc`; tests: mock impl)
+/// и decoding'ает через [`decode_signed_epoch_root`] before threshold verify.
+///
+/// **Single-frame invariant** (SPEC-09 §6 canonical wire shape): backend
+/// возвращает ровно один `SignedEpochRoot` frame для данной эпохи —
+/// containing все ≤ 5 witness signatures aggregate'нутые server-side. Если
+/// transport отдал `frames.len() != 1` (пустой ответ, либо multi-frame
+/// split-view), facade fail-closed без decode — adversary не получает
+/// возможности подсунуть один из multiple frames незаметно.
+///
+/// **Defence-in-depth chain** (постулат 14):
+/// 1. Transport error от fetcher → `ClientError::Network` (либо whatever
+///    fetcher returns) — propagates напрямую.
+/// 2. `frames.len() != 1` → `SelfMonitoringMismatch { field:
+///    "expected_single_signed_root_frame" }` — silent multi-frame attack
+///    blocked.
+/// 3. `decode_signed_epoch_root` rejected (truncation / version /
+///    too_many_signatures / trailing_bytes / truncated_signatures) →
+///    propagates as `ClientError::Kt(InvalidSignedEpochRootWire(tag))`.
+/// 4. `signed.epoch != epoch` (server returned other epoch under requested
+///    key) → `SelfMonitoringMismatch { field: "signed_epoch_mismatch" }`
+///    — symmetric с [`verify_kt_witness_signatures_for_epoch`] precedent.
+/// 5. `verify_signed_epoch` threshold не достигнут → `InsufficientValidSignatures`.
+///
+/// **F-CLIENT-FACADE-1 session 8c3:** production-path 3-of-5 witness
+/// verification via the `KtSignedRootsFetcher` trait — wraps raw-bytes fetch
+/// + `decode_signed_epoch_root` + threshold verify, preserving fail-closed
+/// semantics across each layer.
+///
+/// # Errors
+///
+/// - Whatever the fetcher returns on transport failure (typically
+///   `ClientError::Network`).
+/// - `ClientError::Kt(KtError::SelfMonitoringMismatch { field:
+///   "expected_single_signed_root_frame" })` если frames.len() != 1.
+/// - `ClientError::Kt(KtError::InvalidSignedEpochRootWire(_))` на любой
+///   malformed wire payload — strict-decoder rejects.
+/// - `ClientError::Kt(KtError::SelfMonitoringMismatch { field:
+///   "signed_epoch_mismatch" })` если `signed.epoch != epoch`.
+/// - `ClientError::Kt(KtError::InsufficientValidSignatures { valid,
+///   required })` если меньше `threshold` валидных подписей.
+pub async fn verify_kt_witness_signatures_for_epoch_via_fetcher(
+    core: &Arc<ClientCore>,
+    fetcher: &dyn KtSignedRootsFetcher,
+    epoch: u64,
+    threshold: usize,
+) -> Result<()> {
+    let frames = fetcher.fetch_signed_root_frames(epoch).await?;
+
+    // Single-frame invariant: canonical SPEC-09 §6 wire shape возвращает один
+    // bundled SignedEpochRoot per epoch с N ≤ 5 signatures aggregate'нутыми
+    // server-side. Multi-frame ответ может моделировать adversarial split
+    // (один honest frame + один malicious с same epoch+root but different
+    // log_size cross-binding) — fail-closed без попыток pick'ать «лучший».
+    if frames.len() != 1 {
+        return Err(ClientError::Kt(KtError::SelfMonitoringMismatch {
+            field: "expected_single_signed_root_frame",
+        }));
+    }
+
+    let signed = decode_signed_epoch_root(&frames[0]).map_err(ClientError::Kt)?;
+
+    // Symmetric с verify_kt_witness_signatures_for_epoch: defence-in-depth
+    // epoch-binding — adversary мог serve старую честную SignedEpochRoot
+    // под ключом текущей эпохи; canonical_sign_payload использует
+    // signed.epoch для verify, threshold пройдёт, но клиент эффективно
+    // «принял» подписи not the requested epoch.
+    if signed.epoch != epoch {
+        return Err(ClientError::Kt(KtError::SelfMonitoringMismatch {
+            field: "signed_epoch_mismatch",
+        }));
+    }
+
+    let witness_set = core.kt_witness_set().await;
+    verify_signed_epoch(&signed, &witness_set, threshold).map_err(ClientError::Kt)
 }

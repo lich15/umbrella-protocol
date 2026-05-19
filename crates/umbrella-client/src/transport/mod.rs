@@ -35,7 +35,7 @@ pub use http2_client::{
     build_http2_client, build_production_http2_client, Http2Config, PinnedServiceEndpoint,
     ProductionHttp2Config,
 };
-pub use kt_transport::{Http2KtTransport, ACCOUNT_ID_LEN};
+pub use kt_transport::{Http2KtTransport, KtSignedRootsFetcher, ACCOUNT_ID_LEN};
 pub(crate) use pinning::normalize_dns_host;
 pub use pinning::{
     extract_spki_pin_from_cert_der, PinningConfig, PinningVerifierError, SpkiPin,

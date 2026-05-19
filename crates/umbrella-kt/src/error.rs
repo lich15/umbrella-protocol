@@ -224,4 +224,22 @@ pub enum KtError {
     /// `"slh_dsa_flag_invalid"`, `"trailing_bytes"`).
     #[error("invalid KT V2 entry wire format: {0}")]
     InvalidV2Entry(&'static str),
+
+    /// `SignedEpochRoot` wire-format не валиден (длина не соответствует
+    /// expected layout, unknown version byte, signature_count за пределами
+    /// `MAX_WITNESSES_PER_EPOCH`, trailing bytes после последней подписи).
+    /// Содержит стабильный string tag для классификации причины (e.g.
+    /// `"too_short"`, `"unknown_version"`, `"too_many_signatures"`,
+    /// `"truncated_signatures"`, `"trailing_bytes"`). Используется
+    /// `umbrella_kt::codec::decode_signed_epoch_root` —
+    /// fail-closed на любой malformed input (постулат 14 ADR-009).
+    ///
+    /// `SignedEpochRoot` wire format is invalid (length mismatch, unknown
+    /// version byte, signature count above `MAX_WITNESSES_PER_EPOCH`,
+    /// trailing bytes after the last signature). Carries a stable string tag
+    /// for cause classification. Used by
+    /// `umbrella_kt::codec::decode_signed_epoch_root` — fail-closed on any
+    /// malformed input (postulate 14, ADR-009).
+    #[error("invalid SignedEpochRoot wire format: {0}")]
+    InvalidSignedEpochRootWire(&'static str),
 }
