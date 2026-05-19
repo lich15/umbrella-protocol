@@ -150,8 +150,10 @@ pub async fn verify_own_kt_entry_for_epoch(core: &Arc<ClientCore>, epoch: u64) -
 ///    свежую эпоху — `verify_signed_epoch` использует `signed.epoch` для
 ///    payload, подписи verify'ятся, threshold проходит, но клиент получил
 ///    подписи не той эпохи которую запрашивал.
-/// 3. Snapshots witness set от
-///    [`crate::transport::stub::StubKtTransport::witness_set`].
+/// 3. Snapshots witness set от [`ClientCore::kt_witness_set`] (pinned 5
+///    witness pubkeys из native bootstrap либо test fixture; session 8c1
+///    migration перенесла этот state из `StubKtTransport` в `ClientCore`
+///    как single source of truth).
 /// 4. Вызывает `umbrella_kt::witness::verify_signed_epoch(&signed,
 ///    &witness_set, threshold)` — алгоритм проверяет ≥ `threshold`
 ///    валидных подписей от **разных** witness-ов из набора, payload
@@ -200,6 +202,6 @@ pub async fn verify_kt_witness_signatures_for_epoch(
         }));
     }
 
-    let witness_set = core.kt_transport().witness_set();
+    let witness_set = core.kt_witness_set().await;
     verify_signed_epoch(&signed, &witness_set, threshold).map_err(ClientError::Kt)
 }

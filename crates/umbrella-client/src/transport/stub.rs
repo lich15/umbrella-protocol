@@ -46,7 +46,7 @@ use umbrella_backup::cloud_wrap::signed_request::SignedUnwrapRequest;
 use umbrella_backup::cloud_wrap::transport::UnwrapTransport;
 use umbrella_backup::cloud_wrap::wire::WrappedKey;
 use umbrella_backup::error::BackupError;
-use umbrella_kt::{KtEntry, SignedEpochRoot, WitnessSet};
+use umbrella_kt::{KtEntry, SignedEpochRoot};
 
 use crate::transport::async_unwrap::AsyncUnwrapTransport;
 
@@ -348,19 +348,14 @@ pub struct StubKtTransport {
     /// the **stub-side** `epoch_key` (the requested epoch); `SignedEpochRoot.epoch`
     /// is what the witnesses signed. A test can intentionally diverge these
     /// to exercise the facade's epoch-substitution defence.
-    pub staged_signed_roots: Mutex<HashMap<u64, SignedEpochRoot>>,
-
-    /// **F-CLIENT-FACADE-1 session 8b (2026-05-19):** pinned set of 5
-    /// witness pubkeys для текущего stub-инстанса. Production:
-    /// pre-configured из SPKI pinning + `ClientConfig.kt_witness_set`
-    /// (carry-over к session 8c когда HTTP/2 transport приходит).
-    /// Здесь stub держит set in-memory; тест перезаписывает его через
-    /// [`Self::set_witness_set`].
     ///
-    /// **F-CLIENT-FACADE-1 session 8b:** pinned set of 5 witness pubkeys.
-    /// Production: pre-configured via SPKI pinning + `ClientConfig.kt_witness_set`
-    /// (deferred to session 8c). Tests overwrite via [`Self::set_witness_set`].
-    pub staged_witness_set: Mutex<WitnessSet>,
+    /// **Session 8c1 migration note**: pinned `WitnessSet` ранее жил в
+    /// `staged_witness_set` поле здесь же; в session 8c1 переехал к
+    /// `ClientCore::kt_witness_set` (single source of truth для facade
+    /// helper'а + future Http2KtTransport wire-up). Здесь оставлено только
+    /// signed-roots staging — это runtime data (per-epoch), не
+    /// configuration.
+    pub staged_signed_roots: Mutex<HashMap<u64, SignedEpochRoot>>,
 }
 
 impl StubKtTransport {
@@ -419,30 +414,6 @@ impl StubKtTransport {
     pub fn fetch_staged_signed_root(&self, epoch_key: u64) -> Option<SignedEpochRoot> {
         let guard = self.staged_signed_roots.lock().expect("poisoned");
         guard.get(&epoch_key).cloned()
-    }
-
-    /// **F-CLIENT-FACADE-1 session 8b (2026-05-19):** установить pinned
-    /// witness set'у для последующих `verify_kt_witness_signatures_for_epoch`
-    /// вызовов. Production (session 8c+): set приходит из
-    /// `ClientConfig.kt_witness_set` через native bootstrap. Test pattern:
-    /// собирает 5 свежих Ed25519 witness keypairs + call'ит `set_witness_set`.
-    ///
-    /// **F-CLIENT-FACADE-1 session 8b:** install pinned witness set for
-    /// subsequent `verify_kt_witness_signatures_for_epoch` invocations.
-    pub fn set_witness_set(&self, witnesses: WitnessSet) {
-        let mut guard = self.staged_witness_set.lock().expect("poisoned");
-        *guard = witnesses;
-    }
-
-    /// **F-CLIENT-FACADE-1 session 8b (2026-05-19):** snapshot текущей
-    /// pinned witness set'ы. Используется facade helper'ом для аргумента
-    /// `umbrella_kt::witness::verify_signed_epoch`.
-    ///
-    /// **F-CLIENT-FACADE-1 session 8b:** snapshot of the pinned witness set.
-    #[must_use]
-    pub fn witness_set(&self) -> WitnessSet {
-        let guard = self.staged_witness_set.lock().expect("poisoned");
-        guard.clone()
     }
 }
 

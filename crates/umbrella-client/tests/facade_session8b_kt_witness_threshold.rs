@@ -2,9 +2,11 @@
 //! [`umbrella_client::kt_monitor::verify_kt_witness_signatures_for_epoch`].
 //! Closes the **split-view** attack class (SPEC-09 §6 + ADR-009 multi-witness
 //! section) at the facade-on-demand level: client stages
-//! [`umbrella_kt::SignedEpochRoot`] + pinned 5-witness set on the stub
-//! transport, facade fetches + verifies 3-of-5 threshold; any attempted
-//! substitution / tampering / under-threshold scenario → fail-closed
+//! [`umbrella_kt::SignedEpochRoot`] on the stub transport AND installs a
+//! pinned 5-witness set on the `ClientCore` (session 8c1 migration —
+//! witness set is configuration, not transport-runtime state); facade
+//! fetches + verifies 3-of-5 threshold; any attempted substitution /
+//! tampering / under-threshold scenario → fail-closed
 //! `ClientError::Kt(KtError::InsufficientValidSignatures | SelfMonitoringMismatch)`
 //! per постулат 14 (no silent acceptance).
 //!
@@ -172,7 +174,7 @@ async fn verify_witness_signatures_succeeds_with_5_of_5_valid_signatures() {
         TEST_TIMESTAMP_MS,
     );
 
-    alice.core().kt_transport().set_witness_set(witness_set);
+    alice.core().set_kt_witness_set(witness_set).await;
     alice
         .core()
         .kt_transport()
@@ -201,7 +203,7 @@ async fn verify_witness_signatures_succeeds_with_3_of_5_valid_signatures_thresho
         TEST_TIMESTAMP_MS,
     );
 
-    alice.core().kt_transport().set_witness_set(witness_set);
+    alice.core().set_kt_witness_set(witness_set).await;
     alice
         .core()
         .kt_transport()
@@ -230,7 +232,7 @@ async fn verify_witness_signatures_fails_closed_with_2_of_5_valid_signatures_und
         TEST_TIMESTAMP_MS,
     );
 
-    alice.core().kt_transport().set_witness_set(witness_set);
+    alice.core().set_kt_witness_set(witness_set).await;
     alice
         .core()
         .kt_transport()
@@ -260,7 +262,7 @@ async fn verify_witness_signatures_fails_closed_when_no_signed_root_staged_for_e
     // signed-roots endpoint (censorship / outage). Постулат 14 fail-closed.
     let alice = bootstrap_client().await;
     let (_, witness_set) = fresh_witness_set_of_5();
-    alice.core().kt_transport().set_witness_set(witness_set);
+    alice.core().set_kt_witness_set(witness_set).await;
     // Deliberately do NOT push any SignedEpochRoot.
 
     let result =
@@ -305,7 +307,7 @@ async fn verify_witness_signatures_detects_signed_root_under_wrong_epoch_substit
         "sanity: signed.epoch carries the wrong epoch"
     );
 
-    alice.core().kt_transport().set_witness_set(witness_set);
+    alice.core().set_kt_witness_set(witness_set).await;
     alice
         .core()
         .kt_transport()
@@ -349,7 +351,7 @@ async fn verify_witness_signatures_detects_tampered_root_invalidates_all_signatu
     // injection by malicious log operator.
     signed.root[0] ^= 0x01;
 
-    alice.core().kt_transport().set_witness_set(witness_set);
+    alice.core().set_kt_witness_set(witness_set).await;
     alice
         .core()
         .kt_transport()
@@ -390,7 +392,7 @@ async fn verify_witness_signatures_detects_tampered_log_size_invalidates_all_sig
     // Adversary inflates log_size by 1 (e.g., to hide an injected ghost entry).
     signed.log_size = TEST_LOG_SIZE + 1;
 
-    alice.core().kt_transport().set_witness_set(witness_set);
+    alice.core().set_kt_witness_set(witness_set).await;
     alice
         .core()
         .kt_transport()
@@ -449,7 +451,7 @@ async fn verify_witness_signatures_rejects_duplicate_signatures_from_same_witnes
         signatures: vec![sig_a, sig_b, sig_a],
     };
 
-    alice.core().kt_transport().set_witness_set(witness_set);
+    alice.core().set_kt_witness_set(witness_set).await;
     alice
         .core()
         .kt_transport()
@@ -512,7 +514,7 @@ async fn verify_witness_signatures_ignores_signatures_from_unknown_witness_outsi
         signatures: vec![sig_known_0, sig_known_1, sig_attacker],
     };
 
-    alice.core().kt_transport().set_witness_set(witness_set);
+    alice.core().set_kt_witness_set(witness_set).await;
     alice
         .core()
         .kt_transport()
@@ -563,10 +565,7 @@ async fn verify_witness_signatures_order_invariant_under_signature_reordering() 
     // Mutate forward to a clone-via-cycle so we can compare both paths.
     signed_forward.signatures.rotate_left(1);
 
-    alice
-        .core()
-        .kt_transport()
-        .set_witness_set(witness_set.clone());
+    alice.core().set_kt_witness_set(witness_set.clone()).await;
 
     alice
         .core()
@@ -587,6 +586,55 @@ async fn verify_witness_signatures_order_invariant_under_signature_reordering() 
 }
 
 #[tokio::test]
+async fn verify_witness_signatures_fails_closed_when_witness_set_unset_on_core_after_bootstrap() {
+    // **Session 8c1 invariant** (постулат 14 fail-closed defaults): freshly
+    // bootstrapped `ClientCore` has an empty `WitnessSet`. Production bootstrap
+    // MUST call `set_kt_witness_set` before any helper invocation; if
+    // forgotten, helper MUST fail-closed rather than silently accepting any
+    // signature (which would happen if the empty set were treated as
+    // «trust-everyone» — that would be a catastrophic bug).
+    //
+    // Verifies: 5 honest signatures + signed root staged + threshold 3 +
+    // witness_set NEVER installed → `InsufficientValidSignatures { valid: 0,
+    // required: 3 }`. Each signature filters out via `witness_set.contains`
+    // check inside `verify_signed_epoch` (empty set contains nothing) → count
+    // stays 0.
+    let alice = bootstrap_client().await;
+    let (ws, _ignored_witness_set) = fresh_witness_set_of_5();
+    let signed = build_signed_root(
+        &ws.iter().collect::<Vec<_>>(),
+        TEST_EPOCH,
+        TEST_ROOT,
+        TEST_LOG_SIZE,
+        TEST_TIMESTAMP_MS,
+    );
+
+    // Deliberately do NOT call `alice.core().set_kt_witness_set(...)`.
+    alice
+        .core()
+        .kt_transport()
+        .push_staged_signed_root(TEST_EPOCH, signed);
+
+    let result =
+        verify_kt_witness_signatures_for_epoch(&alice.core(), TEST_EPOCH, TEST_THRESHOLD).await;
+
+    match result {
+        Err(ClientError::Kt(KtError::InsufficientValidSignatures { valid, required })) => {
+            assert_eq!(
+                valid, 0,
+                "empty default WitnessSet → every signature filtered as unknown → \
+                 0 valid (fail-closed even with 5 honest signatures present)"
+            );
+            assert_eq!(required, TEST_THRESHOLD);
+        }
+        other => panic!(
+            "default empty WitnessSet MUST fail-close with \
+             InsufficientValidSignatures {{ valid: 0, required: 3 }}; got {other:?}"
+        ),
+    }
+}
+
+#[tokio::test]
 async fn verify_witness_signatures_detects_single_bit_flip_in_one_signature_reducing_count() {
     // Adversary intercepts a published witness signature and flips one bit
     // (transport-level tampering OR malicious cache). That single signature
@@ -603,7 +651,7 @@ async fn verify_witness_signatures_detects_single_bit_flip_in_one_signature_redu
     );
     signed.signatures[0].signature[0] ^= 0x01;
 
-    alice.core().kt_transport().set_witness_set(witness_set);
+    alice.core().set_kt_witness_set(witness_set).await;
     alice
         .core()
         .kt_transport()

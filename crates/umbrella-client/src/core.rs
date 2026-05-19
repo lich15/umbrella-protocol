@@ -19,7 +19,7 @@ use umbrella_identity::{
     Clock, IdentityKey, IdentitySeed, IdentityX25519KeyPublic, InMemoryKeyStore, KeyStore,
     MnemonicLanguage, SystemClock,
 };
-use umbrella_kt::KtLogState;
+use umbrella_kt::{KtLogState, WitnessSet};
 use umbrella_mls::{UmbrellaGroup, UmbrellaProvider};
 
 use crate::error::{ClientError, Result};
@@ -321,6 +321,28 @@ pub struct ClientCore {
     ///
     /// Transport to kt-svc and its 3-of-5 witnesses.
     pub(crate) kt_transport: Arc<StubKtTransport>,
+
+    /// **F-CLIENT-FACADE-1 session 8c1 (2026-05-19):** pinned набор 5
+    /// witness-Ed25519-pubkey'ев из SPKI pinning в production либо tests
+    /// fixture. Используется
+    /// [`crate::kt_monitor::verify_kt_witness_signatures_for_epoch`] как
+    /// аргумент для `umbrella_kt::witness::verify_signed_epoch`. Default:
+    /// empty `WitnessSet` (helper тогда возвращает
+    /// `InsufficientValidSignatures { valid: 0, required: threshold }` пока
+    /// witness set не настроен — fail-closed по постулату 14).
+    ///
+    /// **Runtime mutability**: production native bootstrap layer ставит
+    /// pinned set через [`Self::set_kt_witness_set`] после reading SPKI
+    /// pins; KT rotation events (epoch where witnesses themselves
+    /// перевыбираются — рассматривается в SPEC-09 §6.2 future work,
+    /// post-1.0.0) тоже идут через тот же setter.
+    ///
+    /// **F-CLIENT-FACADE-1 session 8c1:** pinned set of 5 witness Ed25519
+    /// pubkeys (SPKI pinning in production / test fixture override).
+    /// Read by `kt_monitor::verify_kt_witness_signatures_for_epoch`;
+    /// mutated via [`Self::set_kt_witness_set`] at native bootstrap time
+    /// and on future KT-witness-rotation events (post-1.0.0).
+    pub(crate) kt_witness_set: Arc<RwLock<WitnessSet>>,
 
     /// Транспорт к call-relay-svc для TURN allocation (SPEC-06 §3).
     ///
@@ -646,6 +668,7 @@ impl ClientCore {
             unwrap_transport,
             postman_transport: Arc::new(StubPostmanTransport::default()),
             kt_transport: Arc::new(StubKtTransport::default()),
+            kt_witness_set: Arc::new(RwLock::new(WitnessSet::new())),
             call_relay_transport: Arc::new(StubCallRelayTransport::default()),
             user_policy: Arc::new(RwLock::new(CallPolicy::default())),
             config,
@@ -789,6 +812,7 @@ impl ClientCore {
             unwrap_transport,
             postman_transport: Arc::new(StubPostmanTransport::default()),
             kt_transport: Arc::new(StubKtTransport::default()),
+            kt_witness_set: Arc::new(RwLock::new(WitnessSet::new())),
             call_relay_transport: Arc::new(StubCallRelayTransport::default()),
             user_policy: Arc::new(RwLock::new(CallPolicy::default())),
             config,
@@ -1099,6 +1123,47 @@ impl ClientCore {
     #[must_use]
     pub fn kt_transport(&self) -> Arc<StubKtTransport> {
         self.kt_transport.clone()
+    }
+
+    /// **F-CLIENT-FACADE-1 session 8c1 (2026-05-19):** snapshot pinned
+    /// [`WitnessSet`] (5 witness Ed25519 pubkeys) для последующего
+    /// [`crate::kt_monitor::verify_kt_witness_signatures_for_epoch`]
+    /// вызова. Возвращает `WitnessSet::new()` если bootstrap не выставил
+    /// pinned set (default state) — helper тогда fail-closed'ит по
+    /// `InsufficientValidSignatures { valid: 0, required: threshold }`.
+    ///
+    /// Lock contention: brief read-lock над `Arc<RwLock<WitnessSet>>`,
+    /// clone'ит inner `Vec<WitnessPublic>` (5 элементов × 32 bytes = 160
+    /// bytes total). Negligible cost даже на hot path.
+    ///
+    /// **F-CLIENT-FACADE-1 session 8c1:** snapshot of the pinned 5-witness
+    /// set. Returns `WitnessSet::new()` if bootstrap has not installed
+    /// SPKI pins yet (helper fail-closes via InsufficientValidSignatures).
+    #[must_use]
+    pub async fn kt_witness_set(&self) -> WitnessSet {
+        self.kt_witness_set.read().await.clone()
+    }
+
+    /// **F-CLIENT-FACADE-1 session 8c1 (2026-05-19):** установить pinned
+    /// witness set. Production: native bootstrap layer вызывает этот
+    /// setter ровно один раз после reading SPKI pinned 5-witness
+    /// pubkeys из платформенного secure storage (`UserDefaults` /
+    /// `SharedPreferences` либо bundled config). Test fixtures используют
+    /// этот же setter после `bootstrap_for_test` для exercise of
+    /// `verify_kt_witness_signatures_for_epoch` paths.
+    ///
+    /// **Idempotent**: повторный вызов с тем же набором — no-op effect.
+    /// **Rotation**: если SPEC-09 §6.2 future work добавит witness
+    /// rotation (post-1.0.0), тот же setter примет new set, и helper
+    /// автоматически начнёт проверять подписи против нового quorum'а
+    /// на следующем call'е.
+    ///
+    /// **F-CLIENT-FACADE-1 session 8c1:** install pinned 5-witness set.
+    /// Production: called once by native bootstrap after reading SPKI
+    /// pins. Tests: called after `bootstrap_for_test` to install a
+    /// 5-witness fixture before exercising the helper.
+    pub async fn set_kt_witness_set(&self, set: WitnessSet) {
+        *self.kt_witness_set.write().await = set;
     }
 
     /// **F-CLIENT-FACADE-1 session 6c (2026-05-19):** allocate the next
