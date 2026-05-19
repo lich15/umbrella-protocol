@@ -22,7 +22,8 @@
 use std::sync::Arc;
 
 use crate::core::ClientCore;
-use crate::error::Result;
+use crate::error::{ClientError, Result};
+use crate::transport::{ClientPayload, ServerPayload};
 
 /// Opaque идентификатор чата. 32 байта; для MLS-групп совпадает с
 /// `MLSGroupId`. В Cloud-режиме также является ключом индекса на Почтальоне
@@ -183,28 +184,123 @@ impl core::fmt::Debug for DecryptedMessage {
     }
 }
 
-/// Внутренний helper: шифрование MLS AEAD + padding. Используется обоими
-/// фасадами. Режим-специфичные шаги (Cloud-wrap / sealed-sender + blind-
-/// postman) делают сами [`CloudChat`] / [`SecretChat`].
+/// Длина hex-encoded `SendMessageAck.msg_id` (`umbrellax.gateway.v1.SendMessageAck`,
+/// `rust_1mlrd/proto/umbrellax/gateway/v1/ws.proto:60`): 16 байт opaque
+/// id, отдаваемые сервером как 32 lowercase hex symbol строка
+/// (`rust_1mlrd/.../transport/protobuf_codec.rs` + контракт §4.1).
 ///
-/// В Блоке 7.2 — stub возвращающий zeroed `MessageId`; реальная реализация
-/// через `UmbrellaGroup` + `PaddingBucket` появится в Блоке 7.4.
+/// Length of the hex-encoded `SendMessageAck.msg_id`: 16 bytes returned as
+/// a 32-char lowercase hex string per contract §4.1.
+const SERVER_MSG_ID_HEX_LEN: usize = 32;
+
+/// Внутренний helper: routes facade-уровневое текстовое сообщение через
+/// активный gateway connection. Если `core.gateway()` is `None` —
+/// возвращает legacy stub `MessageId([0u8; 16])`, сохраняя
+/// backwards-compat для test fixtures и facade integration tests, которые
+/// не bootstrap'ят networking (см. `tests/facade_integration.rs` etc.).
 ///
-/// Internal helper: MLS AEAD + padding. Used by both facades. Mode-specific
-/// steps (Cloud-wrap or sealed-sender → blind-postman) are performed by
-/// [`CloudChat`] / [`SecretChat`] themselves.
+/// Если `core.gateway()` is `Some` — отправляет
+/// `ClientPayload::SendMessage { to_user_id: chat_id.bytes, ciphertext: text.bytes }`
+/// через `GatewayConnection::send_envelope`, ждёт ответный envelope,
+/// требует `ServerPayload::SendAck { msg_id }`, декодирует 32-char hex →
+/// 16 байт → возвращает `MessageId`. Server-side errors маршрутизируются
+/// в `ClientError::Network` с диагностическим кодом.
 ///
-/// Block 7.2 stub returns a zeroed `MessageId`; real implementation via
-/// `UmbrellaGroup` + `PaddingBucket` arrives in Block 7.4.
+/// ## Session-3 ограничения (полностью out-of-scope)
+///
+/// - **MLS AEAD encryption**: ciphertext в session 3 — placeholder
+///   `text.into_bytes()`. Реальный MLS encrypt появится в session 5
+///   (create_group + add_member) когда `UmbrellaGroup` будет wired в
+///   facade. Mock gateway accept'ит любые байты — wire round-trip
+///   exercise валидный.
+/// - **Length-hiding padding** (umbrella_padding bucket selection):
+///   защищает от traffic-analysis side-channel; layer вставится в
+///   session 5+ как фильтр между MLS encrypt и transport send.
+/// - **Cloud-wrap (для CloudChat)**: 3-of-5 Sealed Server message-key
+///   wrap. Session 6 deliverable per pipeline plan.
+/// - **Sealed-sender (для SecretChat)**: anonymous credential envelope.
+///   Session 7 deliverable.
+/// - **to_user_id маршрутизация**: session 3 использует `chat_id.0` как
+///   to_user_id placeholder. Production должен map'ить chat_id →
+///   recipient peer_id(s) через group membership. Wired в session 5+
+///   когда group state существует.
+///
+/// Все ограничения tracked в `docs/audits/phd-b-pass5-remediation-2026-05-19.md`
+/// F-CLIENT-FACADE-1 milestone closure roadmap.
+///
+/// Internal helper: routes a facade-level text message through the active
+/// gateway connection. If `core.gateway()` is `None`, returns the legacy
+/// stub `MessageId([0u8; 16])` for backwards-compat with tests that do not
+/// bootstrap networking. When `Some`, sends
+/// `ClientPayload::SendMessage` and decodes the server's
+/// `SendMessageAck.msg_id` (32-char hex → 16 bytes) into `MessageId`.
+///
+/// Session-3 placeholders (out-of-scope for this session, tracked under
+/// F-CLIENT-FACADE-1 roadmap): MLS AEAD encrypt (ciphertext is raw text
+/// bytes), length-hiding padding, Cloud-wrap, sealed-sender,
+/// chat_id → peer_id routing.
 ///
 /// [`CloudChat`]: crate::facade::CloudChat
 /// [`SecretChat`]: crate::facade::SecretChat
 pub(crate) async fn send_mls_text(
-    _core: &Arc<ClientCore>,
-    _chat_id: ChatId,
-    _text: String,
+    core: &Arc<ClientCore>,
+    chat_id: ChatId,
+    text: String,
 ) -> Result<MessageId> {
-    Ok(MessageId([0u8; 16]))
+    let Some(gateway) = core.gateway().await else {
+        // Legacy / Block-7.2 facade test fixtures path — no networking
+        // wired. Keep the historical stub return so existing integration
+        // tests (facade_integration.rs etc.) stay green until they are
+        // updated to bootstrap a mock gateway.
+        return Ok(MessageId([0u8; 16]));
+    };
+
+    let payload = ClientPayload::SendMessage {
+        to_user_id: chat_id.0.to_vec(),
+        ciphertext: text.into_bytes(),
+    };
+    gateway.send_envelope(payload).await.map_err(|e| {
+        ClientError::Network(format!("send_envelope: {e}"))
+    })?;
+    let frame = gateway.recv_envelope().await.map_err(|e| {
+        ClientError::Network(format!("recv_envelope: {e}"))
+    })?;
+    match frame.payload {
+        ServerPayload::SendAck { msg_id } => decode_server_msg_id(&msg_id),
+        ServerPayload::Error { code } => Err(ClientError::Network(format!(
+            "gateway rejected SendMessage with code: {code}"
+        ))),
+        other => Err(ClientError::Network(format!(
+            "expected SendAck after SendMessage, got: {other:?}"
+        ))),
+    }
+}
+
+/// Decode `SendMessageAck.msg_id` (32-char lowercase hex) into a
+/// [`MessageId`] (16 bytes). Production gateway-svc always emits 16 bytes
+/// hex per `rust_1mlrd/proto/umbrellax/gateway/v1/ws.proto:60` and the
+/// in-process mock at `tests/mock_gateway/mod.rs` mirrors that shape via
+/// `format!("{:032x}", seq)`.
+///
+/// Decode `SendMessageAck.msg_id` (32-char hex) into a `MessageId`.
+fn decode_server_msg_id(hex_str: &str) -> Result<MessageId> {
+    if hex_str.len() != SERVER_MSG_ID_HEX_LEN {
+        return Err(ClientError::Network(format!(
+            "gateway returned SendMessageAck.msg_id of length {} (expected {})",
+            hex_str.len(),
+            SERVER_MSG_ID_HEX_LEN
+        )));
+    }
+    let bytes = hex::decode(hex_str).map_err(|e| {
+        ClientError::Network(format!("gateway SendMessageAck.msg_id is not hex: {e}"))
+    })?;
+    let arr: [u8; 16] = bytes.try_into().map_err(|v: Vec<u8>| {
+        ClientError::Network(format!(
+            "gateway SendMessageAck.msg_id decoded to {} bytes (expected 16)",
+            v.len()
+        ))
+    })?;
+    Ok(MessageId(arr))
 }
 
 #[cfg(test)]

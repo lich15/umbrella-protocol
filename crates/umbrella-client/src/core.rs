@@ -25,6 +25,7 @@ use crate::keystore::hw_callback::{
     bootstrap_hw_identity, HwKeyHandle, PersistentKeyStoreCallback,
 };
 use crate::transport::async_unwrap::AsyncUnwrapTransport;
+use crate::transport::gateway::GatewayConnection;
 use crate::transport::stub::{
     StubCallRelayTransport, StubKtTransport, StubPostmanTransport, StubUnwrapTransport,
 };
@@ -412,6 +413,44 @@ pub struct ClientCore {
     /// 7.4+ facades will consume the `core.keystore()` accessor instead
     /// of inline `InMemoryKeyStore::open` calls.
     pub(crate) keystore: Option<Arc<dyn KeyStore>>,
+
+    /// Активное соединение с gateway-svc (QUIC либо WebSocket fallback). `Some(...)`
+    /// после успешного `set_gateway` post-bootstrap; `None` до первого подключения
+    /// или после умышленного `clear_gateway` (например, при logout).
+    ///
+    /// **F-CLIENT-FACADE-1 session 3 (2026-05-19):** новый слот для роутинга
+    /// facade-уровневых сообщений через реальный gateway. До session 3
+    /// `send_mls_text` возвращал `Ok(MessageId([0u8; 16]))` stub; теперь — если
+    /// `gateway` is `Some`, маршрутизирует `ClientPayload::SendMessage` через
+    /// `GatewayConnection::send_envelope` и возвращает `MessageId`, декодированный
+    /// из `SendMessageAck.msg_id` (16 байт hex от gateway-svc). Если `None`,
+    /// сохраняется backwards-compat stub-поведение для legacy/test callers,
+    /// которые ещё не bootstrap'нули network connection.
+    ///
+    /// `RwLock` обоснован тем, что gateway connection — point-in-time runtime
+    /// state: установка после bootstrap'а, замена при reconnect, очистка при
+    /// logout/disconnect. Read-only path (send_mls_text) клонирует `Arc<GatewayConnection>`
+    /// под short read-lock и работает с ним без удержания lock на время network I/O.
+    ///
+    /// Active gateway-svc connection (QUIC or WebSocket fallback). `Some(...)`
+    /// after a successful `set_gateway` post-bootstrap; `None` before the first
+    /// connect or after `clear_gateway` (e.g. logout).
+    ///
+    /// **F-CLIENT-FACADE-1 session 3 (2026-05-19):** new slot routing facade-
+    /// level messages through the real gateway. Before session 3
+    /// `send_mls_text` returned `Ok(MessageId([0u8; 16]))` stub; now — when
+    /// `gateway` is `Some`, it routes `ClientPayload::SendMessage` through
+    /// `GatewayConnection::send_envelope` and returns a `MessageId` decoded
+    /// from `SendMessageAck.msg_id` (16-byte hex from gateway-svc). When
+    /// `None`, the backwards-compat stub behaviour is kept for legacy/test
+    /// callers that have not yet bootstrapped a network connection.
+    ///
+    /// `RwLock` is justified because the gateway connection is point-in-time
+    /// runtime state: set post-bootstrap, swapped on reconnect, cleared on
+    /// logout/disconnect. The read path (send_mls_text) clones the
+    /// `Arc<GatewayConnection>` under a brief read-lock and performs network
+    /// I/O outside the lock.
+    pub(crate) gateway: RwLock<Option<Arc<GatewayConnection>>>,
 }
 
 impl ClientCore {
@@ -457,6 +496,11 @@ impl ClientCore {
             // inline. F-IDENT-1 closure leaves this slot None on legacy
             // bootstraps; Block 7.4+ facade refactor will consolidate.
             keystore: None,
+            // F-CLIENT-FACADE-1 session 3: gateway is set post-bootstrap
+            // via `set_gateway` — tests opting into the real send path
+            // construct a mock GatewayTransport and install it here.
+            // F-CLIENT-FACADE-1 session 3: gateway is set post-bootstrap.
+            gateway: RwLock::new(None),
         }))
     }
 
@@ -560,6 +604,8 @@ impl ClientCore {
             hw_identity_handle: Some(handle),
             hw_verifying_key: Some(verifying_key),
             keystore: Some(keystore),
+            // F-CLIENT-FACADE-1 session 3: gateway is set post-bootstrap.
+            gateway: RwLock::new(None),
         }))
     }
 
@@ -688,6 +734,42 @@ impl ClientCore {
     #[must_use]
     pub fn keystore(&self) -> Option<Arc<dyn KeyStore>> {
         self.keystore.clone()
+    }
+
+    /// Текущий активный gateway connection (QUIC либо WebSocket fallback) или
+    /// `None`, если клиент ещё не установил соединение через
+    /// [`Self::set_gateway`]. Клонирует `Arc<GatewayConnection>` под short
+    /// read-lock — caller потом может делать network I/O без удержания
+    /// блокировки на ClientCore.
+    ///
+    /// Currently active gateway connection (QUIC or WebSocket fallback), or
+    /// `None` if the client has not yet attached one via [`Self::set_gateway`].
+    /// Clones the `Arc<GatewayConnection>` under a brief read-lock — the
+    /// caller can then perform network I/O without holding any ClientCore
+    /// lock.
+    pub async fn gateway(&self) -> Option<Arc<GatewayConnection>> {
+        self.gateway.read().await.clone()
+    }
+
+    /// Install the given `GatewayConnection` as the active gateway transport.
+    /// Replaces any previously installed connection (the old `Arc` drops when
+    /// its last clone goes out of scope). Used by post-bootstrap connect flow
+    /// and by tests that wire a mock gateway.
+    ///
+    /// Install the given `GatewayConnection` as the active gateway transport.
+    /// Replaces any previously installed connection.
+    pub async fn set_gateway(&self, gateway: Arc<GatewayConnection>) {
+        *self.gateway.write().await = Some(gateway);
+    }
+
+    /// Clear the active gateway connection (e.g. logout / explicit disconnect).
+    /// Subsequent facade sends will fall through to the backwards-compat stub
+    /// path (returning `MessageId([0u8; 16])` for legacy callers) until a new
+    /// `set_gateway` call.
+    ///
+    /// Clear the active gateway connection.
+    pub async fn clear_gateway(&self) {
+        *self.gateway.write().await = None;
     }
 
     /// Закрытая граница неполного HTTP/2 bootstrap.
