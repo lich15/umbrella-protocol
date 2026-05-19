@@ -15,8 +15,11 @@ pub mod cloud_backup;
 pub mod http2_client;
 pub mod kt_transport;
 pub mod pinning;
+#[doc(hidden)]
+pub mod proto_ws;
 pub mod retry;
 pub mod stub;
+pub mod websocket;
 
 pub use async_unwrap::AsyncUnwrapTransport;
 pub use blind_postman::{Http2PostmanTransport, MESSAGE_ID_LEN};
@@ -33,3 +36,7 @@ pub use pinning::{
     SpkiPinningVerifier, SPKI_PIN_LEN,
 };
 pub use retry::{is_reqwest_retryable, retry_with_backoff, DEFAULT_MAX_ATTEMPTS};
+pub use websocket::{
+    ClientPayload, NegotiatedSubprotocol, ServerFrame, ServerPayload, WebSocketConnection,
+    WebSocketTransport, WsConfig, WsTlsConfig, WsTransportError,
+};

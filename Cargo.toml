@@ -236,6 +236,53 @@ tempfile = "3.27"
 wiremock = "0.6.5"
 rcgen = "0.14.8"
 
+# ——— WebSocket transport (Block 7.4 facade wire-up, F-CLIENT-FACADE-1 closure) ———
+# ——— WebSocket transport (Block 7.4 facade wire-up, F-CLIENT-FACADE-1 closure) ———
+# tokio-tungstenite 0.29 — Tokio + tungstenite 0.29 binding. `connect` + `handshake`
+# features give us `client_async_with_config` over an arbitrary AsyncRead+AsyncWrite
+# stream, and `__rustls-tls` exposes the `Connector::Rustls(Arc<ClientConfig>)`
+# variant — needed so that production callers can plug in the same SPKI-pinning
+# `ClientConfig` used by `transport::http2_client::build_production_http2_client`.
+# Without `__rustls-tls` the only TLS option is `native-tls`, which would bypass
+# our certificate-pin enforcement. Underscore prefix is upstream convention for
+# "use directly when you provide your own roots"; we override the verifier so
+# webpki-roots / native-roots are not needed.
+#
+# tokio-tungstenite 0.29 — Tokio + tungstenite 0.29 binding. The `connect` and
+# `handshake` features give us `client_async_with_config` over an arbitrary
+# AsyncRead+AsyncWrite stream; `__rustls-tls` exposes the
+# `Connector::Rustls(Arc<ClientConfig>)` variant required so production callers
+# can plug in the same SPKI-pinning `ClientConfig` used by
+# `transport::http2_client::build_production_http2_client`. Without
+# `__rustls-tls` the only TLS option is `native-tls`, which would bypass our
+# certificate-pin enforcement. The underscore prefix is upstream convention for
+# "use directly when you provide your own roots"; we override the verifier so
+# webpki-roots / native-roots are not needed.
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "handshake", "__rustls-tls"] }
+
+# Protobuf wire codec for the `umx.pb.v1` subprotocol. Pinned 0.14 to match
+# `rust_1mlrd/Cargo.toml:88` (`prost = "0.14"`) — same encoded bytes guaranteed
+# by protobuf3 regardless of generator version, but matching keeps Cargo.lock
+# and SBOM diffs aligned across the two repositories. `default-features = false`
+# avoids pulling in `prost-derive`'s `prettyplease` (slow build chain) when the
+# crate-level `derive` feature is the only thing we actually need.
+#
+# Protobuf wire codec for the `umx.pb.v1` subprotocol. Pinned 0.14 to match
+# the backend `rust_1mlrd/Cargo.toml:88` (`prost = "0.14"`) — encoded bytes are
+# guaranteed identical by protobuf3 regardless of generator version, but the
+# match keeps Cargo.lock and SBOM diffs aligned across the two repositories.
+prost = { version = "0.14", default-features = false, features = ["std", "derive"] }
+prost-build = "0.14"
+
+# `futures-util` for `StreamExt::next` / `SinkExt::send` on the split halves of
+# the tokio-tungstenite `WebSocketStream`. We avoid the `compat` feature (legacy
+# futures 0.1) and the `async-await-macro` feature (we use bare `async fn`).
+#
+# `futures-util` for `StreamExt::next` / `SinkExt::send` on the split halves of
+# the tokio-tungstenite `WebSocketStream`. We avoid `compat` (legacy futures
+# 0.1) and `async-await-macro` (we use bare `async fn`).
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
+
 # Tests
 proptest = "1.11"
 

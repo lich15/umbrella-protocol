@@ -1,0 +1,77 @@
+// UmbrellaX gateway WebSocket canary protocol — Protobuf wire contract for umx.pb.v1.
+//
+// Source of truth: rust_1mlrd/proto/umbrellax/gateway/v1/ws.proto.
+// This file is a verbatim client-side copy synchronised manually whenever the
+// backend definition changes (see docs/integration/gateway-svc-contract.md §4.1).
+// Bumping the byte layout of ClientEnvelope / ServerEnvelope requires updating
+// both repositories in lockstep and re-running the consumer-driven contract
+// tests in tests/transport_websocket_contract.rs.
+
+syntax = "proto3";
+
+package umbrellax.gateway.v1;
+
+message ClientEnvelope {
+  uint64 seq = 1;
+
+  oneof payload {
+    ClientPing ping = 10;
+    PresenceUpdate presence = 11;
+    SendMessageRequest send_message = 12;
+    DeliveryProbe delivery_probe = 13;
+    ClientAuth auth = 14;
+    ClientClose close = 15;
+  }
+}
+
+message ServerEnvelope {
+  uint64 seq = 1;
+
+  oneof payload {
+    ServerPong pong = 10;
+    SendMessageAck send_ack = 11;
+    DeliveryProbe delivery_probe = 12;
+    ErrorEnvelope error = 13;
+    AuthOk auth_ok = 14;
+  }
+}
+
+message ClientAuth {
+  string token = 1;
+  bytes device_id = 2;
+}
+
+message ClientClose {}
+
+message AuthOk {}
+
+message ClientPing {
+  uint64 client_ts_ms = 1;
+}
+
+message ServerPong {
+  uint64 client_ts_ms = 1;
+  uint64 server_ts_ms = 2;
+}
+
+message PresenceUpdate {
+  bool online = 1;
+}
+
+message SendMessageRequest {
+  bytes to_user_id = 1;
+  bytes ciphertext = 2;
+}
+
+message SendMessageAck {
+  string msg_id = 1;
+}
+
+message DeliveryProbe {
+  bytes probe_id = 1;
+  uint64 sent_ts_ms = 2;
+}
+
+message ErrorEnvelope {
+  string code = 1;
+}
