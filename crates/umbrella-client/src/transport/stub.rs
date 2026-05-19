@@ -415,6 +415,44 @@ impl StubKtTransport {
         let guard = self.staged_signed_roots.lock().expect("poisoned");
         guard.get(&epoch_key).cloned()
     }
+
+    /// **F-CLIENT-FACADE-1 session 9b (2026-05-19):** "publish" raw entry
+    /// bytes по KT log (stub semantics — appends to `published_entries`
+    /// vec; production wire-up will route to `Http2KtTransport::publish`
+    /// `POST /kt/publish`). Facade `rotate_identity_publish` calls this с
+    /// wire-encoded `KtAuthorizationEntry` bytes (e.g., 235-byte
+    /// IdentityRotation entry). Tests inspect `published_entries` to
+    /// verify exact bytes that would hit the wire.
+    ///
+    /// **F-CLIENT-FACADE-1 session 9b:** append raw entry bytes to the
+    /// stub publish log. Production-equivalent: HTTP/2 POST /kt/publish.
+    pub fn publish(&self, entry_bytes: Vec<u8>) {
+        self.published_entries
+            .lock()
+            .expect("poisoned")
+            .push(entry_bytes);
+    }
+
+    /// **F-CLIENT-FACADE-1 session 9b (2026-05-19):** number of entries
+    /// "published" so far. Used by tests to assert published-side effects.
+    ///
+    /// **F-CLIENT-FACADE-1 session 9b:** count of "published" entries.
+    #[must_use]
+    pub fn published_entry_count(&self) -> usize {
+        self.published_entries.lock().expect("poisoned").len()
+    }
+
+    /// **F-CLIENT-FACADE-1 session 9b (2026-05-19):** snapshot of all
+    /// "published" entry bytes in insertion order. Used by tests to
+    /// recover the exact wire payload for byte-level assertions / decode
+    /// round-trip checks.
+    ///
+    /// **F-CLIENT-FACADE-1 session 9b:** snapshot of all "published"
+    /// entry bytes.
+    #[must_use]
+    pub fn published_entries_snapshot(&self) -> Vec<Vec<u8>> {
+        self.published_entries.lock().expect("poisoned").clone()
+    }
 }
 
 /// Stub call-relay-svc. Счётчик аллокаций TURN relay (SPEC-06 §3). Реальная

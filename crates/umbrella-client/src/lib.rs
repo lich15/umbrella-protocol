@@ -54,6 +54,7 @@ pub mod call;
 pub mod core;
 pub mod error;
 pub mod facade;
+pub mod identity;
 pub mod keystore;
 pub mod kt_monitor;
 pub mod lifecycle;
