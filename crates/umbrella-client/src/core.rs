@@ -543,6 +543,29 @@ pub struct ClientCore {
     /// stub `CloudChat::open(ChatId([0u8; 32]))`), the facade falls back to the
     /// legacy raw-bytes path (no MLS).
     pub(crate) groups: RwLock<HashMap<ChatId, Arc<TokioMutex<UmbrellaGroup>>>>,
+
+    /// **F-CLIENT-FACADE-1 session 6c (2026-05-19):** per-chat монотонный
+    /// counter для Cloud-режима at-rest `msg_seq` (binding в
+    /// `canonical_nonce(chat_id, msg_seq)` deterministic AEAD nonce
+    /// derivation + nonce-reuse prevention). Sender инкрементирует на
+    /// каждый Cloud-mode send. Recipient получает `msg_seq` как часть
+    /// `CloudHistoryEntry` для AEAD decrypt без negotiation с sender'ом.
+    ///
+    /// **Invariant**: counter strictly monotonic per `ChatId`. Reuse того же
+    /// (chat_id, msg_seq) даёт nonce reuse → ChaCha20-Poly1305 security
+    /// broken catastrophically (XOR encryption with same keystream). Postman
+    /// side обязан dedup'ить (production); session 6c sender-side counter
+    /// предотвращает naive reuse внутри одного process lifetime.
+    ///
+    /// **Persistence**: in-memory только (не serialized) — после restart
+    /// counter сброс в 0, что нарушит invariant если те же chat'ы продолжают
+    /// receive новые сообщения. Production persistent storage — session 7+.
+    ///
+    /// Per-chat monotonic counter for Cloud-mode at-rest `msg_seq` (used in
+    /// `canonical_nonce` deterministic AEAD nonce derivation). Sender
+    /// increments on each Cloud-mode send. Production-grade persistence
+    /// across restarts is deferred to session 7+.
+    pub(crate) cloud_msg_seq_counters: RwLock<HashMap<ChatId, u64>>,
 }
 
 impl ClientCore {
@@ -611,6 +634,7 @@ impl ClientCore {
             mls_keystore,
             groups: RwLock::new(HashMap::new()),
             stub_unwrap_transport: Some(stub_unwrap),
+            cloud_msg_seq_counters: RwLock::new(HashMap::new()),
         }))
     }
 
@@ -750,6 +774,7 @@ impl ClientCore {
             mls_keystore,
             groups: RwLock::new(HashMap::new()),
             stub_unwrap_transport: Some(stub_unwrap),
+            cloud_msg_seq_counters: RwLock::new(HashMap::new()),
         }))
     }
 
@@ -1034,6 +1059,31 @@ impl ClientCore {
     #[must_use]
     pub fn stub_unwrap_transport(&self) -> Option<Arc<StubUnwrapTransport>> {
         self.stub_unwrap_transport.clone()
+    }
+
+    /// **F-CLIENT-FACADE-1 session 6c (2026-05-19):** allocate the next
+    /// monotonic `msg_seq` для Cloud-mode at-rest write на указанный
+    /// `chat_id`. Counter starts at 0; first call returns 0, next 1, etc.
+    /// Strict per-chat — distinct chats имеют independent sequences.
+    ///
+    /// **Critical invariant**: never reuse `(chat_id, msg_seq)` — иначе
+    /// ChaCha20-Poly1305 nonce reuse → keystream XOR'd reveals both
+    /// plaintexts pointwise. Sender гарантирует через monotonic counter;
+    /// recipient/postman side гарантирует через dedup при доставке.
+    ///
+    /// Allocate the next monotonic Cloud-mode `msg_seq` for `chat_id`.
+    /// **Critical**: never reuse `(chat_id, msg_seq)` to avoid nonce reuse.
+    pub async fn next_cloud_msg_seq(&self, chat_id: ChatId) -> u64 {
+        let mut guard = self.cloud_msg_seq_counters.write().await;
+        let counter = guard.entry(chat_id).or_insert(0);
+        let value = *counter;
+        *counter = counter.checked_add(1).unwrap_or_else(|| {
+            // 2^64 messages per chat — astronomical for a single chat;
+            // wrapping would cause nonce reuse, so panic is correct
+            // policy here (postulate 14 — no silent fallback).
+            panic!("Cloud-mode msg_seq counter overflow for chat {chat_id:?}")
+        });
+        value
     }
 
     /// Закрытая граница неполного HTTP/2 bootstrap.

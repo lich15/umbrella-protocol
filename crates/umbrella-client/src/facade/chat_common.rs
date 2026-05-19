@@ -31,8 +31,11 @@ use umbrella_backup::cloud_wrap::signed_request::{
     PlatformAttestation, Platform as BackupPlatform, SignedUnwrapRequest,
 };
 use umbrella_backup::cloud_wrap::wire::canonical_nonce;
-use umbrella_backup::cloud_wrap::{unwrap_message_key, CanonicalAad};
+use umbrella_backup::cloud_wrap::{
+    unwrap_message_key, wrap_message_key, CanonicalAad, MESSAGE_KEY_LEN,
+};
 use umbrella_backup::BackupError;
+use crate::transport::stub::CloudHistoryEntry;
 use umbrella_mls::{
     parse_key_package_safe, GroupPolicy, IncomingMessage, MlsError, UmbrellaCiphersuite,
     UmbrellaGroup,
@@ -608,6 +611,114 @@ fn unix_now_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+fn unix_now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| {
+            let m = d.as_millis();
+            u64::try_from(m).unwrap_or(u64::MAX)
+        })
+        .unwrap_or(0)
+}
+
+/// **F-CLIENT-FACADE-1 session 6c (2026-05-19):** Cloud-mode **at-rest send**
+/// path — параллельная запись на postman.cloud_history для recovery новым
+/// устройством через `cloud_sync_history`. Mirrors session-6 fetch path
+/// в reverse:
+///
+/// 1. Allocate монотонный `msg_seq` для chat_id via
+///    `core.next_cloud_msg_seq(chat_id)` (strict-monotonic invariant —
+///    предотвращает ChaCha20-Poly1305 nonce reuse).
+/// 2. Random 32-byte `message_key` (CSPRNG).
+/// 3. Build `CanonicalAad` binding {sender=self-identity,
+///    recipient_device=self-identity, chat_id, msg_seq}. Single-device
+///    simplification session 6c: sender = recipient_device. Multi-device
+///    Cloud chat (N wraps per send для каждого peer device) — session 7+.
+/// 4. `wrap_message_key(wrapping_params, message_key, aad)` →
+///    81-byte WrappedKey (threshold-HPKE blob).
+/// 5. ChaCha20-Poly1305 encrypt `plaintext` под `message_key` с
+///    deterministic `canonical_nonce(chat_id, msg_seq)` + canonical
+///    AAD bytes → `ciphertext_at_rest`.
+/// 6. Push `CloudHistoryEntry` в `core.postman_transport.cloud_history`.
+///
+/// **Sender = recipient_device limitation**: session 6c обслуживает
+/// single-user recovery (new device of same user). Multi-user / multi-
+/// device Cloud chat = per-peer per-device wrap (N entries per send) —
+/// session 7+ scope когда key-svc directory lookup wired.
+///
+/// **F-CLIENT-FACADE-1 session 6c:** Cloud-mode at-rest send. Wraps a
+/// random message_key under Sealed Server threshold-HPKE, AEAD-encrypts
+/// plaintext under message_key + deterministic nonce, pushes
+/// `CloudHistoryEntry` to postman for future `cloud_sync_history`.
+///
+/// **Single-device simplification**: sender = recipient_device. Multi-
+/// device per-peer wrap is session 7+ scope (key-svc directory lookup).
+///
+/// # Errors
+///
+/// - `ClientError::Backup` если `wrap_message_key` fails (e.g. invalid
+///   wrapping_params).
+/// - `ClientError::Internal` если ChaCha20-Poly1305 encrypt fails
+///   (unusual: only AAD too large).
+pub(crate) async fn cloud_publish_at_rest(
+    core: &Arc<ClientCore>,
+    chat_id: ChatId,
+    plaintext: &[u8],
+    msg_id: MessageId,
+) -> Result<()> {
+    let sender_pk = core.mls_keystore.identity_public().to_bytes();
+    let recipient_device_pk = sender_pk;
+    let msg_seq = core.next_cloud_msg_seq(chat_id).await;
+
+    // CSPRNG message_key. `OsRng` для post-quantum-resistant entropy source
+    // (hedged: thread_rng → OsRng fallback per rand 0.8 backed by getrandom).
+    let mut message_key = [0u8; MESSAGE_KEY_LEN];
+    rand::thread_rng().fill_bytes(&mut message_key);
+
+    let aad = CanonicalAad {
+        sender_identity_pubkey: sender_pk,
+        recipient_device_pubkey: recipient_device_pk,
+        chat_id: chat_id.0,
+        msg_seq,
+    };
+
+    let mut rng = rand::thread_rng();
+    let wrapped_key = wrap_message_key(
+        &core.config.wrapping_params,
+        &message_key,
+        &aad,
+        &mut rng,
+    )
+    .map_err(ClientError::Backup)?;
+
+    let cipher = ChaCha20Poly1305::new((&message_key).into());
+    let nonce_bytes = canonical_nonce(&chat_id.0, msg_seq);
+    let aad_bytes = aad.canonical_bytes();
+    let ciphertext_at_rest = cipher
+        .encrypt(
+            (&nonce_bytes).into(),
+            Payload {
+                msg: plaintext,
+                aad: &aad_bytes,
+            },
+        )
+        .map_err(|_| ClientError::Internal("ChaCha20Poly1305 encrypt failed (at-rest)".into()))?;
+
+    let entry = CloudHistoryEntry {
+        msg_id: msg_id.0,
+        sender: sender_pk,
+        sent_ts_ms: unix_now_millis(),
+        msg_seq,
+        ciphertext_at_rest,
+        wrapped_key,
+    };
+
+    core.postman_transport
+        .push_cloud_history(chat_id.0, entry);
+
+    Ok(())
 }
 
 /// **F-CLIENT-FACADE-1 session 6 (2026-05-19):** join an MLS group from a

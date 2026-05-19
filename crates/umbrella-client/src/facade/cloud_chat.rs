@@ -38,9 +38,9 @@ use crate::call::{CallSession, MediaSink, MediaSource, ModeEnforcement};
 use crate::core::ClientCore;
 use crate::error::Result;
 use crate::facade::chat_common::{
-    cloud_sync_history_impl, create_mls_group, fetch_mls_inbox, mls_add_member,
-    open_mls_group_from_welcome, send_mls_text, ChatId, ChatSettings, DecryptedMessage,
-    MessageId, PeerId, Timestamp,
+    cloud_publish_at_rest, cloud_sync_history_impl, create_mls_group, fetch_mls_inbox,
+    mls_add_member, open_mls_group_from_welcome, send_mls_text, ChatId, ChatSettings,
+    DecryptedMessage, MessageId, PeerId, Timestamp,
 };
 
 /// Cloud-чат. Тонкая обёртка над `Arc<ClientCore>` + `ChatId` + effective
@@ -197,7 +197,26 @@ impl CloudChat {
     /// Block 7.2 infallible stub. Block 7.4 may return `ClientError::Mls /
     /// Backup / Network / SealedSender / Padding`.
     pub async fn send_text(&self, text: String) -> Result<MessageId> {
-        send_mls_text(&self.core, self.chat_id, text).await
+        // F-CLIENT-FACADE-1 session 6c: dual-write path для Cloud-mode.
+        // (1) Live MLS encrypt + send via gateway (session 5 path) — для
+        //     online recipients с MLS group state.
+        // (2) At-rest write to postman.cloud_history (session 6c) — для
+        //     future new-device recovery через cloud_sync_history.
+        //
+        // At-rest write conditional: только когда live send succeeded с
+        // real gateway (msg_id != zero stub). Stub path без gateway не
+        // создаёт at-rest entry — иначе все entries имели бы duplicate
+        // msg_id = [0u8; 16], нарушая postman invariant uniqueness.
+        //
+        // F-CLIENT-FACADE-1 session 6c: dual-write — MLS live (session 5)
+        // + at-rest postman.cloud_history (session 6c). At-rest conditional
+        // on gateway-success (msg_id != zero stub).
+        let plaintext_bytes = text.as_bytes().to_vec();
+        let msg_id = send_mls_text(&self.core, self.chat_id, text).await?;
+        if msg_id != MessageId([0u8; 16]) {
+            cloud_publish_at_rest(&self.core, self.chat_id, &plaintext_bytes, msg_id).await?;
+        }
+        Ok(msg_id)
     }
 
     /// Получить inbox — сообщения, пришедшие с момента последнего
