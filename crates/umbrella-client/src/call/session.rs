@@ -25,6 +25,9 @@
 use std::sync::Arc;
 
 use tokio::sync::{Mutex, RwLock};
+use umbrella_calls::sframe::ciphersuite::SframeCiphersuite;
+use umbrella_calls::sframe::derive::SframeBaseKey;
+use umbrella_calls::sframe::frame::{DecryptedFrame, SframeContext};
 use umbrella_calls::CallPolicy;
 
 use crate::call::dtls_runner::DtlsRunner;
@@ -113,6 +116,13 @@ pub struct CallSession {
     ice_agent: Arc<IceAgent>,
     dtls_runner: Arc<Mutex<DtlsRunner>>,
     srtp_pipeline: Arc<SrtpPipeline>,
+    /// **F-CLIENT-FACADE-1 session 10d (2026-05-19):** per-session
+    /// SFrame context для multi-party media encryption (RFC 9605).
+    /// Empty при construction; populated via [`Self::install_sframe_epoch`]
+    /// from MLS exporter output. Wrapped in `tokio::sync::Mutex` —
+    /// `SframeContext::encrypt_frame` / `decrypt_frame` take `&mut self`
+    /// (replay window mutation), so calls must be serialised.
+    sframe_context: Arc<Mutex<SframeContext>>,
     media_source: Arc<dyn MediaSource>,
     media_sink: Arc<dyn MediaSink>,
 }
@@ -228,6 +238,7 @@ impl CallSession {
             ice_agent: Arc::new(ice_agent),
             dtls_runner: Arc::new(Mutex::new(dtls)),
             srtp_pipeline: Arc::new(SrtpPipeline::new()),
+            sframe_context: Arc::new(Mutex::new(SframeContext::new())),
             media_source,
             media_sink,
         })
@@ -460,6 +471,95 @@ impl CallSession {
     /// paths beyond local hangup.
     pub async fn mark_terminated(&self, reason: CallTerminationReason) {
         *self.state.write().await = CallState::Terminated(reason);
+    }
+
+    /// **F-CLIENT-FACADE-1 session 10d (2026-05-19):** install a new
+    /// SFrame epoch from MLS exporter output (RFC 9605 §4.4.2). Called
+    /// после each MLS `commit` advances the group epoch. The 64-byte
+    /// `mls_exporter_output` is HKDF-Extract'ed into a PRK that becomes
+    /// the SFrame base key for this epoch; per-KID derivations branch
+    /// from it (RFC 9605 §4.4.2 HKDF-Expand path).
+    ///
+    /// `ciphersuite` typically [`SframeCiphersuite::Aes256GcmSha512`]
+    /// (Stage 6 alignment with SRTP `AEAD_AES_256_GCM`). `epoch` is the
+    /// MLS group epoch number — the lower 16 bits become the per-frame
+    /// KID epoch tag (`epoch16`).
+    ///
+    /// The previous epoch stays in cache (up to `EPOCH_CACHE_SIZE = 3`
+    /// epochs simultaneously) so frames в flight from before the commit
+    /// still decrypt correctly. Oldest evicted automatically.
+    ///
+    /// **F-CLIENT-FACADE-1 session 10d (2026-05-19):** install a new
+    /// SFrame epoch from MLS exporter output. Cache holds up to 3
+    /// epochs for graceful overlap during commits.
+    pub async fn install_sframe_epoch(
+        &self,
+        mls_exporter_output: [u8; 64],
+        ciphersuite: SframeCiphersuite,
+        epoch: u64,
+    ) {
+        let base_key = SframeBaseKey::from_mls_exporter(mls_exporter_output, ciphersuite, epoch);
+        let mut ctx = self.sframe_context.lock().await;
+        ctx.advance_epoch(base_key);
+    }
+
+    /// **F-CLIENT-FACADE-1 session 10d (2026-05-19):** current (newest)
+    /// SFrame epoch in cache, либо `None` if no epoch has been installed
+    /// yet. Useful for diagnostics + gate before `sframe_encrypt_frame`.
+    pub async fn sframe_current_epoch(&self) -> Option<u64> {
+        self.sframe_context.lock().await.current_epoch()
+    }
+
+    /// **F-CLIENT-FACADE-1 session 10d (2026-05-19):** encrypt a media
+    /// frame under the current SFrame epoch. Wire-format per RFC 9605:
+    /// `header || ciphertext || tag`.
+    ///
+    /// **Caller invariant**: `counter` MUST be monotonically increasing
+    /// per `(sender_leaf, current_epoch)` pair — this guarantees AES-GCM
+    /// nonce uniqueness и enables anti-replay on the decrypt side.
+    /// Re-using a `counter` value for the same `(sender_leaf, epoch)`
+    /// reuses AEAD nonce — catastrophic crypto failure (AES-GCM forgery
+    /// under nonce reuse). The facade does NOT track counters internally —
+    /// the caller (media frame pipeline) owns the counter.
+    ///
+    /// # Errors
+    ///
+    /// - [`ClientError::Call`] variants from [`SframeContext::encrypt_frame`]:
+    ///   `FrameTooLarge` / `MlsExporterUnavailable` (no epoch installed) /
+    ///   `AeadAuthFailure`.
+    ///
+    /// **F-CLIENT-FACADE-1 session 10d (2026-05-19):** encrypt a media
+    /// frame. Caller owns monotonic `counter` per `(sender_leaf, epoch)`.
+    pub async fn sframe_encrypt_frame(
+        &self,
+        sender_leaf: u32,
+        counter: u64,
+        plaintext: &[u8],
+    ) -> Result<Vec<u8>, ClientError> {
+        self.sframe_context
+            .lock()
+            .await
+            .encrypt_frame(sender_leaf, counter, plaintext)
+            .map_err(Into::into)
+    }
+
+    /// **F-CLIENT-FACADE-1 session 10d (2026-05-19):** decrypt a wire
+    /// frame. Performs replay-check + AEAD verify в the right order
+    /// (replay before AEAD — saves CPU on obvious replays). Returns a
+    /// [`DecryptedFrame`] wrapping the plaintext + parsed header
+    /// metadata (`Debug` redacts plaintext).
+    ///
+    /// # Errors
+    ///
+    /// - [`ClientError::Call`] variants from [`SframeContext::decrypt_frame`]:
+    ///   `InvalidHeader` / `FrameTooLarge` / `StaleEpoch` (not in 3-epoch
+    ///   cache) / `Replay` / `OutOfReplayWindow` / `AeadAuthFailure`.
+    pub async fn sframe_decrypt_frame(&self, bytes: &[u8]) -> Result<DecryptedFrame, ClientError> {
+        self.sframe_context
+            .lock()
+            .await
+            .decrypt_frame(bytes)
+            .map_err(Into::into)
     }
 }
 
