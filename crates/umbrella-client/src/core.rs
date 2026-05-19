@@ -35,6 +35,8 @@ use crate::transport::stub::{
     StubCallRelayTransport, StubKtTransport, StubPostmanTransport, StubUnwrapTransport,
 };
 
+pub use crate::transport::stub::CloudHistoryEntry;
+
 /// Cfg-conditional default IANA ciphersuite для нового [`ClientConfig`]
 /// (block 9.12 PQ-first default switch + ADR-013 Решения 1 и 3).
 ///
@@ -297,6 +299,18 @@ pub struct ClientCore {
     /// closed.
     pub(crate) unwrap_transport: Arc<dyn AsyncUnwrapTransport + Send + Sync>,
 
+    /// **F-CLIENT-FACADE-1 session 6 (2026-05-19):** typed clone of
+    /// [`Self::unwrap_transport`] для test scaffolding. `Some` когда
+    /// `new_for_test` / `new_with_hw_callback` поставили
+    /// `StubUnwrapTransport` (текущее состояние Block 7.2); `None` когда
+    /// будущий production transport будет wired (Block 7.4+). Не использовать
+    /// в production code path'ах — только для test rigs которым нужно
+    /// `push_response` с pre-baked Sealed Server shares.
+    ///
+    /// Typed clone of `unwrap_transport` for test scaffolding (some when stub,
+    /// none when production transport is wired in Block 7.4+).
+    pub(crate) stub_unwrap_transport: Option<Arc<StubUnwrapTransport>>,
+
     /// Транспорт к blind-postman-svc для Cloud ciphertext и Secret inbox.
     ///
     /// Transport to blind-postman-svc for Cloud ciphertext and Secret inbox.
@@ -554,8 +568,8 @@ impl ClientCore {
     pub async fn new_for_test(config: ClientConfig, seed: IdentitySeed) -> Result<Arc<Self>> {
         let identity = Arc::new(IdentityKey::derive(&seed, 0)?);
 
-        let unwrap_transport: Arc<dyn AsyncUnwrapTransport + Send + Sync> =
-            Arc::new(StubUnwrapTransport::default());
+        let stub_unwrap = Arc::new(StubUnwrapTransport::default());
+        let unwrap_transport: Arc<dyn AsyncUnwrapTransport + Send + Sync> = stub_unwrap.clone();
 
         // F-CLIENT-FACADE-1 session 5: MLS keystore shares the same BIP-39
         // seed as `identity`, so the MLS credential payload (`identity_pk |
@@ -596,6 +610,7 @@ impl ClientCore {
             mls_provider,
             mls_keystore,
             groups: RwLock::new(HashMap::new()),
+            stub_unwrap_transport: Some(stub_unwrap),
         }))
     }
 
@@ -669,8 +684,8 @@ impl ClientCore {
         // Real verifying-key is cached in `hw_verifying_key` so callers
         // do not round-trip to the TEE on every public-key read.
 
-        let unwrap_transport: Arc<dyn AsyncUnwrapTransport + Send + Sync> =
-            Arc::new(StubUnwrapTransport::default());
+        let stub_unwrap = Arc::new(StubUnwrapTransport::default());
+        let unwrap_transport: Arc<dyn AsyncUnwrapTransport + Send + Sync> = stub_unwrap.clone();
 
         // F-IDENT-1 + F-IDENT-2 closure: construct the canonical
         // `HwBackedKeyStore` over the bootstrap byproducts. Identity-sk
@@ -734,6 +749,7 @@ impl ClientCore {
             mls_provider,
             mls_keystore,
             groups: RwLock::new(HashMap::new()),
+            stub_unwrap_transport: Some(stub_unwrap),
         }))
     }
 
@@ -963,6 +979,61 @@ impl ClientCore {
         chat_id: ChatId,
     ) -> Option<Arc<TokioMutex<UmbrellaGroup>>> {
         self.groups.write().await.remove(&chat_id)
+    }
+
+    /// **F-CLIENT-FACADE-1 session 6 (2026-05-19):** drain pending Welcome
+    /// envelopes addressed to this device's identity pubkey from the postman
+    /// inbox. Returns TLS-serialized `MlsMessage::Welcome` bytes in insertion
+    /// order; queue is emptied on drain (one-shot fetch).
+    ///
+    /// Используется фасадным bootstrap flow: новое устройство дёргает
+    /// `fetch_pending_welcomes(self_identity_pk)` после connect к gateway,
+    /// затем для каждого welcome — `CloudChat::open_from_welcome` либо
+    /// `SecretChat::open_from_welcome`, что вызывает
+    /// `UmbrellaGroup::join_from_welcome` + регистрирует группу в
+    /// `ClientCore.groups` → новое устройство готово к send/fetch/decrypt
+    /// для всех чатов куда было добавлено.
+    ///
+    /// Drain pending Welcome envelopes from the postman inbox addressed to
+    /// this device's identity pubkey. Used by the facade bootstrap flow: new
+    /// device fetches Welcomes, opens each via `open_from_welcome`, then
+    /// participates in those chats.
+    ///
+    /// **Production path** (session 6+ wire): real postman HTTP/2 transport
+    /// will replace `StubPostmanTransport`; this accessor signature stays
+    /// stable across that swap (returns raw bytes, no transport details).
+    pub async fn fetch_pending_welcomes(&self, recipient_identity_pk: [u8; 32]) -> Vec<Vec<u8>> {
+        self.postman_transport
+            .drain_welcomes_for(&recipient_identity_pk)
+    }
+
+    /// **F-CLIENT-FACADE-1 session 6 (2026-05-19):** typed-Arc accessor для
+    /// stub postman transport. Используется test rigs которые stage'ят
+    /// `CloudHistoryEntry`-tuples + Welcome bytes для drain через
+    /// [`Self::fetch_pending_welcomes`] / facade `cloud_sync_history`.
+    /// В production (Block 7.4+) postman_transport переезжает на
+    /// `Arc<dyn PostmanTransport + Send + Sync>` trait; этот accessor
+    /// исчезнет либо станет `cfg(test)`-only.
+    ///
+    /// Typed accessor for stub postman — session 6 test scaffold.
+    /// Disappears in Block 7.4+ when real `PostmanTransport` trait wired.
+    #[must_use]
+    pub fn postman_transport(&self) -> Arc<StubPostmanTransport> {
+        self.postman_transport.clone()
+    }
+
+    /// **F-CLIENT-FACADE-1 session 6 (2026-05-19):** typed-Arc accessor для
+    /// stub unwrap transport. `Some` пока ClientCore был bootstrap'нут с
+    /// `StubUnwrapTransport` (текущий Block 7.2 state); `None` когда
+    /// production `Http2UnwrapTransport` wired (Block 7.4+). Используется
+    /// test rigs которые `push_response`-ят pre-baked Sealed Server shares
+    /// перед facade.cloud_sync_history dispatch.
+    ///
+    /// Typed accessor for stub unwrap transport — `Some` while session-6
+    /// stub; `None` after Block 7.4+ production wire.
+    #[must_use]
+    pub fn stub_unwrap_transport(&self) -> Option<Arc<StubUnwrapTransport>> {
+        self.stub_unwrap_transport.clone()
     }
 
     /// Закрытая граница неполного HTTP/2 bootstrap.

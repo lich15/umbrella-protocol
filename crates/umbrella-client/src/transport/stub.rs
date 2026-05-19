@@ -36,7 +36,7 @@
     reason = "stub module — Mutex poisoning is a bug; replaced by real transport in Block 7.4+"
 )]
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -44,6 +44,7 @@ use async_trait::async_trait;
 use umbrella_backup::cloud_wrap::share::ServerUnwrapShare;
 use umbrella_backup::cloud_wrap::signed_request::SignedUnwrapRequest;
 use umbrella_backup::cloud_wrap::transport::UnwrapTransport;
+use umbrella_backup::cloud_wrap::wire::WrappedKey;
 use umbrella_backup::error::BackupError;
 
 use crate::transport::async_unwrap::AsyncUnwrapTransport;
@@ -117,13 +118,14 @@ impl AsyncUnwrapTransport for StubUnwrapTransport {
     }
 }
 
-/// Stub blind-postman-svc. Держит two VecDeque: один для исходящих
-/// ciphertext'ов, второй для inbox'а (ответов сервера). Полный trait
-/// появится в Блоке 7.4 когда будет `PostmanTransport`.
+/// Stub blind-postman-svc. Держит four очередей: исходящие ciphertext'ы,
+/// inbox-ответы сервера, per-`ChatId` Cloud history queue для
+/// `cloud_sync_history` fetch, per-recipient Welcome queue для join-flow
+/// сценариев. Полный trait появится в Блоке 7.4 как `PostmanTransport`.
 ///
-/// Stub blind-postman-svc. Holds two VecDeques: one for outbound ciphertexts,
-/// another for inbox (server responses). Full trait emerges in Block 7.4 with
-/// `PostmanTransport`.
+/// Stub blind-postman-svc. Holds four queues: outbound ciphertexts, inbound
+/// server pushes, per-`ChatId` Cloud history for `cloud_sync_history` fetch,
+/// and per-recipient Welcome queue for join flow.
 #[derive(Debug, Default)]
 pub struct StubPostmanTransport {
     /// Доставленные ciphertext'ы (snapshot исходящей очереди).
@@ -132,6 +134,170 @@ pub struct StubPostmanTransport {
     /// Входящая очередь (серверные push'и).
     /// Inbound queue (server pushes).
     pub inbox: Mutex<VecDeque<Vec<u8>>>,
+    /// **F-CLIENT-FACADE-1 session 6 (2026-05-19):** Cloud-режим at-rest
+    /// история. Ключ — 32-байтовый `chat_id` (используется напрямую как
+    /// `[u8; 32]`, чтобы избежать зависимости stub'а от facade `ChatId`
+    /// типа). Значение — упорядоченный список [`CloudHistoryEntry`]
+    /// в order доставки на postman. `CloudChat::cloud_sync_history(since)`
+    /// фильтрует по `sent_ts_ms > since` и unwrap'ит каждый.
+    ///
+    /// Cloud history queue indexed by chat_id (raw 32-byte key).
+    /// `CloudChat::cloud_sync_history(since)` drains entries with
+    /// `sent_ts_ms > since`.
+    pub cloud_history: Mutex<HashMap<[u8; 32], Vec<CloudHistoryEntry>>>,
+    /// **F-CLIENT-FACADE-1 session 6:** Welcome inbox per recipient device
+    /// identity. Key — 32-байтовый Ed25519 identity pubkey получателя.
+    /// `mls_add_member` при auto-publish push'ит TLS-serialized Welcome bytes
+    /// в очередь; новое устройство при bootstrap дёргает
+    /// `ClientCore::fetch_pending_welcomes(peer)`.
+    ///
+    /// Welcome inbox per recipient identity. `mls_add_member` auto-publishes
+    /// here; `ClientCore::fetch_pending_welcomes(peer)` drains.
+    pub welcome_inbox: Mutex<HashMap<[u8; 32], VecDeque<Vec<u8>>>>,
+}
+
+/// **F-CLIENT-FACADE-1 session 6 (2026-05-19):** запись в Cloud-режиме history
+/// queue postman'а. Сочетает at-rest шифрование (AEAD под `message_key` через
+/// ChaCha20-Poly1305) + Cloud-wrapped `WrappedKey` (81-байт threshold-HPKE
+/// blob под `K = Y·G` Sealed Servers). Sender построит этот entry на send;
+/// recipient на `cloud_sync_history` для каждого entry будет:
+///
+/// 1. Построить `SignedUnwrapRequest` из `wrapped_key.ephemeral_r`
+/// 2. dispatch'ить через `AsyncUnwrapTransport` → ≥3 shares
+/// 3. `unwrap_message_key` → 32-байт `message_key`
+/// 4. AEAD-decrypt `ciphertext_at_rest` под `message_key` + `canonical_nonce(chat_id, msg_seq)`
+/// 5. Получить plaintext UTF-8
+///
+/// `WrappedKey` (81 байт) хранит зашифрованный `message_key` под Sealed Server
+/// threshold-HPKE; `ciphertext_at_rest` хранит зашифрованное plaintext
+/// сообщения под `message_key`. Эта **двойная конструкция** требуется чтобы
+/// новое устройство (которое не имеет MLS ratchet state) могло восстановить
+/// chat history через cooperation Sealed Servers (Cloud-режим только;
+/// SecretChat не имеет at-rest backup по дизайну).
+///
+/// One Cloud-mode at-rest history entry stored on postman. Sender writes
+/// here on send; recipient drains via `cloud_sync_history`, fetches partial
+/// shares from Sealed Servers, unwraps the `WrappedKey` to recover the
+/// `message_key`, then AEAD-decrypts `ciphertext_at_rest` to recover the
+/// plaintext.
+#[derive(Clone)]
+pub struct CloudHistoryEntry {
+    /// 16-байт opaque message id (генерируется отправителем). Mirror'ит
+    /// `MessageId` в facade::chat_common. Postman использует для dedup.
+    pub msg_id: [u8; 16],
+    /// 32-байт Ed25519 identity pubkey отправителя. Используется в
+    /// `CanonicalAad.sender_identity_pubkey` для AEAD binding.
+    pub sender: [u8; 32],
+    /// Wall-clock millis отправителя на момент send. Используется для
+    /// `since` filter в `cloud_sync_history` (recipient получает только
+    /// сообщения после lastSeenTs).
+    pub sent_ts_ms: u64,
+    /// Monotonic per-chat sequence number. Используется в `canonical_nonce`
+    /// derivation (deterministic AEAD nonce из (chat_id, msg_seq)) — sender
+    /// и recipient приходят к одному nonce без передачи по сети. Replay
+    /// инвариант: postman side enforces strict monotonicity per chat_id.
+    pub msg_seq: u64,
+    /// AEAD-encrypted plaintext под `message_key` с deterministic nonce
+    /// `canonical_nonce(chat_id, msg_seq)`. Длина ≈ plaintext + 16 байт
+    /// Poly1305 tag.
+    pub ciphertext_at_rest: Vec<u8>,
+    /// 81-байт wrapped `message_key` (threshold-HPKE под Sealed Server K).
+    pub wrapped_key: WrappedKey,
+}
+
+/// `Debug` скрывает sensitive: sender pubkey + linkable timestamps оставляет,
+/// ciphertext bytes redact — следует pattern остальных at-rest типов в
+/// umbrella-backup.
+impl core::fmt::Debug for CloudHistoryEntry {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("CloudHistoryEntry")
+            .field("msg_id", &"<redacted>")
+            .field("sender", &"<redacted>")
+            .field("sent_ts_ms", &self.sent_ts_ms)
+            .field("msg_seq", &self.msg_seq)
+            .field("ciphertext_at_rest_len", &self.ciphertext_at_rest.len())
+            .field("ciphertext_at_rest", &"<redacted>")
+            .field("wrapped_key", &self.wrapped_key)
+            .finish()
+    }
+}
+
+impl StubPostmanTransport {
+    /// **F-CLIENT-FACADE-1 session 6:** test helper — push a Cloud history
+    /// entry for the given `chat_id`. Stages the entry for subsequent
+    /// `CloudChat::cloud_sync_history` drain. Entries returned in insertion
+    /// order.
+    ///
+    /// Test helper: push a Cloud history entry for the chat_id.
+    pub fn push_cloud_history(&self, chat_id: [u8; 32], entry: CloudHistoryEntry) {
+        self.cloud_history
+            .lock()
+            .expect("StubPostmanTransport.cloud_history mutex poisoned")
+            .entry(chat_id)
+            .or_default()
+            .push(entry);
+    }
+
+    /// **F-CLIENT-FACADE-1 session 6:** drain Cloud history entries for the
+    /// given `chat_id` whose `sent_ts_ms > since_ms`. Removes drained entries
+    /// from the queue (one-shot fetch). Returns entries in insertion order.
+    ///
+    /// Drains entries with `sent_ts_ms > since_ms`; removes them.
+    pub fn drain_cloud_history(
+        &self,
+        chat_id: &[u8; 32],
+        since_ms: u64,
+    ) -> Vec<CloudHistoryEntry> {
+        let mut guard = self
+            .cloud_history
+            .lock()
+            .expect("StubPostmanTransport.cloud_history mutex poisoned");
+        let Some(entries) = guard.get_mut(chat_id) else {
+            return Vec::new();
+        };
+        let mut keep = Vec::new();
+        let mut drained = Vec::new();
+        for entry in entries.drain(..) {
+            if entry.sent_ts_ms > since_ms {
+                drained.push(entry);
+            } else {
+                keep.push(entry);
+            }
+        }
+        *entries = keep;
+        drained
+    }
+
+    /// **F-CLIENT-FACADE-1 session 6:** publish a TLS-serialized Welcome
+    /// message into the recipient device's Welcome inbox. Called by
+    /// `mls_add_member` after generating Welcome bytes. New device drains
+    /// via [`Self::drain_welcomes_for`].
+    ///
+    /// Publish a Welcome to the recipient device's inbox.
+    pub fn push_welcome(&self, recipient_identity_pk: [u8; 32], welcome_bytes: Vec<u8>) {
+        self.welcome_inbox
+            .lock()
+            .expect("StubPostmanTransport.welcome_inbox mutex poisoned")
+            .entry(recipient_identity_pk)
+            .or_default()
+            .push_back(welcome_bytes);
+    }
+
+    /// **F-CLIENT-FACADE-1 session 6:** drain all Welcome bytes pending for
+    /// the recipient device identity. Called by `ClientCore::fetch_pending_welcomes`.
+    /// Returns Welcomes in insertion order; queue emptied on drain.
+    ///
+    /// Drain pending Welcomes for the recipient identity.
+    pub fn drain_welcomes_for(&self, recipient_identity_pk: &[u8; 32]) -> Vec<Vec<u8>> {
+        let mut guard = self
+            .welcome_inbox
+            .lock()
+            .expect("StubPostmanTransport.welcome_inbox mutex poisoned");
+        match guard.get_mut(recipient_identity_pk) {
+            Some(queue) => queue.drain(..).collect(),
+            None => Vec::new(),
+        }
+    }
 }
 
 /// Stub kt-svc. В Блоке 7.5 появится trait `KtTransport` с методами

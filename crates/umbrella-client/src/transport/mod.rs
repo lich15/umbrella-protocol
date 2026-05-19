@@ -38,6 +38,10 @@ pub use pinning::{
     SpkiPinningVerifier, SPKI_PIN_LEN,
 };
 pub use retry::{is_reqwest_retryable, retry_with_backoff, DEFAULT_MAX_ATTEMPTS};
+pub use stub::{
+    CloudHistoryEntry, StubCallRelayTransport, StubKtTransport, StubPostmanTransport,
+    StubUnwrapTransport,
+};
 pub use gateway::{
     default_quic_fallback_budget, GatewayConnection, GatewayTransport, GatewayTransportError,
     NegotiatedTransport,

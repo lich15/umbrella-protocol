@@ -38,8 +38,9 @@ use crate::call::{CallSession, MediaSink, MediaSource, ModeEnforcement};
 use crate::core::ClientCore;
 use crate::error::Result;
 use crate::facade::chat_common::{
-    create_mls_group, fetch_mls_inbox, mls_add_member, send_mls_text, ChatId, ChatSettings,
-    DecryptedMessage, MessageId, PeerId, Timestamp,
+    cloud_sync_history_impl, create_mls_group, fetch_mls_inbox, mls_add_member,
+    open_mls_group_from_welcome, send_mls_text, ChatId, ChatSettings, DecryptedMessage,
+    MessageId, PeerId, Timestamp,
 };
 
 /// Cloud-чат. Тонкая обёртка над `Arc<ClientCore>` + `ChatId` + effective
@@ -92,6 +93,46 @@ impl CloudChat {
     /// `ClientError::Storage` if the local MLS snapshot is missing.
     pub async fn open(core: Arc<ClientCore>, chat_id: ChatId) -> Result<Self> {
         let effective_ciphersuite = core.default_ciphersuite();
+        Ok(Self {
+            core,
+            chat_id,
+            effective_ciphersuite,
+        })
+    }
+
+    /// **F-CLIENT-FACADE-1 session 6 (2026-05-19):** join an existing Cloud-чат
+    /// from a TLS-serialized `Welcome` message published by another member.
+    /// Заменяет manual two-step pattern session 5
+    /// (`fetch_pending_welcomes()` + manual `UmbrellaGroup::join_from_welcome`)
+    /// на single fasade-level call.
+    ///
+    /// Flow:
+    ///   1. `UmbrellaGroup::join_from_welcome` (validate Welcome + Private policy)
+    ///   2. Extract MLS GroupId → `ChatId` (canonical 32-byte shape session 5)
+    ///   3. Register joined group в `ClientCore.groups`
+    ///   4. Return `CloudChat` handle с real chat_id + effective ciphersuite
+    ///
+    /// Typical flow: new device → `ClientCore::fetch_pending_welcomes(self_pk)` →
+    /// для каждого welcome bytes →
+    /// `CloudChat::open_from_welcome(core, welcome_bytes)`. После этого
+    /// device может вызывать `send_text` / `fetch_inbox` / `cloud_sync_history`
+    /// для recovered chat'ов.
+    ///
+    /// **F-CLIENT-FACADE-1 session 6:** join an existing Cloud chat from a
+    /// Welcome message published by another member (typically retrieved via
+    /// `ClientCore::fetch_pending_welcomes`). Replaces the session-5 manual
+    /// two-step `UmbrellaGroup::join_from_welcome` + `register_group` pattern.
+    ///
+    /// # Errors
+    ///
+    /// Mirror'ит `open_mls_group_from_welcome` (см. doc-comment в
+    /// `chat_common.rs`): Welcome decode/validate gap → `ClientError::Mls(Welcome)`;
+    /// non-canonical GroupId shape → `ClientError::Mls(GroupOperation)`.
+    pub async fn open_from_welcome(
+        core: Arc<ClientCore>,
+        welcome_bytes: &[u8],
+    ) -> Result<Self> {
+        let (chat_id, effective_ciphersuite) = open_mls_group_from_welcome(&core, welcome_bytes).await?;
         Ok(Self {
             core,
             chat_id,
@@ -197,9 +238,9 @@ impl CloudChat {
     /// `ClientError::Network / Backup / Mls / SealedSender` in Block 7.4.
     pub async fn cloud_sync_history(
         &self,
-        _since: Option<Timestamp>,
+        since: Option<Timestamp>,
     ) -> Result<Vec<DecryptedMessage>> {
-        Ok(Vec::new())
+        cloud_sync_history_impl(&self.core, self.chat_id, since).await
     }
 
     /// Cloud-only: добавить бота в чат. Bot = специальное identity у которого

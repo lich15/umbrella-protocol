@@ -22,11 +22,20 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use chacha20poly1305::aead::{Aead, KeyInit, Payload};
+use chacha20poly1305::ChaCha20Poly1305;
 use openmls_traits::OpenMlsProvider;
 use rand::RngCore;
 use tokio::sync::Mutex as TokioMutex;
+use umbrella_backup::cloud_wrap::signed_request::{
+    PlatformAttestation, Platform as BackupPlatform, SignedUnwrapRequest,
+};
+use umbrella_backup::cloud_wrap::wire::canonical_nonce;
+use umbrella_backup::cloud_wrap::{unwrap_message_key, CanonicalAad};
+use umbrella_backup::BackupError;
 use umbrella_mls::{
-    parse_key_package_safe, IncomingMessage, MlsError, UmbrellaCiphersuite, UmbrellaGroup,
+    parse_key_package_safe, GroupPolicy, IncomingMessage, MlsError, UmbrellaCiphersuite,
+    UmbrellaGroup,
 };
 
 use crate::core::ClientCore;
@@ -211,6 +220,17 @@ const SERVER_MSG_ID_HEX_LEN: usize = 32;
 /// loopback latency, mobile RTT (RFC 9001 §1-RTT typical <50 ms), and the
 /// facade caller's desire for prompt return when nothing is pending.
 const FETCH_INBOX_DRAIN_TIMEOUT: Duration = Duration::from_millis(100);
+
+/// **F-CLIENT-FACADE-1 session 6 (2026-05-19):** budget на dispatch fan-out
+/// одного Cloud-wrap unwrap-запроса к Sealed Servers (5-way HTTP/2 либо
+/// stub). SPEC-12 §A.7 spec'ит 3000 мс верхним bound для real network; 30 с
+/// — conservative ceiling который держит cloud_sync_history loop отзывчивым
+/// даже на 4G/5G mobile networks (per-RTT 200-500 мс × 5 servers + retry
+/// budget). Stub возвращает мгновенно.
+///
+/// Per-message timeout for Sealed Server unwrap fan-out. SPEC-12 §A.7
+/// targets 3 s typical; 30 s is a conservative ceiling.
+const CLOUD_UNWRAP_DISPATCH_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Внутренний helper: routes facade-уровневое текстовое сообщение через
 /// активный gateway connection. Если `core.gateway()` is `None` —
@@ -560,11 +580,27 @@ pub(crate) async fn mls_add_member(
         unix_now_secs(),
     )?;
 
-    outcome.welcome.ok_or_else(|| {
+    let welcome_bytes = outcome.welcome.ok_or_else(|| {
         ClientError::Mls(MlsError::GroupOperation {
             kind: "add_members returned no Welcome (Add proposal did not produce new member)",
         })
-    })
+    })?;
+
+    // F-CLIENT-FACADE-1 session 6: auto-publish Welcome to peer's postman
+    // inbox so the new device can fetch + join without out-of-band hand-off.
+    // Backwards-compat with session 5 tests: метод всё ещё возвращает
+    // welcome_bytes (caller может игнорировать или передать напрямую в
+    // UmbrellaGroup::join_from_welcome). Stub postman принимает любой
+    // 32-byte recipient identity, не проверяет membership — production
+    // postman будет верифицировать peer ∈ key-svc directory.
+    //
+    // F-CLIENT-FACADE-1 session 6: auto-publish Welcome to peer's postman
+    // inbox so the new device can fetch + join. Welcome bytes still returned
+    // for backwards compat with session 5 callers.
+    core.postman_transport
+        .push_welcome(peer.0, welcome_bytes.clone());
+
+    Ok(welcome_bytes)
 }
 
 fn unix_now_secs() -> u64 {
@@ -572,6 +608,208 @@ fn unix_now_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+/// **F-CLIENT-FACADE-1 session 6 (2026-05-19):** join an MLS group from a
+/// TLS-serialized Welcome message. Used by `CloudChat::open_from_welcome` /
+/// `SecretChat::open_from_welcome` to materialise group state on the new
+/// device after `add_member` was performed by an existing member.
+///
+/// Flow:
+///   1. `UmbrellaGroup::join_from_welcome` (parses + validates Welcome,
+///      verifies `GroupPolicy::Private` — no ExternalPub extension)
+///   2. extract MLS GroupId → `ChatId` (32-byte canonical representation
+///      session-5 invariant: `create_mls_group` used 32-byte CSPRNG bytes
+///      directly as GroupId)
+///   3. read effective ciphersuite from joined group
+///   4. register `Arc<TokioMutex<UmbrellaGroup>>` в `ClientCore.groups`
+///
+/// Возвращает `(chat_id, effective_ciphersuite_raw_id)` — фасад использует
+/// первое для своего `chat_id` поля, второе для `effective_ciphersuite` поля.
+///
+/// **F-CLIENT-FACADE-1 session 6:** join an MLS group from a Welcome. Returns
+/// `(chat_id, effective_ciphersuite_raw_id)` for the caller to populate the
+/// facade's `chat_id` and `effective_ciphersuite` fields.
+///
+/// # Errors
+///
+/// - `ClientError::Mls(MlsError::Welcome { kind })` — Welcome decode/validate
+///   failed либо joined GroupContext имеет ExternalPub extension (Private
+///   policy ожидается).
+/// - `ClientError::Mls(MlsError::GroupOperation { kind })` — joined GroupId
+///   не canonical 32-байтовый shape (Block 7.2 invariant: `create_mls_group`
+///   гарантирует это для всех чатов, созданных через фасад; группа с GroupId
+///   другой длины — взаимодействие с другим клиентом, у которого иное
+///   соглашение).
+pub(crate) async fn open_mls_group_from_welcome(
+    core: &Arc<ClientCore>,
+    welcome_bytes: &[u8],
+) -> Result<(ChatId, u16)> {
+    let group = UmbrellaGroup::join_from_welcome(
+        core.mls_provider.as_ref(),
+        core.mls_keystore.as_ref(),
+        0,
+        welcome_bytes,
+        GroupPolicy::Private,
+        unix_now_secs(),
+    )?;
+
+    let group_id_bytes: &[u8] = group.group_id().as_slice();
+    let chat_id_array: [u8; 32] = group_id_bytes.try_into().map_err(|_| {
+        ClientError::Mls(MlsError::GroupOperation {
+            kind: "joined MLS GroupId is not the canonical 32-byte shape used by facade::create_mls_group",
+        })
+    })?;
+    let chat_id = ChatId(chat_id_array);
+    let effective_ciphersuite = group.ciphersuite().raw_id();
+
+    core.register_group(chat_id, Arc::new(TokioMutex::new(group)))
+        .await;
+
+    Ok((chat_id, effective_ciphersuite))
+}
+
+/// **F-CLIENT-FACADE-1 session 6 (2026-05-19):** Cloud-режим history sync
+/// для нового устройства. Drain'ит at-rest history entries из postman'а
+/// (filtered по `since`), для каждого выполняет:
+///
+/// 1. **Cloud-wrap unwrap**: построить `SignedUnwrapRequest` из
+///    `entry.wrapped_key.ephemeral_r` + recipient device pubkey + chat_id;
+///    dispatch через `core.unwrap_transport` (`StubUnwrapTransport` в тестах,
+///    `Http2UnwrapTransport` в production); собрать ≥3 `ServerUnwrapShare` →
+///    `unwrap_message_key(params, wrapped, aad, shares)` → 32-байтовый
+///    `message_key`.
+/// 2. **Outer AEAD decrypt**: ChaCha20-Poly1305 decrypt `ciphertext_at_rest`
+///    под `message_key` с deterministic `canonical_nonce(chat_id, msg_seq)`
+///    и `aad = CanonicalAad.canonical_bytes()`. Любой bit-flip в (sender,
+///    recipient, chat_id, msg_seq, ciphertext, tag) → `AeadDecryptFailed`
+///    → finding bubbled как `ClientError::Backup`.
+/// 3. **DecryptedMessage assembly**: msg_id + chat_id + sender + ts +
+///    UTF-8 plaintext.
+///
+/// **Honest fail-closed** (per постулат 14 no silent fallback): отсутствие
+/// ≥3 shares → `BackupError::InsufficientUnwrapShares` propagates как
+/// `ClientError::Backup`; tamper'нутый entry → `AeadDecryptFailed`
+/// propagates. Caller (production UI) показывает «sync failed, retry» либо
+/// «message corrupted».
+///
+/// **Замечания session 6 scope:**
+///   - Send side (создание CloudHistoryEntry на отправителе) — session 7+:
+///     требует параллельной at-rest write на postman при каждом MLS send.
+///     Текущий `send_mls_text` пишет только MLS ciphertext в gateway-svc.
+///   - `SignedUnwrapRequest` construct stub: real attestation token + device
+///     signature, freshness nonce → session 7+ когда `Http2UnwrapTransport`
+///     wired. Stub `StubUnwrapTransport::dispatch` ignores request fields,
+///     returns pre-queued shares.
+///   - Replay defense: msg_seq monotonic per chat_id, deterministic nonce
+///     → replay attempt на postman side detected (postman would dedup by
+///     (chat_id, msg_seq)). Client side не enforces — relies on postman.
+///
+/// **F-CLIENT-FACADE-1 session 6:** Cloud-mode history sync. Drains
+/// at-rest entries from postman (filtered by `since`), for each: Cloud-wrap
+/// unwrap (Sealed Server fan-out + Lagrange combine) → outer ChaCha20-Poly1305
+/// decrypt → `DecryptedMessage`. Fail-closed on insufficient shares or
+/// AEAD tamper.
+///
+/// # Errors
+///
+/// - `ClientError::Backup(InsufficientUnwrapShares)` — <3 shares returned
+///   by unwrap_transport.
+/// - `ClientError::Backup(AllSubsetsFailedUnwrap)` — все subset combinations
+///   failed AEAD (≥1 malicious server in any subset of 3).
+/// - `ClientError::Backup(AeadDecryptFailed)` — outer ciphertext_at_rest
+///   AEAD verify failed (tamper либо desync chat_id/msg_seq).
+/// - `ClientError::Internal` — нарушение invariant'а (например ciphertext
+///   shorter than 16-byte Poly1305 tag).
+pub(crate) async fn cloud_sync_history_impl(
+    core: &Arc<ClientCore>,
+    chat_id: ChatId,
+    since: Option<Timestamp>,
+) -> Result<Vec<DecryptedMessage>> {
+    let since_ms = since.unwrap_or(0);
+    let entries = core
+        .postman_transport
+        .drain_cloud_history(&chat_id.0, since_ms);
+
+    if entries.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let recipient_device_pubkey = core.mls_keystore.identity_public().to_bytes();
+    let mut out = Vec::with_capacity(entries.len());
+
+    for entry in entries {
+        // 1. Build canonical AAD binding (sender, recipient, chat_id, msg_seq).
+        let aad = CanonicalAad {
+            sender_identity_pubkey: entry.sender,
+            recipient_device_pubkey,
+            chat_id: chat_id.0,
+            msg_seq: entry.msg_seq,
+        };
+
+        // 2. Stub SignedUnwrapRequest — `StubUnwrapTransport` ignores
+        //    request fields, returns pre-queued shares. Production
+        //    `Http2UnwrapTransport` (session 7+) will require real
+        //    attestation + device signature + freshness nonce here.
+        //    PlatformAttestation::new requires non-empty token; stub prefix
+        //    matches what tests stage.
+        let attestation = PlatformAttestation::new(
+            BackupPlatform::Testing,
+            b"facade-cloud-sync-stub",
+        )
+        .map_err(ClientError::Backup)?;
+        let request = SignedUnwrapRequest {
+            ephemeral_r: entry.wrapped_key.ephemeral_r,
+            chat_id: chat_id.0,
+            recipient_device_pubkey,
+            timestamp_unix_millis: entry.sent_ts_ms,
+            server_nonce: [0u8; 32],
+            attestation,
+            device_signature: [0u8; 64],
+            device_pubkey: recipient_device_pubkey,
+        };
+
+        // 3. Dispatch fan-out → shares.
+        let shares = core
+            .unwrap_transport
+            .dispatch(&request, CLOUD_UNWRAP_DISPATCH_TIMEOUT)
+            .await
+            .map_err(ClientError::Backup)?;
+
+        // 4. Lagrange combine + AEAD inner open → message_key.
+        let message_key = unwrap_message_key(
+            &core.config.wrapping_params,
+            &entry.wrapped_key,
+            &aad,
+            &shares,
+        )
+        .map_err(ClientError::Backup)?;
+
+        // 5. Outer ChaCha20-Poly1305 decrypt ciphertext_at_rest under
+        //    message_key with deterministic nonce + canonical AAD.
+        let cipher = ChaCha20Poly1305::new((&message_key).into());
+        let nonce_bytes = canonical_nonce(&chat_id.0, entry.msg_seq);
+        let aad_bytes = aad.canonical_bytes();
+        let plaintext = cipher
+            .decrypt(
+                (&nonce_bytes).into(),
+                Payload {
+                    msg: &entry.ciphertext_at_rest,
+                    aad: &aad_bytes,
+                },
+            )
+            .map_err(|_| ClientError::Backup(BackupError::AeadDecryptFailed))?;
+
+        out.push(DecryptedMessage {
+            message_id: MessageId(entry.msg_id),
+            chat_id,
+            sender: PeerId(entry.sender),
+            timestamp: entry.sent_ts_ms,
+            text: String::from_utf8_lossy(&plaintext).into_owned(),
+        });
+    }
+
+    Ok(out)
 }
 
 /// Parse a sender 32-byte UserId out of an `IncomingMessage.from_user_id`

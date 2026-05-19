@@ -69,8 +69,8 @@ use crate::call::{CallSession, MediaSink, MediaSource, ModeEnforcement};
 use crate::core::ClientCore;
 use crate::error::Result;
 use crate::facade::chat_common::{
-    create_mls_group, fetch_mls_inbox, mls_add_member, send_mls_text, ChatId, ChatSettings,
-    DecryptedMessage, MessageId, PeerId,
+    create_mls_group, fetch_mls_inbox, mls_add_member, open_mls_group_from_welcome,
+    send_mls_text, ChatId, ChatSettings, DecryptedMessage, MessageId, PeerId,
 };
 
 /// Secret-чат. Зеркало [`CloudChat`] по shared методам, но **без**
@@ -120,6 +120,31 @@ impl SecretChat {
     /// resync via device-transfer — the only path in Secret mode).
     pub async fn open(core: Arc<ClientCore>, chat_id: ChatId) -> Result<Self> {
         let effective_ciphersuite = core.default_ciphersuite();
+        Ok(Self {
+            core,
+            chat_id,
+            effective_ciphersuite,
+        })
+    }
+
+    /// **F-CLIENT-FACADE-1 session 6 (2026-05-19):** join existing Secret-чат
+    /// из Welcome message. Зеркалирует
+    /// [`crate::facade::CloudChat::open_from_welcome`] — shared MLS join
+    /// path (`UmbrellaGroup::join_from_welcome` + register). Mode-specific
+    /// divergence (sealed-sender envelope wrapping) — session 7+ scope.
+    ///
+    /// **F-CLIENT-FACADE-1 session 6:** join an existing Secret chat from a
+    /// Welcome message. Mirrors
+    /// [`crate::facade::CloudChat::open_from_welcome`].
+    ///
+    /// # Errors
+    ///
+    /// Same as [`crate::facade::CloudChat::open_from_welcome`].
+    pub async fn open_from_welcome(
+        core: Arc<ClientCore>,
+        welcome_bytes: &[u8],
+    ) -> Result<Self> {
+        let (chat_id, effective_ciphersuite) = open_mls_group_from_welcome(&core, welcome_bytes).await?;
         Ok(Self {
             core,
             chat_id,
