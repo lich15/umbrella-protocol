@@ -48,7 +48,7 @@
 
 use std::sync::Arc;
 
-use umbrella_kt::{verify_own_entry, KtEntry, KtError, OwnExpectations};
+use umbrella_kt::{verify_own_entry, verify_signed_epoch, KtEntry, KtError, OwnExpectations};
 
 use crate::core::ClientCore;
 use crate::error::{ClientError, Result};
@@ -129,4 +129,77 @@ pub async fn verify_own_kt_entry_for_epoch(core: &Arc<ClientCore>, epoch: u64) -
     };
 
     verify_own_entry(&entry, &expected).map_err(ClientError::Kt)
+}
+
+/// **F-CLIENT-FACADE-1 session 8b (2026-05-19):** проверка witness-кворума
+/// 3-of-5 для эпохи. Закрывает **split-view** атаку (SPEC-09 §6 + ADR-009
+/// multi-witness section): KT log-оператор показывает разным клиентам разные
+/// версии root'а; honest self-monitoring (session 8a) не отличает «свой»
+/// view от глобального. Multi-witness 3-of-5 поднимает стоимость атаки —
+/// необходимо co-opt'ить ≥ 3 независимых witness-серверов в разных
+/// юрисдикциях, чтобы пройти threshold.
+///
+/// Helper:
+/// 1. Fetch'ит staged `SignedEpochRoot` от
+///    [`crate::transport::stub::StubKtTransport::fetch_staged_signed_root`]
+///    под ключом `epoch`. Production (session 8c+): HTTP/2 transport
+///    возвращает raw bytes; codec deserialises.
+/// 2. **Defence-in-depth epoch-binding** (Postulate 14 + PhD-B cross-binding):
+///    проверяет `signed.epoch == epoch`. Без этой проверки adversary с
+///    одной валидной староэпохой (honest signatures) подменил бы запрос на
+///    свежую эпоху — `verify_signed_epoch` использует `signed.epoch` для
+///    payload, подписи verify'ятся, threshold проходит, но клиент получил
+///    подписи не той эпохи которую запрашивал.
+/// 3. Snapshots witness set от
+///    [`crate::transport::stub::StubKtTransport::witness_set`].
+/// 4. Вызывает `umbrella_kt::witness::verify_signed_epoch(&signed,
+///    &witness_set, threshold)` — алгоритм проверяет ≥ `threshold`
+///    валидных подписей от **разных** witness-ов из набора, payload
+///    канонически = `WITNESS_DOMAIN_SEP || version || epoch_BE || root ||
+///    log_size_BE || timestamp_BE` (SPEC-09 §5.3, 80 байт).
+///
+/// **F-CLIENT-FACADE-1 session 8b:** witness 3-of-5 threshold verification
+/// for an epoch. Closes the split-view attack (SPEC-09 §6 + ADR-009).
+///
+/// # Errors
+///
+/// - `ClientError::Kt(KtError::InsufficientValidSignatures { valid: 0,
+///   required: threshold })` если ничего не staged для `epoch` (fail-closed
+///   на отсутствие подписей; production: censorship либо проблема сети).
+/// - `ClientError::Kt(KtError::SelfMonitoringMismatch { field:
+///   "signed_epoch_mismatch" })` если `signed.epoch` отличается от
+///   `epoch` (defence-in-depth epoch-binding; adversary прислал
+///   staged root для другой эпохи).
+/// - `ClientError::Kt(KtError::InsufficientValidSignatures { valid,
+///   required })` если меньше `threshold` валидных уникальных подписей
+///   от witness-ов из pinned set'а (тампер root / epoch / signature /
+///   log_size / timestamp ломает все подписи на 0).
+pub async fn verify_kt_witness_signatures_for_epoch(
+    core: &Arc<ClientCore>,
+    epoch: u64,
+    threshold: usize,
+) -> Result<()> {
+    let signed = core
+        .kt_transport()
+        .fetch_staged_signed_root(epoch)
+        .ok_or(ClientError::Kt(KtError::InsufficientValidSignatures {
+            valid: 0,
+            required: threshold,
+        }))?;
+
+    // Defence-in-depth: server MUST return SignedEpochRoot whose internal
+    // `epoch` matches the requested `epoch`. Without this check, an
+    // adversary can serve an older honest SignedEpochRoot (with valid
+    // signatures) under the requested epoch key — `verify_signed_epoch`
+    // would build the canonical payload from `signed.epoch` and accept
+    // the threshold, but the client effectively «validated» a different
+    // epoch's witness quorum.
+    if signed.epoch != epoch {
+        return Err(ClientError::Kt(KtError::SelfMonitoringMismatch {
+            field: "signed_epoch_mismatch",
+        }));
+    }
+
+    let witness_set = core.kt_transport().witness_set();
+    verify_signed_epoch(&signed, &witness_set, threshold).map_err(ClientError::Kt)
 }
