@@ -384,6 +384,83 @@ impl CallSession {
     pub async fn is_srtp_keyed(&self) -> bool {
         self.srtp_pipeline.is_keyed().await
     }
+
+    /// **F-CLIENT-FACADE-1 session 10c (2026-05-19):** transition the
+    /// session state from [`CallState::Signalling`] to
+    /// [`CallState::IceGathering`]. Called by the signalling driver
+    /// after the offer has been posted and the peer's answer has been
+    /// received — at which point ICE gathering can begin.
+    ///
+    /// Setter-style: unconditionally writes the new state. State machine
+    /// enforcement (rejecting illegal pre-conditions) is deliberately
+    /// permissive в session 10c — the signalling driver is trusted to
+    /// call transitions in the right order. Tests verify the transition
+    /// occurs.
+    ///
+    /// **F-CLIENT-FACADE-1 session 10c (2026-05-19):** transition the
+    /// state from `Signalling` to `IceGathering`. Setter-style (no
+    /// pre-condition guard).
+    pub async fn begin_ice_gathering(&self) {
+        *self.state.write().await = CallState::IceGathering;
+    }
+
+    /// **F-CLIENT-FACADE-1 session 10c (2026-05-19):** transition the
+    /// state to [`CallState::DtlsHandshake`]. Collapses the
+    /// IceGathering + IceChecking phases at facade level — the
+    /// signalling driver calls this once ICE has produced a
+    /// candidate-pair that succeeded connectivity checks. Real
+    /// connectivity verification lives inside webrtc-ice (Block 7.10
+    /// integration), so the facade-level surface is "ICE done → start
+    /// DTLS".
+    ///
+    /// **F-CLIENT-FACADE-1 session 10c (2026-05-19):** transition to
+    /// `DtlsHandshake` (collapses IceGathering + IceChecking at facade).
+    pub async fn mark_ice_complete(&self) {
+        *self.state.write().await = CallState::DtlsHandshake;
+    }
+
+    /// **F-CLIENT-FACADE-1 session 10c (2026-05-19):** transition to
+    /// [`CallState::Connected`] — final lifecycle gate. Requires the
+    /// SRTP pipeline to be keyed ([`Self::is_srtp_keyed`] true);
+    /// otherwise refuses с `ClientError::Internal("mark_connected:
+    /// SRTP pipeline not keyed ...")` so a misordered signalling
+    /// driver does not advertise "connected" while the media path is
+    /// still un-keyed (silent decrypt failures would follow).
+    ///
+    /// # Errors
+    ///
+    /// - [`ClientError::Internal`] if `is_srtp_keyed()` is false at the
+    ///   moment of the call — gate for media path readiness.
+    ///
+    /// **F-CLIENT-FACADE-1 session 10c (2026-05-19):** transition to
+    /// `Connected`. Fails closed if SRTP keying is not installed
+    /// (`is_srtp_keyed() == false`) — gate against advertising
+    /// "connected" before the media path is ready.
+    pub async fn mark_connected(&self) -> Result<(), ClientError> {
+        if !self.is_srtp_keyed().await {
+            return Err(ClientError::Internal(
+                "mark_connected: SRTP pipeline not keyed — refuse to advertise Connected \
+                 before install_srtp_keying() has installed RFC 5764 §4.2 exporter material"
+                    .into(),
+            ));
+        }
+        *self.state.write().await = CallState::Connected;
+        Ok(())
+    }
+
+    /// **F-CLIENT-FACADE-1 session 10c (2026-05-19):** transition to
+    /// [`CallState::Terminated`] with the supplied
+    /// [`CallTerminationReason`]. Used by signalling driver when
+    /// remote-side BYE arrives либо при ICE/DTLS failure surface
+    /// from network layer. Mirrors `hangup()` для locally-initiated
+    /// termination но allows the full reason enum.
+    ///
+    /// **F-CLIENT-FACADE-1 session 10c (2026-05-19):** transition to
+    /// `Terminated` with explicit reason — for remote-hangup / failure
+    /// paths beyond local hangup.
+    pub async fn mark_terminated(&self, reason: CallTerminationReason) {
+        *self.state.write().await = CallState::Terminated(reason);
+    }
 }
 
 /// **F-CLIENT-FACADE-1 session 10a (2026-05-19):** map enforcement mode +
