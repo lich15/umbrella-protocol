@@ -489,7 +489,22 @@ pub struct ClientCore {
     /// KeyStore with no in-heap identity_sk materialisation. Block
     /// 7.4+ facades will consume the `core.keystore()` accessor instead
     /// of inline `InMemoryKeyStore::open` calls.
-    pub(crate) keystore: Option<Arc<dyn KeyStore>>,
+    ///
+    /// **F-CLIENT-FACADE-1 session 9f (2026-05-19):** wrapped in
+    /// `std::sync::RwLock` for atomic refresh post-rotation
+    /// (`rotate_identity_full` Layer 4) — keeps the F-IDENT-1 partition
+    /// invariant consistent после identity rotation. Without this swap
+    /// the slot would hold a `HwBackedKeyStore` bound to the
+    /// pre-rotation handle / verifying-key while
+    /// `core.mls_keystore` + `core.hw_identity_state` reflect the
+    /// post-rotation identity — split-state bug for Block 7.4+ facade
+    /// consumers that read from `core.keystore()`.
+    ///
+    /// **F-CLIENT-FACADE-1 session 9f (2026-05-19):** wrapped in
+    /// `std::sync::RwLock` for atomic refresh post-rotation
+    /// (`rotate_identity_full` Layer 4). Keeps the F-IDENT-1 partition
+    /// invariant consistent across rotation.
+    pub(crate) keystore: std::sync::RwLock<Option<Arc<dyn KeyStore>>>,
 
     /// Активное соединение с gateway-svc (QUIC либо WebSocket fallback). `Some(...)`
     /// после успешного `set_gateway` post-bootstrap; `None` до первого подключения
@@ -733,7 +748,7 @@ impl ClientCore {
             // Legacy/test path: facades still construct InMemoryKeyStore
             // inline. F-IDENT-1 closure leaves this slot None on legacy
             // bootstraps; Block 7.4+ facade refactor will consolidate.
-            keystore: None,
+            keystore: std::sync::RwLock::new(None),
             // F-CLIENT-FACADE-1 session 3: gateway is set post-bootstrap
             // via `set_gateway` — tests opting into the real send path
             // construct a mock GatewayTransport and install it here.
@@ -877,7 +892,7 @@ impl ClientCore {
                 handle: Some(handle),
                 verifying_key: Some(verifying_key),
             }),
-            keystore: Some(keystore),
+            keystore: std::sync::RwLock::new(Some(keystore)),
             // F-CLIENT-FACADE-1 session 3: gateway is set post-bootstrap.
             gateway: RwLock::new(None),
             mls_provider,
@@ -1108,9 +1123,42 @@ impl ClientCore {
     /// `InMemoryKeyStore::open` so the F-IDENT-1 + F-IDENT-2 closure
     /// is effective end-to-end (in hw-mode no seed is materialised;
     /// in legacy mode the keystore lifetime is owned by ClientCore).
+    ///
+    /// **F-CLIENT-FACADE-1 session 9f (2026-05-19):** reads under a
+    /// brief read-lock and returns an `Option<Arc<dyn KeyStore>>`
+    /// clone. After identity rotation via
+    /// [`crate::identity::rotate_identity_full`] this accessor
+    /// returns the post-rotation [`HwBackedKeyStore`] bound to the
+    /// new HW handle / verifying-key, preserving the F-IDENT-1
+    /// partition invariant.
     #[must_use]
     pub fn keystore(&self) -> Option<Arc<dyn KeyStore>> {
-        self.keystore.clone()
+        self.keystore
+            .read()
+            .expect("keystore rwlock poisoned")
+            .clone()
+    }
+
+    /// **F-CLIENT-FACADE-1 session 9f (2026-05-19):** atomically replace
+    /// the canonical `Option<Arc<dyn KeyStore>>` slot. Called by
+    /// rotation orchestration ([`crate::identity::rotate_identity_full`])
+    /// in tandem with [`Self::swap_mls_keystore`] so post-rotation
+    /// `core.keystore()` reflects the new identity — without this
+    /// the slot would hold a stale `HwBackedKeyStore` bound to the
+    /// pre-rotation handle while every other HW-related accessor
+    /// reflects the new identity (split-state bug).
+    ///
+    /// `Some(new_keystore)` on the hw path; `None` on the legacy
+    /// path. Rotation orchestration passes `Some(new_hw_keystore)`
+    /// since `rotate_identity_full` requires a HW-bootstrapped
+    /// ClientCore (Layer 1 pre-flight cross-check enforces this).
+    ///
+    /// **F-CLIENT-FACADE-1 session 9f (2026-05-19):** atomically
+    /// replace the `Option<Arc<dyn KeyStore>>` slot. Called by
+    /// rotation orchestration in tandem with `swap_mls_keystore`.
+    pub fn swap_keystore(&self, new_keystore: Option<Arc<dyn KeyStore>>) {
+        let mut guard = self.keystore.write().expect("keystore rwlock poisoned");
+        *guard = new_keystore;
     }
 
     /// Текущий активный gateway connection (QUIC либо WebSocket fallback) или
@@ -1907,8 +1955,8 @@ mod production_boundary_tests {
             .await
             .expect("legacy bootstrap");
         assert!(
-            legacy_core.keystore.is_none(),
-            "F-IDENT-1 closure: legacy bootstrap MUST leave core.keystore None — Block 7.2 \
+            legacy_core.keystore().is_none(),
+            "F-IDENT-1 closure: legacy bootstrap MUST leave core.keystore() None — Block 7.2 \
              facades still construct InMemoryKeyStore inline; Block 7.4+ refactor will \
              consolidate via core.keystore() accessor"
         );
@@ -1927,8 +1975,8 @@ mod production_boundary_tests {
         .await
         .expect("hw bootstrap");
         assert!(
-            hw_core.keystore.is_some(),
-            "F-IDENT-1 closure: hw bootstrap MUST register canonical HwBackedKeyStore in core.keystore"
+            hw_core.keystore().is_some(),
+            "F-IDENT-1 closure: hw bootstrap MUST register canonical HwBackedKeyStore in core.keystore()"
         );
 
         // Round-trip: sign through the registered keystore, verify
@@ -1940,7 +1988,7 @@ mod production_boundary_tests {
         // in umbrella-identity and not reachable across crates — same
         // pattern as the rest of the F-CLIENT-HW-1 closure regression
         // suite.
-        let keystore = hw_core.keystore.as_ref().expect("hw keystore");
+        let keystore = hw_core.keystore().expect("hw keystore");
         let msg = b"F-IDENT-1 closure keystore round-trip";
         let sig = keystore.sign_with_identity(msg);
 

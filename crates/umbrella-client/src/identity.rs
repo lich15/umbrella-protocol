@@ -238,21 +238,29 @@ pub async fn rotate_identity_publish(
 ///   deferred — only Ed25519 dual sigs covered.
 /// - **`hw_callback` field swap** — `hw_callback` Arc reference stays
 ///   unchanged (it's the same callback impl that rotated identity;
-///   the trait object is correct as-is). The `keystore` Option slot
-///   (separate from `mls_keystore`) likewise stays as it was at
-///   bootstrap — refresh of that slot is a follow-up concern beyond
-///   session 9e scope (would require its own RwLock wrap).
+///   the trait object is correct as-is). The Arc holds a single
+///   trait object; rotation does not require a new callback impl.
 ///
-/// **What this facade DOES (closure across sessions 9d + 9e)**:
+/// **What this facade DOES (closure across sessions 9d + 9e + 9f)**:
 ///
 /// - **Session 9d**: `mls_keystore` swap so
 ///   `core.mls_keystore().identity_public()` reflects new pubkey.
-/// - **Session 9e (NEW)**: `hw_identity_state` swap so
+/// - **Session 9e**: `hw_identity_state` swap so
 ///   `core.hw_identity_handle()` / `core.identity_verifying_key()` /
 ///   `core.has_hw_identity()` reflect the new identity. Both fields
 ///   (`handle` + `verifying_key`) updated under one write-lock for
 ///   atomic-state semantics — readers never see a
 ///   `(new_handle, old_vk)` либо `(old_handle, new_vk)` transient.
+/// - **Session 9f (NEW)**: `keystore` slot swap (F-IDENT-1 partition
+///   invariant) — the canonical `Option<Arc<dyn KeyStore>>` slot also
+///   refreshes to the new `HwBackedKeyStore`. The SAME `Arc<dyn
+///   KeyStore>` pointer goes into both slots (`mls_keystore` and
+///   `keystore`), so post-rotation
+///   `Arc::ptr_eq(core.mls_keystore(), core.keystore().unwrap())` —
+///   identity-equal references, no duplicate state. All three HW-
+///   identity surfaces (`mls_keystore`, `hw_identity_state`,
+///   `keystore`) atomic-swap together; the full `ClientCore` is
+///   coherent post-rotation.
 ///
 /// # Parameters
 ///
@@ -395,7 +403,19 @@ pub async fn rotate_identity_full(
         ))
     })?;
     let new_keystore: Arc<dyn KeyStore> = Arc::new(new_hw_keystore);
-    core.swap_mls_keystore(new_keystore);
+    core.swap_mls_keystore(new_keystore.clone());
+
+    // **F-CLIENT-FACADE-1 session 9f (2026-05-19):** also refresh the
+    // canonical `keystore` slot (F-IDENT-1 partition invariant) with
+    // the SAME `Arc<dyn KeyStore>` reference. Without this the slot
+    // would hold a stale `HwBackedKeyStore` bound to the pre-rotation
+    // handle while `core.mls_keystore()` returns the post-rotation
+    // keystore — split-state bug for any Block 7.4+ facade that reads
+    // from `core.keystore()`. Re-uses the new Arc rather than building
+    // a second HwBackedKeyStore instance so both accessors return
+    // identity-equal (`Arc::ptr_eq`) pointers, simplifying future
+    // refactor that merges the two slots.
+    core.swap_keystore(Some(new_keystore));
 
     // **F-CLIENT-FACADE-1 session 9e (2026-05-19):** also refresh the
     // HW identity state atomically so subsequent
