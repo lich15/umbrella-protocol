@@ -455,14 +455,90 @@ impl StubKtTransport {
     }
 }
 
-/// Stub call-relay-svc. Счётчик аллокаций TURN relay (SPEC-06 §3). Реальная
-/// TURN allocation логика появится в Блоке 7.6 через `webrtc-ice`.
+/// Stub call-relay-svc. Счётчик аллокаций TURN relay (SPEC-06 §3) + per-call
+/// `allocate(...)` returning deterministic [`TurnAllocation`] — production
+/// [`Http2CallRelayTransport`] uses HTTP/2 round-trip to `call-relay-svc`.
 ///
-/// Stub call-relay-svc. Counter of TURN relay allocations (SPEC-06 §3). Real
-/// allocation logic arrives in Block 7.6 via `webrtc-ice`.
+/// Stub call-relay-svc. Counter of TURN relay allocations (SPEC-06 §3) + a
+/// per-call `allocate(...)` that returns a deterministic [`TurnAllocation`]
+/// — the production [`Http2CallRelayTransport`] uses an HTTP/2 round-trip
+/// to `call-relay-svc` instead.
 #[derive(Debug, Default)]
 pub struct StubCallRelayTransport {
     /// Количество успешных allocation вызовов.
     /// Count of successful allocation calls.
     pub allocations: Mutex<u32>,
+    /// Снимок последнего запроса allocate (peer_id, security_level) — для тестов
+    /// session 10a verify что enforcement+policy mapping правильный.
+    ///
+    /// Snapshot of the last allocate request (peer_id, security_level) — used
+    /// by session 10a tests to verify the enforcement+policy mapping.
+    pub last_request: Mutex<
+        Option<(
+            [u8; crate::transport::PEER_ID_LEN],
+            crate::transport::CallSecurityLevelWire,
+        )>,
+    >,
+}
+
+impl StubCallRelayTransport {
+    /// **F-CLIENT-FACADE-1 session 10a (2026-05-19):** stub mirror of
+    /// [`crate::transport::Http2CallRelayTransport::allocate`]. Returns a
+    /// deterministic [`TurnAllocation`] suitable for offline test rigs —
+    /// `primary_url` interpolates `peer_id` hex prefix so distinct peers
+    /// produce distinct URLs (catches "stub returned identical creds for
+    /// different peers" bugs); `valid_until_ms` is a fixed 24-hour
+    /// window from a known epoch so tests don't depend on wall-clock.
+    /// Real production allocation flows through HTTP/2 to
+    /// `call-relay-svc`.
+    ///
+    /// Increments `self.allocations` and records the request shape in
+    /// `self.last_request` for test introspection.
+    ///
+    /// # Errors
+    ///
+    /// Infallible in Block 7.6 — production [`Http2CallRelayTransport`]
+    /// surfaces network errors as [`ClientError::Network`], but the stub
+    /// is in-memory and cannot fail. Returns `Result` to match the
+    /// production signature (call-site can `.await?` either impl).
+    ///
+    /// **F-CLIENT-FACADE-1 session 10a (2026-05-19):** stub mirror of
+    /// [`crate::transport::Http2CallRelayTransport::allocate`]. Returns a
+    /// deterministic [`TurnAllocation`] for offline test rigs; production
+    /// allocation flows through HTTP/2 to `call-relay-svc`.
+    pub async fn allocate(
+        &self,
+        peer_id: [u8; crate::transport::PEER_ID_LEN],
+        security_level: crate::transport::CallSecurityLevelWire,
+    ) -> Result<crate::transport::TurnAllocation, crate::ClientError> {
+        {
+            let mut counter = self
+                .allocations
+                .lock()
+                .expect("StubCallRelayTransport.allocations mutex poisoned");
+            *counter = counter.saturating_add(1);
+        }
+        {
+            let mut last = self
+                .last_request
+                .lock()
+                .expect("StubCallRelayTransport.last_request mutex poisoned");
+            *last = Some((peer_id, security_level));
+        }
+
+        // Deterministic stub URL — interpolate the peer_id hex prefix so
+        // distinct peers visibly produce distinct allocations.
+        let peer_hex_prefix: String = peer_id.iter().take(4).map(|b| format!("{b:02x}")).collect();
+        let primary_url = format!("turn:stub-{peer_hex_prefix}.local:3478?transport=udp");
+        Ok(crate::transport::TurnAllocation {
+            primary_url,
+            secondary_url: None,
+            username: format!("stub-user-{peer_hex_prefix}"),
+            password_hmac_hex: format!("{:0>64}", peer_hex_prefix),
+            // Fixed 24-hour window from a known epoch — tests don't
+            // depend on wall-clock. Production allocation uses real
+            // server-issued expiry.
+            valid_until_ms: 1_716_700_000_000 + 24 * 60 * 60 * 1000,
+        })
+    }
 }

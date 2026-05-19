@@ -1396,6 +1396,23 @@ impl ClientCore {
         self.kt_transport.clone()
     }
 
+    /// **F-CLIENT-FACADE-1 session 10a (2026-05-19):** typed accessor for
+    /// the stub call-relay transport. Used by call-session orchestration
+    /// (`CallSession::start_with_enforcement` → `allocate(...)`) and by
+    /// integration tests inspecting the counter / last_request snapshot.
+    /// Production wiring uses [`crate::transport::Http2CallRelayTransport`]
+    /// instead; this accessor will be retyped to a trait object once a
+    /// production-and-stub trait surface is defined (analogous to the
+    /// kt_transport → KtTransport trait roadmap).
+    ///
+    /// **F-CLIENT-FACADE-1 session 10a (2026-05-19):** typed accessor for
+    /// the stub call-relay transport. Used by call orchestration and
+    /// integration tests inspecting counter / last_request state.
+    #[must_use]
+    pub fn call_relay_transport(&self) -> Arc<StubCallRelayTransport> {
+        self.call_relay_transport.clone()
+    }
+
     /// **F-CLIENT-FACADE-1 session 8c1 (2026-05-19):** snapshot pinned
     /// [`WitnessSet`] (5 witness Ed25519 pubkeys) для последующего
     /// [`crate::kt_monitor::verify_kt_witness_signatures_for_epoch`]

@@ -34,6 +34,7 @@ use crate::call::mode_enforcement::ModeEnforcement;
 use crate::call::srtp_pipeline::SrtpPipeline;
 use crate::core::ClientCore;
 use crate::facade::chat_common::PeerId;
+use crate::transport::{CallSecurityLevelWire, TurnAllocation};
 use crate::ClientError;
 
 /// UUID-подобный 16-байтовый идентификатор сессии звонка.
@@ -176,7 +177,29 @@ impl CallSession {
         let effective_policy = enforcement.apply(user_policy);
         let call_id = CallId(rand::random());
 
-        let turn = allocate_turn_placeholder();
+        // **F-CLIENT-FACADE-1 session 10a (2026-05-19):** TURN credential
+        // allocation now flows through `core.call_relay_transport` instead
+        // of a hardcoded placeholder URL. `security_level` derives from
+        // the enforced mode + effective policy (compliance-gate carried
+        // into the server-visible allocation request):
+        //
+        // - **SecretMode**: always `Sensitive` — relay-only invariant
+        //   propagates to the server's TURN allocation policy.
+        // - **CloudMode + `allow_p2p_global = true`**: `AllowP2pGlobal` —
+        //   server may relax direct-p2p restrictions.
+        // - **CloudMode + `allow_p2p_global = false`**: `Sensitive` —
+        //   even in Cloud, the relay-only path is server-enforced.
+        //
+        // Stub call-relay returns a deterministic [`TurnAllocation`]; the
+        // production [`crate::transport::Http2CallRelayTransport`] does
+        // a real HTTP/2 round-trip. Either way the result is mapped into
+        // [`TurnConfig`] (the webrtc-ice-facing struct).
+        let security_level = derive_call_security_level(enforcement, &effective_policy);
+        let allocation = core
+            .call_relay_transport
+            .allocate(peer.0, security_level)
+            .await?;
+        let turn = turn_config_from_allocation(&allocation);
 
         let ice_agent = match enforcement {
             ModeEnforcement::CloudMode if effective_policy.allow_p2p_global => {
@@ -268,16 +291,63 @@ impl CallSession {
     }
 }
 
-/// Placeholder TURN allocation — реальная через
-/// `ClientCore::call_relay_transport` в блоке 7.10 integration.
+/// **F-CLIENT-FACADE-1 session 10a (2026-05-19):** map enforcement mode +
+/// effective policy → server-visible [`CallSecurityLevelWire`]. The
+/// server's TURN allocation policy reads this tag and decides whether
+/// to issue p2p-friendly credentials или forced-relay credentials —
+/// the client's compliance-gate (SPEC-06 §3) propagates into the
+/// server's allocation invariant.
 ///
-/// TURN allocation placeholder — real allocation via
-/// `ClientCore::call_relay_transport` lands in the Block 7.10 integration.
-fn allocate_turn_placeholder() -> TurnConfig {
+/// **Mapping rationale**:
+///
+/// - `SecretMode` → `Sensitive` regardless of policy: SecretChat is
+///   relay-only by protocol, the server must enforce this even if a
+///   client implementation misbehaves.
+/// - `CloudMode + allow_p2p_global = true` → `AllowP2pGlobal`: user
+///   explicitly opted into the relaxed allocation policy.
+/// - `CloudMode + allow_p2p_global = false` → `Sensitive`: default
+///   conservative path even in Cloud.
+///
+/// `Default` (least restrictive) is **not** reachable from the
+/// current client-side enforcement matrix; reserved for future
+/// per-call policy overrides (e.g. an explicit "p2p preferred for
+/// this call only" toggle).
+#[must_use]
+fn derive_call_security_level(
+    enforcement: ModeEnforcement,
+    effective_policy: &CallPolicy,
+) -> CallSecurityLevelWire {
+    match enforcement {
+        ModeEnforcement::SecretMode => CallSecurityLevelWire::Sensitive,
+        ModeEnforcement::CloudMode if effective_policy.allow_p2p_global => {
+            CallSecurityLevelWire::AllowP2pGlobal
+        }
+        ModeEnforcement::CloudMode => CallSecurityLevelWire::Sensitive,
+    }
+}
+
+/// **F-CLIENT-FACADE-1 session 10a (2026-05-19):** lower a
+/// [`TurnAllocation`] (server-wire shape) into the webrtc-ice-facing
+/// [`TurnConfig`]. Drops the secondary URL + expiry metadata — only
+/// primary credentials are passed into `webrtc-ice` agent config in
+/// Block 7.6; secondary URL routing + credential refresh on expiry are
+/// follow-up work.
+///
+/// **Field mapping**:
+///
+/// - `TurnConfig::url` ← `TurnAllocation::primary_url`
+/// - `TurnConfig::username` ← `TurnAllocation::username`
+/// - `TurnConfig::password` ← `TurnAllocation::password_hmac_hex` —
+///   the HMAC-SHA256 hex string IS the TURN long-term-credential
+///   password per RFC 7635 (server pre-computes
+///   `HMAC(secret, username)`; client passes it through verbatim
+///   to webrtc-ice).
+#[must_use]
+fn turn_config_from_allocation(allocation: &TurnAllocation) -> TurnConfig {
     TurnConfig {
-        url: "turn:relay.localhost:3478?transport=udp".into(),
-        username: "test".into(),
-        password: "test".into(),
+        url: allocation.primary_url.clone(),
+        username: allocation.username.clone(),
+        password: allocation.password_hmac_hex.clone(),
     }
 }
 
