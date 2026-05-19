@@ -66,8 +66,7 @@ fn attack_r5a_compromised_rng_alone_does_not_break_hedged_encaps() {
     let (recipient_pk, recipient_sk) = xwing_keygen(&mut honest_rng).unwrap();
 
     // Victim's honest witness — secret, attacker does NOT have it.
-    let victim_witness =
-        HedgedWitness::from_bytes_for_tests_only([0x9A; HEDGED_WITNESS_LEN]);
+    let victim_witness = HedgedWitness::from_bytes_for_tests_only([0x9A; HEDGED_WITNESS_LEN]);
 
     // Attacker knows the seed of victim's CSPRNG.
     let attacker_known_seed = [0xDEu8; 32];
@@ -76,13 +75,9 @@ fn attack_r5a_compromised_rng_alone_does_not_break_hedged_encaps() {
 
     // ATTACK: victim calls xwing_encaps_hedged with compromised RNG.
     let mut victim_rng = ChaCha20Rng::from_seed(attacker_known_seed);
-    let (victim_ct, victim_ss) = xwing_encaps_hedged(
-        &mut victim_rng,
-        &recipient_pk,
-        &victim_witness,
-        transcript,
-    )
-    .expect("victim encaps");
+    let (victim_ct, victim_ss) =
+        xwing_encaps_hedged(&mut victim_rng, &recipient_pk, &victim_witness, transcript)
+            .expect("victim encaps");
 
     // ATTACK STEP 2: attacker replicates with same seed but DIFFERENT
     // witness (they don't know victim's). Most realistic case: attacker
@@ -103,9 +98,8 @@ fn attack_r5a_compromised_rng_alone_does_not_break_hedged_encaps() {
         let try_witness =
             HedgedWitness::from_bytes_for_tests_only([guess_byte; HEDGED_WITNESS_LEN]);
         let mut rng = ChaCha20Rng::from_seed(attacker_known_seed);
-        let (_, ss_guess) =
-            xwing_encaps_hedged(&mut rng, &recipient_pk, &try_witness, transcript)
-                .expect("guess encaps");
+        let (_, ss_guess) = xwing_encaps_hedged(&mut rng, &recipient_pk, &try_witness, transcript)
+            .expect("guess encaps");
         assert_ne!(
             victim_ss.expose_secret(),
             ss_guess.expose_secret(),
@@ -192,8 +186,7 @@ fn attack_r5b_derand_api_inaccessible_from_downstream() {
     let mut rng = rand::rngs::OsRng;
     let (pk, _) = xwing_keygen(&mut rng).unwrap();
     let witness = HedgedWitness::zeroed_for_tests_only();
-    let (_, _) =
-        xwing_encaps_hedged(&mut rng, &pk, &witness, b"sanity").expect("hedged encaps");
+    let (_, _) = xwing_encaps_hedged(&mut rng, &pk, &witness, b"sanity").expect("hedged encaps");
 
     eprintln!(
         "[R5.B] IN-TREE CONTRACT: this test file does not import \
@@ -338,13 +331,9 @@ fn attack_r5_double_compromise_unavoidable_break() {
 
     // ATTACK: victim encrypts under compromised conditions.
     let mut victim_rng = ChaCha20Rng::from_seed(attacker_known_seed);
-    let (victim_ct, victim_ss) = xwing_encaps_hedged(
-        &mut victim_rng,
-        &recipient_pk,
-        &leaked_witness,
-        transcript,
-    )
-    .expect("victim encaps");
+    let (victim_ct, victim_ss) =
+        xwing_encaps_hedged(&mut victim_rng, &recipient_pk, &leaked_witness, transcript)
+            .expect("victim encaps");
 
     // Attacker replicates with SAME rng seed AND SAME witness AND SAME
     // transcript → must derive SAME seed → SAME (ct, ss).

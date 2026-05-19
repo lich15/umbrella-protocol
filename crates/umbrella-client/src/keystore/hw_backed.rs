@@ -128,8 +128,8 @@ use umbrella_crypto_primitives::secret::SecretBytes;
 use umbrella_crypto_primitives::sig::Ed25519Signature;
 
 use umbrella_identity::{
-    DeviceAttestation, DeviceKeyPublic, IdentityError, IdentityKeyPublic,
-    IdentityX25519KeyPublic, KeyStore,
+    DeviceAttestation, DeviceKeyPublic, IdentityError, IdentityKeyPublic, IdentityX25519KeyPublic,
+    KeyStore,
 };
 
 use crate::keystore::hw_callback::{HwKeyHandle, PersistentKeyStoreCallback};
@@ -396,8 +396,7 @@ impl KeyStore for HwBackedKeyStore {
     ) -> Result<umbrella_pq::HybridSignature, IdentityError> {
         Err(IdentityError::HwBackedUnsupported {
             method: "sign_with_hybrid_identity",
-            reason:
-                "ML-DSA-65 signing in TEE requires PQ callback expansion (F-IDENT-PQ-1 v1.2.x)",
+            reason: "ML-DSA-65 signing in TEE requires PQ callback expansion (F-IDENT-PQ-1 v1.2.x)",
         })
     }
 
@@ -434,8 +433,7 @@ impl KeyStore for HwBackedKeyStore {
     ) -> Result<umbrella_pq::SlhDsa128fSignature, IdentityError> {
         Err(IdentityError::HwBackedUnsupported {
             method: "sign_slh_dsa_backup_proof",
-            reason:
-                "SLH-DSA backup signing in TEE requires PQ callback expansion \
+            reason: "SLH-DSA backup signing in TEE requires PQ callback expansion \
                  (F-IDENT-PQ-1 v1.2.x)",
         })
     }
@@ -453,12 +451,10 @@ impl KeyStore for HwBackedKeyStore {
     fn cloud_wrap_recovery_decapsulate(
         &self,
         _ct: &[u8; umbrella_pq::XWING_CIPHERTEXT_LEN],
-    ) -> Result<secrecy::SecretBox<[u8; umbrella_pq::XWING_SHARED_SECRET_LEN]>, IdentityError>
-    {
+    ) -> Result<secrecy::SecretBox<[u8; umbrella_pq::XWING_SHARED_SECRET_LEN]>, IdentityError> {
         Err(IdentityError::HwBackedUnsupported {
             method: "cloud_wrap_recovery_decapsulate",
-            reason:
-                "X-Wing decapsulation in TEE requires PQ callback expansion \
+            reason: "X-Wing decapsulation in TEE requires PQ callback expansion \
                  (F-IDENT-PQ-1 v1.2.x)",
         })
     }
@@ -495,9 +491,8 @@ mod tests {
     fn fresh_hw_keystore() -> (HwBackedKeyStore, Arc<MockHwKeystore>) {
         let mock = Arc::new(MockHwKeystore::new());
         let callback: Arc<dyn PersistentKeyStoreCallback> = mock.clone();
-        let (handle, vk_bytes) =
-            bootstrap_hw_identity(&callback, "xyz.umbrellax.hwbacked.test")
-                .expect("bootstrap mock");
+        let (handle, vk_bytes) = bootstrap_hw_identity(&callback, "xyz.umbrellax.hwbacked.test")
+            .expect("bootstrap mock");
         let store = HwBackedKeyStore::new(0, callback, handle, vk_bytes).expect("construct");
         (store, mock)
     }

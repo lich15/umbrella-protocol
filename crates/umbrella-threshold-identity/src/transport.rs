@@ -129,8 +129,17 @@ mod tests {
     #[test]
     fn rtt_ordering_is_monotonic() {
         // DirectTls fastest, mixnet slowest.
-        assert!(TransportChannel::DirectTls.expected_rtt_ms() <= TransportChannel::AlternativeIp.expected_rtt_ms());
-        assert!(TransportChannel::AlternativeIp.expected_rtt_ms() <= TransportChannel::TorSocks.expected_rtt_ms());
-        assert!(TransportChannel::TorSocks.expected_rtt_ms() <= TransportChannel::Mixnet.expected_rtt_ms());
+        assert!(
+            TransportChannel::DirectTls.expected_rtt_ms()
+                <= TransportChannel::AlternativeIp.expected_rtt_ms()
+        );
+        assert!(
+            TransportChannel::AlternativeIp.expected_rtt_ms()
+                <= TransportChannel::TorSocks.expected_rtt_ms()
+        );
+        assert!(
+            TransportChannel::TorSocks.expected_rtt_ms()
+                <= TransportChannel::Mixnet.expected_rtt_ms()
+        );
     }
 }

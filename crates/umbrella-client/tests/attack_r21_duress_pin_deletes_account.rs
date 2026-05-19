@@ -179,11 +179,8 @@ impl MockSealedServer {
         let dalek_pk = ed25519_dalek::VerifyingKey::from_bytes(&cmd.identity_pk)
             .map_err(|_| WipeReject::BadPublicKeyDecode)?;
         let dalek_sig = ed25519_dalek::Signature::from_bytes(&cmd.signature);
-        let message = canonical_unrec_del_message(
-            &cmd.identity_pk,
-            trigger_tag(cmd.trigger),
-            &cmd.nonce,
-        );
+        let message =
+            canonical_unrec_del_message(&cmd.identity_pk, trigger_tag(cmd.trigger), &cmd.nonce);
         dalek_pk
             .verify_strict(&message, &dalek_sig)
             .map_err(|_| WipeReject::BadSignature)?;
@@ -271,11 +268,7 @@ fn coordinator_sign_unrec_del(
     signer_indices: &[usize],
     seed: u64,
 ) -> SignedUnrecoverableDelete {
-    let message = canonical_unrec_del_message(
-        &cluster.identity_pk,
-        trigger_tag(trigger),
-        &nonce,
-    );
+    let message = canonical_unrec_del_message(&cluster.identity_pk, trigger_tag(trigger), &nonce);
     let mut rng = ChaCha20Rng::seed_from_u64(seed);
     let sig: FrostSignature = run_in_process_sign(
         &cluster.key_packages,
@@ -333,7 +326,10 @@ fn r21_duress_pin_triggers_unrecoverable_delete_across_all_5_servers() {
     // Client detects duress: candidate is reverse of genuine.
     let genuine = b"123456";
     let candidate = b"654321";
-    assert!(is_duress_reverse(candidate, genuine), "reverse PIN detected as duress");
+    assert!(
+        is_duress_reverse(candidate, genuine),
+        "reverse PIN detected as duress"
+    );
 
     // Coordinator runs FROST 3-of-5 threshold sign over canonical
     // UNRECOVERABLE_DELETE body. Production uses signers [0,1,2] picked
@@ -381,7 +377,10 @@ fn r21_duress_pin_triggers_unrecoverable_delete_across_all_5_servers() {
          zero hashes={post_wipe_zero_hashes}/5, revoked={revoked_count}/5"
     );
 
-    assert_eq!(post_wipe_share_bytes, 0, "all share bytes wiped across 5 servers");
+    assert_eq!(
+        post_wipe_share_bytes, 0,
+        "all share bytes wiped across 5 servers"
+    );
     assert_eq!(post_wipe_zero_hashes, 5, "all 5 pin hashes zeroed");
     assert_eq!(revoked_count, 5, "all 5 servers marked revoked");
 
@@ -394,9 +393,7 @@ fn r21_duress_pin_triggers_unrecoverable_delete_across_all_5_servers() {
             "server returns AccountDeleted on subsequent auth (not WrongPin)"
         );
     }
-    eprintln!(
-        "[R21] PASS: subsequent normal PIN returns AccountDeleted on all 5 servers"
-    );
+    eprintln!("[R21] PASS: subsequent normal PIN returns AccountDeleted on all 5 servers");
 }
 
 // ---------------------------------------------------------------------------

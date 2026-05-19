@@ -27,6 +27,10 @@ pub use async_unwrap::AsyncUnwrapTransport;
 pub use blind_postman::{Http2PostmanTransport, MESSAGE_ID_LEN};
 pub use call_relay::{CallSecurityLevelWire, Http2CallRelayTransport, TurnAllocation, PEER_ID_LEN};
 pub use cloud_backup::{Http2UnwrapTransport, EARLY_RETURN_THRESHOLD, SEALED_SERVER_COUNT};
+pub use gateway::{
+    default_quic_fallback_budget, GatewayConnection, GatewayTransport, GatewayTransportError,
+    NegotiatedTransport,
+};
 pub use http2_client::{
     build_http2_client, build_production_http2_client, Http2Config, PinnedServiceEndpoint,
     ProductionHttp2Config,
@@ -37,18 +41,14 @@ pub use pinning::{
     extract_spki_pin_from_cert_der, PinningConfig, PinningVerifierError, SpkiPin,
     SpkiPinningVerifier, SPKI_PIN_LEN,
 };
+pub use quic::{
+    QuicConfig, QuicConnection, QuicTransport, QuicTransportError, ALPN_UMX_QUIC_V1,
+    QUIC_MAX_FRAME_BYTES,
+};
 pub use retry::{is_reqwest_retryable, retry_with_backoff, DEFAULT_MAX_ATTEMPTS};
 pub use stub::{
     CloudHistoryEntry, StubCallRelayTransport, StubKtTransport, StubPostmanTransport,
     StubUnwrapTransport,
-};
-pub use gateway::{
-    default_quic_fallback_budget, GatewayConnection, GatewayTransport, GatewayTransportError,
-    NegotiatedTransport,
-};
-pub use quic::{
-    QuicConfig, QuicConnection, QuicTransport, QuicTransportError, ALPN_UMX_QUIC_V1,
-    QUIC_MAX_FRAME_BYTES,
 };
 pub use websocket::{
     ClientPayload, NegotiatedSubprotocol, ServerFrame, ServerPayload, WebSocketConnection,

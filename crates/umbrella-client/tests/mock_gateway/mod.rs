@@ -37,8 +37,14 @@
 //!   not assert on specific close codes (tested in test 9 by absence of
 //!   leaked panics, not by code).
 
-#![allow(dead_code, reason = "test-only helpers; not every contract test uses every behavior variant")]
-#![allow(clippy::result_large_err, reason = "tokio-tungstenite Callback trait fixes the Result<Response, ErrorResponse> signature; we cannot box the Err side")]
+#![allow(
+    dead_code,
+    reason = "test-only helpers; not every contract test uses every behavior variant"
+)]
+#![allow(
+    clippy::result_large_err,
+    reason = "tokio-tungstenite Callback trait fixes the Result<Response, ErrorResponse> signature; we cannot box the Err side"
+)]
 
 pub mod quic;
 
@@ -65,7 +71,9 @@ use tokio_tungstenite::tungstenite::http::{HeaderValue, StatusCode};
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 use umbrella_client::transport::proto_ws as proto;
-use umbrella_client::transport::{extract_spki_pin_from_cert_der, PinningConfig, SpkiPin, SpkiPinningVerifier};
+use umbrella_client::transport::{
+    extract_spki_pin_from_cert_der, PinningConfig, SpkiPin, SpkiPinningVerifier,
+};
 
 /// Behavioural knob for the mock gateway. Each test instantiates one variant
 /// to exercise a specific contract obligation.
@@ -143,9 +151,7 @@ impl MockBehavior {
     /// Permissive standard preset accepting any auth token.
     #[must_use]
     pub fn standard_any_token() -> Self {
-        Self::Standard {
-            accept_token: None,
-        }
+        Self::Standard { accept_token: None }
     }
 }
 
@@ -261,37 +267,38 @@ async fn handle_connection(
     }
 
     let upgrade_behavior = behavior.clone();
-    let upgrade_callback = move |req: &Request, mut resp: Response| -> Result<Response, ErrorResponse> {
-        let client_protos = req
-            .headers()
-            .get("Sec-WebSocket-Protocol")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
-        let selected = match &upgrade_behavior {
-            MockBehavior::RejectUpgrade => {
-                let mut err = ErrorResponse::new(Some(
-                    "mock gateway rejects upgrade per test policy".to_string(),
-                ));
-                *err.status_mut() = StatusCode::BAD_REQUEST;
-                return Err(err);
-            }
-            MockBehavior::EchoSubprotocol(p) => p.to_string(),
-            _ => match negotiate_first_supported(client_protos) {
-                Some(p) => p.to_string(),
-                None => {
-                    let mut err = ErrorResponse::new(Some(format!(
-                        "no supported subprotocol offered: {client_protos}"
-                    )));
+    let upgrade_callback =
+        move |req: &Request, mut resp: Response| -> Result<Response, ErrorResponse> {
+            let client_protos = req
+                .headers()
+                .get("Sec-WebSocket-Protocol")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
+            let selected = match &upgrade_behavior {
+                MockBehavior::RejectUpgrade => {
+                    let mut err = ErrorResponse::new(Some(
+                        "mock gateway rejects upgrade per test policy".to_string(),
+                    ));
                     *err.status_mut() = StatusCode::BAD_REQUEST;
                     return Err(err);
                 }
-            },
+                MockBehavior::EchoSubprotocol(p) => p.to_string(),
+                _ => match negotiate_first_supported(client_protos) {
+                    Some(p) => p.to_string(),
+                    None => {
+                        let mut err = ErrorResponse::new(Some(format!(
+                            "no supported subprotocol offered: {client_protos}"
+                        )));
+                        *err.status_mut() = StatusCode::BAD_REQUEST;
+                        return Err(err);
+                    }
+                },
+            };
+            let value = HeaderValue::from_str(&selected)
+                .map_err(|_| ErrorResponse::new(Some("invalid subprotocol".to_string())))?;
+            resp.headers_mut().insert("Sec-WebSocket-Protocol", value);
+            Ok(resp)
         };
-        let value = HeaderValue::from_str(&selected)
-            .map_err(|_| ErrorResponse::new(Some("invalid subprotocol".to_string())))?;
-        resp.headers_mut().insert("Sec-WebSocket-Protocol", value);
-        Ok(resp)
-    };
 
     let ws_stream = match accept_hdr_async(tls_stream, upgrade_callback).await {
         Ok(s) => s,
@@ -320,7 +327,8 @@ async fn handle_connection(
             Some(p) => p,
             None => continue,
         };
-        let responses = build_server_response(payload, &behavior, &mut authenticated, &mut next_server_seq);
+        let responses =
+            build_server_response(payload, &behavior, &mut authenticated, &mut next_server_seq);
         for resp_env in responses {
             let mut buf = Vec::with_capacity(resp_env.encoded_len());
             if resp_env.encode(&mut buf).is_err() {
@@ -453,10 +461,9 @@ pub fn build_test_client_tls_config(
 ) -> Arc<RustlsClientConfig> {
     let mut pins = BTreeMap::new();
     pins.insert(server_host.to_string(), PinningConfig::single(expected_pin));
-    let inner: Arc<dyn rustls::client::danger::ServerCertVerifier> =
-        Arc::new(AcceptAnyServerCert);
-    let pinning_verifier = SpkiPinningVerifier::new(inner, pins)
-        .expect("SPKI pinning verifier accepts loopback host");
+    let inner: Arc<dyn rustls::client::danger::ServerCertVerifier> = Arc::new(AcceptAnyServerCert);
+    let pinning_verifier =
+        SpkiPinningVerifier::new(inner, pins).expect("SPKI pinning verifier accepts loopback host");
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let cfg = RustlsClientConfig::builder_with_provider(provider)
         .with_protocol_versions(&[&rustls::version::TLS13])

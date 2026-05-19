@@ -247,10 +247,14 @@ impl GatewayConnection {
         device_id: Vec<u8>,
     ) -> Result<(), GatewayTransportError> {
         match self {
-            Self::Quic(conn) => conn.authenticate(token, device_id).await.map_err(Into::into),
-            Self::WebSocket(conn) => {
-                conn.authenticate(token, device_id).await.map_err(Into::into)
-            }
+            Self::Quic(conn) => conn
+                .authenticate(token, device_id)
+                .await
+                .map_err(Into::into),
+            Self::WebSocket(conn) => conn
+                .authenticate(token, device_id)
+                .await
+                .map_err(Into::into),
         }
     }
 

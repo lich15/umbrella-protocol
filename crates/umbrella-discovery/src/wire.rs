@@ -307,9 +307,7 @@ impl UsernameRequest {
     /// Сериализовать.
     /// Serialize.
     pub fn encode(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(
-            1 + 1 + ANON_ID_LEN + POINT_LEN + SERVER_NONCE_LEN,
-        );
+        let mut out = Vec::with_capacity(1 + 1 + ANON_ID_LEN + POINT_LEN + SERVER_NONCE_LEN);
         out.push(self.version);
         out.push(self.witness_index);
         out.extend_from_slice(&self.anon_id);

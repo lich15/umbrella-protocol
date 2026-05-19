@@ -1590,7 +1590,10 @@ mod tests {
         assert_eq!(MLS_ED25519.model_path, "models/mls_ed25519.spthy");
         assert_eq!(MLS_ED25519.spec_version, "0.0.2");
         assert_eq!(MLS_ED25519.block_reference, "9.5");
-        assert!(matches!(MLS_ED25519.status, VerificationStatus::Verified { .. }));
+        assert!(matches!(
+            MLS_ED25519.status,
+            VerificationStatus::Verified { .. }
+        ));
         assert_eq!(MLS_ED25519.properties.len(), 6);
     }
 

@@ -119,8 +119,7 @@ fn main() {
 
     // Write the needle to a sidecar file so the lldb scanner can read it.
     let needle_path = std::env::temp_dir().join("r12_needle.bin");
-    std::fs::write(&needle_path, app_secret_box.expose().as_slice())
-        .expect("write r12_needle.bin");
+    std::fs::write(&needle_path, app_secret_box.expose().as_slice()).expect("write r12_needle.bin");
     eprintln!(
         "[R12] application_secret needle written to {}",
         needle_path.display()
@@ -141,7 +140,8 @@ fn main() {
     // call. Round-5: the cipher is constructed and dropped inside the
     // `#[inline(never)]` helper so its stack-spilled key bytes are gone
     // by the time we reach the lldb pause.
-    let mut buf: Vec<u8> = b"R12 application message - must decrypt with the captured secret".to_vec();
+    let mut buf: Vec<u8> =
+        b"R12 application message - must decrypt with the captured secret".to_vec();
     let nonce_bytes = [0x42u8; 12];
     encrypt_with_app_secret(app_secret_box.expose(), &nonce_bytes, b"r12-aad", &mut buf);
     // Allocate a chunk of throwaway bytes to overwrite the stack region

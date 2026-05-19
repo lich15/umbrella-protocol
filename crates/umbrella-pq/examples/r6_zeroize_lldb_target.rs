@@ -54,9 +54,7 @@ pub fn r6_phase_before_keygen() {
 pub fn r6_phase_positive_control_filled() {
     let needle: Vec<u8> = vec![0xAAu8; 32];
     let ptr = needle.as_ptr();
-    eprintln!(
-        "[R6] PHASE positive_control_filled: holding 32 bytes 0xAA at {ptr:p}"
-    );
+    eprintln!("[R6] PHASE positive_control_filled: holding 32 bytes 0xAA at {ptr:p}");
     std::hint::black_box(&needle);
     r6_break_after_fill();
     std::hint::black_box(&needle);

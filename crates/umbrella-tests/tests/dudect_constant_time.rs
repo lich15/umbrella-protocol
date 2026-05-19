@@ -412,8 +412,7 @@ fn unwrap_v2_to_v1_valid_vs_tampered_envelope_timing() {
     let v1 = wrap_message_key(&v1_params, &mk, &aad, &mut rng).expect("v1 wrap");
     let (pk, sk) = xwing_keygen(&mut rng).expect("xwing keygen");
     let test_witness = HedgedWitness::zeroed_for_tests_only();
-    let valid_v2 =
-        wrap_v1_into_v2(&pk, &v1, &aad, &test_witness, &mut rng).expect("v2 wrap");
+    let valid_v2 = wrap_v1_into_v2(&pk, &v1, &aad, &test_witness, &mut rng).expect("v2 wrap");
 
     // Pool of tampered envelopes (mutate aead_payload at different offsets).
     let tampered_pool: Vec<_> = (0..32)
@@ -441,7 +440,12 @@ fn unwrap_v2_to_v1_valid_vs_tampered_envelope_timing() {
         |idx| {
             // Tampered: must fail; either AeadDecryptFailed or XWingDecapsFailed.
             let v = &tampered_pool[idx % tampered_pool.len()];
-            let r = unwrap_v2_to_v1(black_box(&sk), black_box(&pk), black_box(v), black_box(&aad));
+            let r = unwrap_v2_to_v1(
+                black_box(&sk),
+                black_box(&pk),
+                black_box(v),
+                black_box(&aad),
+            );
             let _ = black_box(r);
         },
     );
@@ -917,14 +921,14 @@ fn padding_strip_constant_time() {
         samples,
         |idx| {
             let row = &fixed_offset_pool[idx % SUB_HUNDRED_NS_RANDOM_POOL_SIZE];
-            let err = strip_padding(black_box(row))
-                .expect_err("fixed-offset tamper must be rejected");
+            let err =
+                strip_padding(black_box(row)).expect_err("fixed-offset tamper must be rejected");
             let _ = black_box(matches!(err, PaddingError::NonZeroPadding));
         },
         |idx| {
             let row = &varying_offset_pool[idx % SUB_HUNDRED_NS_RANDOM_POOL_SIZE];
-            let err = strip_padding(black_box(row))
-                .expect_err("varying-offset tamper must be rejected");
+            let err =
+                strip_padding(black_box(row)).expect_err("varying-offset tamper must be rejected");
             let _ = black_box(matches!(err, PaddingError::NonZeroPadding));
         },
     );

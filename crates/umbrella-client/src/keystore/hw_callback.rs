@@ -386,11 +386,7 @@ impl PersistentKeyStoreCallback for MockHwKeystore {
         Ok(handle)
     }
 
-    fn sign_identity(
-        &self,
-        handle: &HwKeyHandle,
-        data: &[u8],
-    ) -> Result<Vec<u8>, HwKeystoreError> {
+    fn sign_identity(&self, handle: &HwKeyHandle, data: &[u8]) -> Result<Vec<u8>, HwKeystoreError> {
         use ed25519_dalek::{Signer, SigningKey};
         let guard = self
             .keys
@@ -649,8 +645,7 @@ mod tests {
         assert_eq!(vk.len(), 32);
         // F-CLIENT-HW-2 closure: vk is no longer a `[0u8; 32]` placeholder.
         assert_ne!(
-            vk,
-            [0u8; 32],
+            vk, [0u8; 32],
             "F-CLIENT-HW-2 closure: bootstrap_hw_identity must return real verifying-key, \
              not the pre-closure [0u8; 32] placeholder"
         );
@@ -697,8 +692,8 @@ mod tests {
         // Two distinct handles must yield distinct verifying-keys (sanity:
         // generate_identity yields a fresh seed each call → independent
         // SigningKey → independent VerifyingKey).
-        let (other_handle, other_vk) = bootstrap_hw_identity(&callback, "f-client-hw-2.other.test")
-            .expect("second bootstrap");
+        let (other_handle, other_vk) =
+            bootstrap_hw_identity(&callback, "f-client-hw-2.other.test").expect("second bootstrap");
         assert_ne!(handle, other_handle);
         assert_ne!(
             vk_bytes, other_vk,

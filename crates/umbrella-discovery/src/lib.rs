@@ -84,13 +84,12 @@ pub mod username_lookup;
 pub mod wire;
 
 pub use anonymous_query::{
-    derive_per_query_anon_id, derive_per_query_anon_ids_all_servers, fresh_query_salt,
-    ANON_ID_LEN, PER_QUERY_ANON_ID_LABEL, SALT_LEN,
+    derive_per_query_anon_id, derive_per_query_anon_ids_all_servers, fresh_query_salt, ANON_ID_LEN,
+    PER_QUERY_ANON_ID_LABEL, SALT_LEN,
 };
 pub use error::{DiscoveryError, DiscoveryResult, KtBindKind};
 pub use kt_bind::{
-    canonical_leaf_payload, verify_discovery_bind, DiscoveryBindExpectation,
-    DISCOVERY_LEAF_DOMAIN,
+    canonical_leaf_payload, verify_discovery_bind, DiscoveryBindExpectation, DISCOVERY_LEAF_DOMAIN,
 };
 pub use psi::{
     derive_per_contact_anon_ids, finalize_psi_query, intersect_with_server_table,

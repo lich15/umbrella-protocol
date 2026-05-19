@@ -54,7 +54,10 @@ const TEST_CS: UmbrellaCiphersuite = UmbrellaCiphersuite::Mls128X25519ChaChaSha2
 /// Stable anchor unix-time для tests.
 const T0: u64 = 1_700_000_000;
 
-#[allow(deprecated, reason = "test seed gen — same as facade_create_group_gateway.rs")]
+#[allow(
+    deprecated,
+    reason = "test seed gen — same as facade_create_group_gateway.rs"
+)]
 fn test_seed() -> IdentitySeed {
     IdentitySeed::generate(&mut OsRng, MnemonicLanguage::English)
 }
@@ -151,8 +154,8 @@ fn stage_cloud_entry(
     };
 
     // Cloud-wrap the message_key.
-    let wrapped_key = wrap_message_key(params, &message_key, &aad, &mut OsRng)
-        .expect("wrap_message_key staging");
+    let wrapped_key =
+        wrap_message_key(params, &message_key, &aad, &mut OsRng).expect("wrap_message_key staging");
 
     // Outer ChaCha20-Poly1305 encrypt plaintext under message_key with
     // deterministic nonce + canonical AAD bytes (matches facade decrypt
@@ -206,8 +209,7 @@ struct SisterClient {
 impl SisterClient {
     fn new() -> Self {
         let seed = test_seed();
-        let ks =
-            InMemoryKeyStore::open(seed, 0, Arc::new(SystemClock) as Arc<dyn Clock>).unwrap();
+        let ks = InMemoryKeyStore::open(seed, 0, Arc::new(SystemClock) as Arc<dyn Clock>).unwrap();
         ks.add_device(0, None).unwrap();
         Self {
             ks: Arc::new(ks),
@@ -306,7 +308,11 @@ async fn fetch_pending_welcomes_returns_published_welcome_bytes_in_order() {
         .await;
 
     assert_eq!(bob_inbox.len(), 1, "Bob receives exactly one Welcome");
-    assert_eq!(charlie_inbox.len(), 1, "Charlie receives exactly one Welcome");
+    assert_eq!(
+        charlie_inbox.len(),
+        1,
+        "Charlie receives exactly one Welcome"
+    );
     assert_eq!(bob_inbox[0], w_bob);
     assert_eq!(charlie_inbox[0], w_charlie);
 }
@@ -367,14 +373,13 @@ async fn bob_opens_chat_from_welcome_and_joins_alice_group_at_epoch_1() {
     // is real and matches what bob.core().mls_keystore.identity_public() returns.
     let bob_provider = bob.core().mls_provider();
     let bob_keystore = bob.core().mls_keystore();
-    let bob_kp_bundle = build_device_key_package(
-        bob_provider.as_ref(),
-        bob_keystore.as_ref(),
-        0,
-        TEST_CS,
-    )
-    .expect("build bob KP");
-    let bob_kp_bytes = bob_kp_bundle.key_package().tls_serialize_detached().unwrap();
+    let bob_kp_bundle =
+        build_device_key_package(bob_provider.as_ref(), bob_keystore.as_ref(), 0, TEST_CS)
+            .expect("build bob KP");
+    let bob_kp_bytes = bob_kp_bundle
+        .key_package()
+        .tls_serialize_detached()
+        .unwrap();
 
     let welcome = alice_chat
         .add_member(PeerId(bob_identity_pk), bob_kp_bytes)
@@ -409,7 +414,11 @@ async fn bob_opens_chat_from_welcome_and_joins_alice_group_at_epoch_1() {
         .await
         .expect("Bob's group registered after open_from_welcome");
     let bob_group = bob_group_arc.lock().await;
-    assert_eq!(bob_group.epoch(), 1, "join_from_welcome puts Bob at epoch 1");
+    assert_eq!(
+        bob_group.epoch(),
+        1,
+        "join_from_welcome puts Bob at epoch 1"
+    );
     assert_eq!(bob_group.member_count(), 2, "Alice + Bob");
     assert_eq!(bob_group.ciphersuite(), TEST_CS);
 
@@ -560,12 +569,26 @@ async fn cloud_sync_history_skips_entries_below_since_timestamp() {
     // Two staged entries: old (ts=100) and new (ts=300). Caller passes
     // since=200 — only new MUST be returned.
     let old = stage_cloud_entry(
-        &params, &shares, sender_pk, recipient_pk, alice_chat.chat_id().0,
-        0, 100, b"old", 3,
+        &params,
+        &shares,
+        sender_pk,
+        recipient_pk,
+        alice_chat.chat_id().0,
+        0,
+        100,
+        b"old",
+        3,
     );
     let new = stage_cloud_entry(
-        &params, &shares, sender_pk, recipient_pk, alice_chat.chat_id().0,
-        1, 300, b"new", 3,
+        &params,
+        &shares,
+        sender_pk,
+        recipient_pk,
+        alice_chat.chat_id().0,
+        1,
+        300,
+        b"new",
+        3,
     );
 
     alice
@@ -743,10 +766,7 @@ async fn concrete_numbers_session_6_cloud_wrap_recovery_benchmark() {
         .push_response(staged.partial_shares);
 
     let t0 = Instant::now();
-    let history = alice_chat
-        .cloud_sync_history(None)
-        .await
-        .expect("sync");
+    let history = alice_chat.cloud_sync_history(None).await.expect("sync");
     let recover_us = t0.elapsed().as_micros();
 
     println!(

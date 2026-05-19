@@ -106,9 +106,7 @@ pub fn run_in_process_sign<R: CryptoRng + RngCore>(
     rng: &mut R,
 ) -> ThresholdIdentityResult<Signature> {
     if signer_indices.is_empty() {
-        return Err(ThresholdIdentityError::SignFailed(
-            "no signers specified",
-        ));
+        return Err(ThresholdIdentityError::SignFailed("no signers specified"));
     }
     // Round 1: each signer commits.
     let mut all_commitments: BTreeMap<Identifier, SigningCommitments> = BTreeMap::new();
@@ -116,9 +114,11 @@ pub fn run_in_process_sign<R: CryptoRng + RngCore>(
     let mut signer_key_packages: BTreeMap<Identifier, KeyPackage> = BTreeMap::new();
 
     for &idx in signer_indices {
-        let kp = all_key_packages.get(idx).ok_or(
-            ThresholdIdentityError::SignFailed("signer index out of range"),
-        )?;
+        let kp = all_key_packages
+            .get(idx)
+            .ok_or(ThresholdIdentityError::SignFailed(
+                "signer index out of range",
+            ))?;
         let ident = *kp.identifier();
         let out = sign_round1(kp, rng);
         all_commitments.insert(ident, out.commitments);
@@ -146,8 +146,8 @@ pub fn run_in_process_sign<R: CryptoRng + RngCore>(
 mod tests {
     use super::*;
     use crate::dkg::run_in_process_dkg;
-    use rand_chacha::ChaCha20Rng;
     use rand_chacha::rand_core::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
 
     #[test]
     fn threshold_3_of_5_signs_and_verifies_against_ed25519() {
@@ -157,9 +157,14 @@ mod tests {
         let message = b"R6 acceptance: threshold sign produces valid Ed25519 sig";
 
         // Sign with subset {0, 1, 2} (3 of 5).
-        let signature =
-            run_in_process_sign(&key_packages, &pubkey_package, &[0, 1, 2], message, &mut rng)
-                .expect("3-of-5 should sign");
+        let signature = run_in_process_sign(
+            &key_packages,
+            &pubkey_package,
+            &[0, 1, 2],
+            message,
+            &mut rng,
+        )
+        .expect("3-of-5 should sign");
 
         // Verify via FROST's own VerifyingKey path.
         pubkey_package
@@ -203,8 +208,9 @@ mod tests {
         let message = b"any quorum of 3 yields valid sig";
 
         for subset in [&[0usize, 1, 2][..], &[1, 3, 4][..], &[0, 2, 4][..]] {
-            let sig = run_in_process_sign(&key_packages, &pubkey_package, subset, message, &mut rng)
-                .unwrap_or_else(|e| panic!("subset {:?} sign: {e:?}", subset));
+            let sig =
+                run_in_process_sign(&key_packages, &pubkey_package, subset, message, &mut rng)
+                    .unwrap_or_else(|e| panic!("subset {:?} sign: {e:?}", subset));
             pubkey_package
                 .verifying_key()
                 .verify(message, &sig)

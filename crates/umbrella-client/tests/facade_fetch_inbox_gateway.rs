@@ -16,16 +16,22 @@
 //! - Second call to fetch_inbox after the first one drained the spool
 //!   returns empty (confirms the helper consumed the envelopes rather
 //!   than re-reading them).
-//! - CloudChat + SecretChat both observe the same wire path.
+//! - CloudChat observes the raw-MLS wire path (Cloud trades sender anonymity
+//!   for multi-device history per ADR-006 Variant C).
+//! - **F-CLIENT-FACADE-1 session 7 (2026-05-19) update**: SecretChat wire
+//!   path **diverges** from CloudChat — it now requires sealed-sender
+//!   envelopes (Signal Lund et al. 2018 design) on the wire. Pushing
+//!   non-envelope bytes through `SecretChat::fetch_inbox` fails closed with
+//!   `ClientError::SealedSender(Malformed)` per postulate 14 (no silent
+//!   fallback). Full SecretChat fetch coverage with valid envelopes lives in
+//!   `tests/facade_session7_sealed_sender.rs`.
 
 mod mock_gateway;
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use mock_gateway::{
-    build_test_client_tls_config, MockBehavior, MockGateway, MockIncomingMessage,
-};
+use mock_gateway::{build_test_client_tls_config, MockBehavior, MockGateway, MockIncomingMessage};
 use rand::rngs::OsRng;
 use umbrella_backup::cloud_wrap::{ThresholdConfig, WrappingParams};
 use umbrella_client::facade::chat_common::{
@@ -218,11 +224,28 @@ async fn cloud_chat_fetch_inbox_drains_multiple_pushed_messages_in_order() {
 }
 
 #[tokio::test]
-async fn secret_chat_fetch_inbox_drains_pushed_messages() {
-    let pushed = vec![
-        make_mock_message(0xDE, 1000, &format!("{:032x}", 0xDEAD), "secret one"),
-        make_mock_message(0xAD, 2000, &format!("{:032x}", 0xBEEF), "secret two"),
-    ];
+async fn secret_chat_fetch_inbox_fails_closed_on_non_envelope_bytes_session_7_invariant() {
+    // F-CLIENT-FACADE-1 session 7 (2026-05-19) behavior change: SecretChat
+    // fetch_inbox теперь requires sealed-sender envelope bytes на wire (Signal
+    // Lund et al. 2018 design). Non-envelope payload (raw text bytes) → fail-
+    // closed через `ClientError::SealedSender(Malformed { reason: "wire
+    // shorter than minimum" })` (envelope MIN_WIRE_LEN = 305 bytes: version
+    // 1 + eph_pub 32 + AEAD(256 padding bucket + 16 tag)).
+    //
+    // Постулат 14 invariant: НЕТ silent fallback к UTF-8 lossy decoding —
+    // gateway adversary не может smuggle'нуть raw bytes под видом sealed
+    // envelope, gateway sees malformed payload и его fetch reject'ит entire
+    // drain (subsequent messages не drain'ятся пока bad envelope в head'е).
+    //
+    // Полное SecretChat fetch coverage с валидными envelopes:
+    // `tests/facade_session7_sealed_sender.rs`
+    // (`secret_chat_fetch_inbox_unwraps_sealed_sender_envelope_recovering_sender_from_inner_signature`).
+    let pushed = vec![make_mock_message(
+        0xDE,
+        1000,
+        &format!("{:032x}", 0xDEAD),
+        "raw-non-envelope-bytes",
+    )];
     let mock = MockGateway::spawn(MockBehavior::PushInboxAfterAuth {
         accept_token: None,
         messages: pushed,
@@ -237,21 +260,32 @@ async fn secret_chat_fetch_inbox_drains_pushed_messages() {
     .await
     .expect("create SecretChat");
 
-    let drained = secret
-        .fetch_inbox()
-        .await
-        .expect("fetch_inbox via SecretChat works the same wire path as CloudChat");
+    let result = secret.fetch_inbox().await;
 
-    assert_eq!(drained.len(), 2);
-    assert_eq!(drained[0].text, "secret one");
-    assert_eq!(drained[1].text, "secret two");
+    match result {
+        Err(umbrella_client::ClientError::SealedSender(
+            umbrella_sealed_sender::SealedSenderError::Malformed { reason },
+        )) => {
+            assert!(
+                reason.contains("shorter than minimum") || reason.contains("wire"),
+                "expected diagnostic about malformed/short wire, got: {reason}"
+            );
+        }
+        other => panic!(
+            "F-CLIENT-FACADE-1 session 7 fail-closed invariant: SecretChat::fetch_inbox \
+             MUST reject non-envelope wire bytes с SealedSender(Malformed); got {other:?}"
+        ),
+    }
 }
 
 #[tokio::test]
 async fn cloud_chat_fetch_inbox_second_call_after_drain_returns_empty() {
-    let pushed = vec![
-        make_mock_message(0x01, 100, &format!("{:032x}", 1), "only message"),
-    ];
+    let pushed = vec![make_mock_message(
+        0x01,
+        100,
+        &format!("{:032x}", 1),
+        "only message",
+    )];
     let mock = MockGateway::spawn(MockBehavior::PushInboxAfterAuth {
         accept_token: None,
         messages: pushed,

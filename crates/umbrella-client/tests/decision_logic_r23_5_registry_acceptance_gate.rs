@@ -146,9 +146,15 @@ fn r23_decision_logic_genuine_binary_passes_all_5_simulated_registries() {
     };
     let matches = check.matches();
     eprintln!("[R23] genuine binary: {matches:?}");
-    let match_count = matches.iter().filter(|(_, r)| *r == RegistryResult::Match).count();
+    let match_count = matches
+        .iter()
+        .filter(|(_, r)| *r == RegistryResult::Match)
+        .count();
     assert_eq!(match_count, 5, "5/5 registries match canonical binary");
-    assert!(check.passes_with_min(4), "passes the 4-of-5 acceptance gate");
+    assert!(
+        check.passes_with_min(4),
+        "passes the 4-of-5 acceptance gate"
+    );
 }
 
 /// **Decision-logic only** — simulates fake binary + 1 coerced registry.
@@ -179,9 +185,7 @@ fn r23_decision_logic_fake_binary_detected_by_4_of_5_simulated_registries() {
         .iter()
         .filter(|(_, r)| *r == RegistryResult::Mismatch)
         .count();
-    eprintln!(
-        "[R23] mismatch count: {mismatch_count}/5 (≥4 required to refuse start)"
-    );
+    eprintln!("[R23] mismatch count: {mismatch_count}/5 (≥4 required to refuse start)");
     assert_eq!(mismatch_count, 4, "4 of 5 registries detect fake binary");
     assert!(
         !check.passes_with_min(4),
@@ -246,9 +250,7 @@ fn r23_decision_logic_3_of_5_compromised_marginal_case() {
         .iter()
         .filter(|(_, r)| *r == RegistryResult::Match)
         .count();
-    eprintln!(
-        "[R23] with 3 compromised: match count={match_count}/5 (4-of-5 gate not met)"
-    );
+    eprintln!("[R23] with 3 compromised: match count={match_count}/5 (4-of-5 gate not met)");
     assert_eq!(match_count, 3);
     // 3 < 4 → still refuse. Adversary needs to compromise 4 of 5 simultaneously.
     assert!(!check.passes_with_min(4));

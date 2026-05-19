@@ -281,7 +281,11 @@ mod tests {
     fn foreground_cancels_pending_wipe() {
         let mut s = SessionState::new(dummy_session(), t0());
         s.on_event(LifecycleEvent::Background, t0(), Duration::from_secs(120));
-        s.on_event(LifecycleEvent::Foreground, t0() + Duration::from_secs(60), Duration::from_secs(120));
+        s.on_event(
+            LifecycleEvent::Foreground,
+            t0() + Duration::from_secs(60),
+            Duration::from_secs(120),
+        );
         // Tick 200 sec later (past the original grace) — still live, cancelled.
         let wiped = s.on_event(
             LifecycleEvent::HeartbeatTick,

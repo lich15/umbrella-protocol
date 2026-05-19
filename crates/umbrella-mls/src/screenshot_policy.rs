@@ -94,9 +94,7 @@ impl ReceiverMessageTracker {
             .unwrap_or(0);
         let was_first = matches!(self.state, ReceiverViewState::NotViewed);
         if was_first {
-            self.state = ReceiverViewState::Viewed {
-                at_secs: viewed_at,
-            };
+            self.state = ReceiverViewState::Viewed { at_secs: viewed_at };
         }
         // If one-time view, wipe right away.
         if was_first && self.policy.one_time_view {
@@ -174,7 +172,9 @@ mod tests {
     #[test]
     fn block_and_notify_triggers_sender_notification() {
         assert!(!should_notify_on_screenshot(ScreenshotPolicy::Block));
-        assert!(should_notify_on_screenshot(ScreenshotPolicy::BlockAndNotify));
+        assert!(should_notify_on_screenshot(
+            ScreenshotPolicy::BlockAndNotify
+        ));
     }
 
     #[test]

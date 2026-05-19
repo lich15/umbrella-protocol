@@ -294,9 +294,7 @@ impl OnboardingHandle {
         let identity_pk_bytes = hex::decode(&identity_pk_dkg_hex)
             .map_err(|_| UmbrellaError::Crypto("invalid identity_pk hex".into()))?;
         if identity_pk_bytes.len() != 32 {
-            return Err(UmbrellaError::Crypto(
-                "identity_pk must be 32 bytes".into(),
-            ));
+            return Err(UmbrellaError::Crypto("identity_pk must be 32 bytes".into()));
         }
         let mut identity_pk = [0u8; 32];
         identity_pk.copy_from_slice(&identity_pk_bytes);
@@ -306,9 +304,7 @@ impl OnboardingHandle {
                 let raw = hex::decode(&s)
                     .map_err(|_| UmbrellaError::Crypto("invalid otp_secret hex".into()))?;
                 if raw.len() != 20 {
-                    return Err(UmbrellaError::Crypto(
-                        "otp_secret must be 20 bytes".into(),
-                    ));
+                    return Err(UmbrellaError::Crypto("otp_secret must be 20 bytes".into()));
                 }
                 let mut buf = [0u8; 20];
                 buf.copy_from_slice(&raw);
@@ -415,8 +411,8 @@ impl OnboardingHandle {
     /// Derives Argon2id pin_root. Slow operation (~600-800ms on mobile);
     /// production caller dispatches off the UI thread.
     pub fn derive_pin_root(&self, pin: String, salt_hex: String) -> Result<String, UmbrellaError> {
-        let salt_bytes = hex::decode(&salt_hex)
-            .map_err(|_| UmbrellaError::Crypto("invalid salt hex".into()))?;
+        let salt_bytes =
+            hex::decode(&salt_hex).map_err(|_| UmbrellaError::Crypto("invalid salt hex".into()))?;
         if salt_bytes.len() != pin_kdf::SALT_LEN {
             return Err(UmbrellaError::Crypto(format!(
                 "salt must be {} bytes",

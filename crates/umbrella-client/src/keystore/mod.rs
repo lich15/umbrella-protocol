@@ -26,8 +26,7 @@ pub mod trait_def;
 pub use hw_backed::HwBackedKeyStore;
 #[doc(inline)]
 pub use hw_callback::{
-    bootstrap_hw_identity, HwKeyHandle, HwKeystoreError, MockHwKeystore,
-    PersistentKeyStoreCallback,
+    bootstrap_hw_identity, HwKeyHandle, HwKeystoreError, MockHwKeystore, PersistentKeyStoreCallback,
 };
 #[doc(inline)]
 pub use row_cipher::RowCipher;

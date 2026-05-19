@@ -29,7 +29,10 @@
 //! quinn-based mock QUIC gateway. Single bidi stream, ALPN `umx-quic-v1`,
 //! length-delimited Protobuf envelopes.
 
-#![allow(dead_code, reason = "test-only helpers; not every contract test uses every variant")]
+#![allow(
+    dead_code,
+    reason = "test-only helpers; not every contract test uses every variant"
+)]
 
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -39,15 +42,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use bytes::BytesMut;
 use prost::Message as ProstMessage;
 use rcgen::{generate_simple_self_signed, CertifiedKey};
-use rustls::pki_types::{
-    CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName, UnixTime,
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName, UnixTime};
+use rustls::{
+    ClientConfig as RustlsClientConfig, ServerConfig as RustlsServerConfig, SignatureScheme,
 };
-use rustls::{ClientConfig as RustlsClientConfig, ServerConfig as RustlsServerConfig, SignatureScheme};
 
 use umbrella_client::transport::proto_ws as proto;
 use umbrella_client::transport::{
-    extract_spki_pin_from_cert_der, PinningConfig, SpkiPin, SpkiPinningVerifier,
-    ALPN_UMX_QUIC_V1,
+    extract_spki_pin_from_cert_der, PinningConfig, SpkiPin, SpkiPinningVerifier, ALPN_UMX_QUIC_V1,
 };
 
 /// Behavioural knob mirroring [`super::MockBehavior`] for the QUIC mock.
@@ -79,9 +81,7 @@ impl QuicMockBehavior {
     /// Permissive standard preset.
     #[must_use]
     pub fn standard_any_token() -> Self {
-        Self::Standard {
-            accept_token: None,
-        }
+        Self::Standard { accept_token: None }
     }
 }
 
@@ -339,10 +339,9 @@ pub fn build_test_quic_client_tls(
 ) -> Arc<RustlsClientConfig> {
     let mut pins = std::collections::BTreeMap::new();
     pins.insert(server_host.to_string(), PinningConfig::single(expected_pin));
-    let inner: Arc<dyn rustls::client::danger::ServerCertVerifier> =
-        Arc::new(AcceptAnyServerCert);
-    let pinning_verifier = SpkiPinningVerifier::new(inner, pins)
-        .expect("SPKI verifier for loopback");
+    let inner: Arc<dyn rustls::client::danger::ServerCertVerifier> = Arc::new(AcceptAnyServerCert);
+    let pinning_verifier =
+        SpkiPinningVerifier::new(inner, pins).expect("SPKI verifier for loopback");
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let mut cfg = RustlsClientConfig::builder_with_provider(provider)
         .with_protocol_versions(&[&rustls::version::TLS13])

@@ -637,6 +637,41 @@ impl UmbrellaGroup {
         self.inner.members().count()
     }
 
+    /// **F-CLIENT-FACADE-1 session 7 (2026-05-19):** возвращает Ed25519
+    /// identity_pk (первые 32 байта `BasicCredential.serialized_content`,
+    /// формат `identity_pk(32) || device_index_BE(4)` per
+    /// `crate::credential`) для каждого активного члена группы в
+    /// leaf-index порядке. Используется facade-layer'ом для enumeration
+    /// recipients у sealed-sender envelope (one envelope per non-self member).
+    ///
+    /// Кредеnциал с serialized_content короче 32 байт — отфильтровывается
+    /// (malformed; production credentials всегда ≥36 байт после UmbrellaX
+    /// build_credential_for_device). Это не должно случаться у группы,
+    /// созданной через UmbrellaGroup API, но defensive guard на случай
+    /// inter-op c другим клиентом, у которого иной credential format.
+    ///
+    /// **F-CLIENT-FACADE-1 session 7:** returns the Ed25519 identity_pk
+    /// (first 32 bytes of `BasicCredential.serialized_content`, layout
+    /// `identity_pk(32) || device_index_BE(4)`) for each active member in
+    /// leaf order. Used by the facade layer to enumerate sealed-sender
+    /// envelope recipients. Credentials shorter than 32 bytes are filtered
+    /// out (defensive guard against non-UmbrellaX credential formats).
+    pub fn member_identities(&self) -> Vec<[u8; 32]> {
+        self.inner
+            .members()
+            .filter_map(|m| {
+                let cred_bytes = m.credential.serialized_content();
+                if cred_bytes.len() >= 32 {
+                    let mut id = [0u8; 32];
+                    id.copy_from_slice(&cred_bytes[..32]);
+                    Some(id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     /// Group ID (неизменяемый на всём сроке жизни группы).
     /// Group ID (immutable for the group's lifetime).
     pub fn group_id(&self) -> &GroupId {

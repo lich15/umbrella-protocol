@@ -125,7 +125,10 @@ fn main() {
 
     eprintln!("[R20] bootstrap output:");
     eprintln!("  identity_pk = 0x{}", hex::encode(boot.identity_pk));
-    eprintln!("  account_local_salt = 0x{}", hex::encode(boot.account_local_salt));
+    eprintln!(
+        "  account_local_salt = 0x{}",
+        hex::encode(boot.account_local_salt)
+    );
     eprintln!(
         "  device_random_handle = 0x{}",
         hex::encode(boot.device_random_handle)
@@ -138,8 +141,8 @@ fn main() {
     r20_phase_after_bootstrap();
 
     // Now run a daily unlock — session keys will materialise.
-    let correct_root = pin_kdf::derive_pin_root(b"123456", &boot.account_local_salt)
-        .expect("pin_root");
+    let correct_root =
+        pin_kdf::derive_pin_root(b"123456", &boot.account_local_salt).expect("pin_root");
     let pre = *correct_root.expose();
     let shares = [
         (pre, [0x11; 32]),
@@ -161,8 +164,14 @@ fn main() {
     .expect("unlock should succeed");
 
     eprintln!("[R20] session keys re-derived (in MlockedSecret):");
-    eprintln!("  device_key (first 8 bytes) = 0x{}", hex::encode(&session.device_key.expose()[..8]));
-    eprintln!("  master_key (first 8 bytes) = 0x{}", hex::encode(&session.master_key.expose()[..8]));
+    eprintln!(
+        "  device_key (first 8 bytes) = 0x{}",
+        hex::encode(&session.device_key.expose()[..8])
+    );
+    eprintln!(
+        "  master_key (first 8 bytes) = 0x{}",
+        hex::encode(&session.master_key.expose()[..8])
+    );
     eprintln!("[R20] note: identity_sk does NOT exist as bytes anywhere in this process.");
 
     r20_phase_after_unlock();

@@ -311,9 +311,10 @@ pub(crate) fn derive_hedged_encaps_seed(
     let hk = Hkdf::<Sha512>::new(Some(HEDGED_ENCAPS_HKDF_SALT), &ikm);
 
     let mut seed = [0u8; XWING_ENCAPS_SEED_LEN];
-    hk.expand(&info, &mut seed).map_err(|_| PqError::BackendError {
-        message: "HKDF-SHA512 expand for hedged encaps seed failed".to_string(),
-    })?;
+    hk.expand(&info, &mut seed)
+        .map_err(|_| PqError::BackendError {
+            message: "HKDF-SHA512 expand for hedged encaps seed failed".to_string(),
+        })?;
 
     // Очищаем временный ikm buffer; содержит копию witness bytes.
     // Wipe the temporary ikm buffer; it holds a copy of the witness bytes.
@@ -384,10 +385,8 @@ mod tests {
         let transcript = b"chat=alice-bob,seq=1";
         let pk_hash = [0x33u8; 32];
 
-        let s1 =
-            derive_hedged_encaps_seed(&rng_input, &witness, transcript, &pk_hash).unwrap();
-        let s2 =
-            derive_hedged_encaps_seed(&rng_input, &witness, transcript, &pk_hash).unwrap();
+        let s1 = derive_hedged_encaps_seed(&rng_input, &witness, transcript, &pk_hash).unwrap();
+        let s2 = derive_hedged_encaps_seed(&rng_input, &witness, transcript, &pk_hash).unwrap();
         assert_eq!(s1, s2);
     }
 
@@ -400,11 +399,9 @@ mod tests {
         let transcript = b"chat=alice-bob,seq=1";
         let pk_hash = [0x33u8; 32];
 
-        let s1 =
-            derive_hedged_encaps_seed(&rng_input, &witness, transcript, &pk_hash).unwrap();
+        let s1 = derive_hedged_encaps_seed(&rng_input, &witness, transcript, &pk_hash).unwrap();
         rng_input[0] ^= 0xFF;
-        let s2 =
-            derive_hedged_encaps_seed(&rng_input, &witness, transcript, &pk_hash).unwrap();
+        let s2 = derive_hedged_encaps_seed(&rng_input, &witness, transcript, &pk_hash).unwrap();
         assert_ne!(s1, s2);
     }
 
@@ -432,10 +429,8 @@ mod tests {
         let witness = HedgedWitness::from_bytes_for_tests_only([0x22u8; HEDGED_WITNESS_LEN]);
         let pk_hash = [0x33u8; 32];
 
-        let s1 =
-            derive_hedged_encaps_seed(&rng_input, &witness, b"session-1", &pk_hash).unwrap();
-        let s2 =
-            derive_hedged_encaps_seed(&rng_input, &witness, b"session-2", &pk_hash).unwrap();
+        let s1 = derive_hedged_encaps_seed(&rng_input, &witness, b"session-1", &pk_hash).unwrap();
+        let s2 = derive_hedged_encaps_seed(&rng_input, &witness, b"session-2", &pk_hash).unwrap();
         assert_ne!(s1, s2);
     }
 

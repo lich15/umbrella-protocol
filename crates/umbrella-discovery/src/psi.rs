@@ -52,12 +52,10 @@ use umbrella_oprf::{
     ServerEvaluation, ThresholdConfig, WitnessIndex, MAX_BATCH_SIZE,
 };
 
-use crate::anonymous_query::{
-    derive_per_query_anon_id, fresh_query_salt, SALT_LEN,
-};
+use crate::anonymous_query::{derive_per_query_anon_id, fresh_query_salt, SALT_LEN};
 use crate::error::{DiscoveryError, DiscoveryResult};
 use crate::wire::{
-    ANON_ID_LEN, MAX_PSI_BATCH, PsiQueryEntry, PsiRequest, PsiResponseEntry, SERVER_NONCE_LEN,
+    PsiQueryEntry, PsiRequest, PsiResponseEntry, ANON_ID_LEN, MAX_PSI_BATCH, SERVER_NONCE_LEN,
     TRANSCRIPT_TAG_LEN, WIRE_VERSION,
 };
 
@@ -142,8 +140,7 @@ pub fn prepare_psi_query<R: CryptoRng + RngCore>(
         // Один и тот же base anon_id для всех контактов одной query от одного
         // server_id — серверу достаточно знать что батч от одного клиента;
         // он не получит cross-batch linkability (next batch имеет другой salt).
-        let anon_id =
-            derive_per_query_anon_id(master_key, u16::from(witness_index), &salt)?;
+        let anon_id = derive_per_query_anon_id(master_key, u16::from(witness_index), &salt)?;
         entries.push(PsiQueryEntry {
             anon_id,
             blinded: *req.as_bytes(),
@@ -383,10 +380,7 @@ mod tests {
     use rand_core::OsRng;
     use umbrella_oprf::{generate_test_private_key, shamir_split_for_testing, SCALAR_LEN};
 
-    fn make_cluster() -> (
-        [u8; SCALAR_LEN],
-        Vec<(WitnessIndex, [u8; SCALAR_LEN])>,
-    ) {
+    fn make_cluster() -> ([u8; SCALAR_LEN], Vec<(WitnessIndex, [u8; SCALAR_LEN])>) {
         let master_sk = generate_test_private_key(&mut OsRng);
         let k = Scalar::from_canonical_bytes(master_sk).unwrap();
         let cfg = ThresholdConfig::default();
@@ -463,10 +457,7 @@ mod tests {
         let one = b"x".to_vec();
         let contacts: Vec<&[u8]> = (0..(MAX_PSI_BATCH + 1)).map(|_| one.as_slice()).collect();
         let err = prepare_psi_query(&mk, &contacts, 1, &mut OsRng).unwrap_err();
-        assert!(matches!(
-            err,
-            DiscoveryError::InvalidPsiBatchSize { .. }
-        ));
+        assert!(matches!(err, DiscoveryError::InvalidPsiBatchSize { .. }));
     }
 
     #[test]
@@ -487,7 +478,8 @@ mod tests {
     fn psi_finalize_with_only_two_responses_fails() {
         let (_master, shares) = make_cluster();
         let mk = [0x22u8; 32];
-        let (req, state) = prepare_psi_query(&mk, &[b"+12125551001".as_ref()], 1, &mut OsRng).unwrap();
+        let (req, state) =
+            prepare_psi_query(&mk, &[b"+12125551001".as_ref()], 1, &mut OsRng).unwrap();
         let (wi1, sk1) = shares[0];
         let (wi2, sk2) = shares[1];
         let resp1 = psi_server_respond(&req, &sk1, &mut OsRng).unwrap();
@@ -516,13 +508,7 @@ mod tests {
         let table = simulate_server_table(&master_sk, &table_raw).unwrap();
         let table_keys: HashSet<[u8; 32]> = table.keys().copied().collect();
 
-        for subset in &[
-            [0usize, 1, 2],
-            [1, 2, 3],
-            [2, 3, 4],
-            [0, 2, 4],
-            [0, 3, 4],
-        ] {
+        for subset in &[[0usize, 1, 2], [1, 2, 3], [2, 3, 4], [0, 2, 4], [0, 3, 4]] {
             let (req, state) =
                 prepare_psi_query(&mk, &contacts, (subset[0] + 1) as u8, &mut OsRng).unwrap();
             let mut responses = Vec::new();

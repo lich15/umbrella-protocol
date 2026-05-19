@@ -243,11 +243,7 @@ impl StubPostmanTransport {
     /// from the queue (one-shot fetch). Returns entries in insertion order.
     ///
     /// Drains entries with `sent_ts_ms > since_ms`; removes them.
-    pub fn drain_cloud_history(
-        &self,
-        chat_id: &[u8; 32],
-        since_ms: u64,
-    ) -> Vec<CloudHistoryEntry> {
+    pub fn drain_cloud_history(&self, chat_id: &[u8; 32], since_ms: u64) -> Vec<CloudHistoryEntry> {
         let mut guard = self
             .cloud_history
             .lock()

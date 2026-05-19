@@ -203,7 +203,8 @@ fn f63_seal_open_100_cycles_no_uaf() {
 ///    seed_arr.copy_from_slice().
 #[test]
 fn f63_concurrent_seal_open_4_threads_no_data_race() {
-    let provider: Arc<UmbrellaXWingProvider> = Arc::new(UmbrellaXWingProvider::new_for_kat_tests_only());
+    let provider: Arc<UmbrellaXWingProvider> =
+        Arc::new(UmbrellaXWingProvider::new_for_kat_tests_only());
     let kp = provider
         .derive_hpke_keypair(xwing_config(), &[0x99u8; 32])
         .expect("derive keypair");

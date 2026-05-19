@@ -44,9 +44,7 @@ fn r22_full_24h_time_lock_no_acceleration() {
         ThresholdIdentityError::TimeLockNotElapsed { remaining_secs } => remaining_secs,
         _ => panic!("expected TimeLockNotElapsed, got {err:?}"),
     };
-    eprintln!(
-        "[R22] attempt at 24h-1s: remaining_secs={remaining_at_attempt} (expected 1)"
-    );
+    eprintln!("[R22] attempt at 24h-1s: remaining_secs={remaining_at_attempt} (expected 1)");
     assert_eq!(remaining_at_attempt, 1);
 
     // Attempt at 24h + 1 sec — must succeed.

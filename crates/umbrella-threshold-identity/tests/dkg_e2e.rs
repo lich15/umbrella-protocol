@@ -57,8 +57,9 @@ fn acceptance_gate_dkg_5_servers_threshold_3() {
             pk_bytes.as_slice().try_into().expect("32-byte pk"),
         )
         .expect("dalek parse");
-        let dalek_sig =
-            ed25519_dalek::Signature::from_bytes(sig_bytes.as_slice().try_into().expect("64-byte sig"));
+        let dalek_sig = ed25519_dalek::Signature::from_bytes(
+            sig_bytes.as_slice().try_into().expect("64-byte sig"),
+        );
         dalek_pk
             .verify_strict(msg.as_bytes(), &dalek_sig)
             .unwrap_or_else(|e| panic!("dalek strict verify fail for {subset:?}: {e:?}"));

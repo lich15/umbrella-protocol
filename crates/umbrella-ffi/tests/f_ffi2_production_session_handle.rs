@@ -119,10 +119,7 @@ fn production_unlock_returns_identity_pk_and_session_handle_only() {
         bootstrap_state_hex,
         device_random_hex,
     );
-    assert!(
-        result.is_err(),
-        "wrong PIN must return Err, got {result:?}"
-    );
+    assert!(result.is_err(), "wrong PIN must return Err, got {result:?}");
 }
 
 /// F-FFI-2 invariant #2: `release_session` is idempotent — releasing a

@@ -24,8 +24,8 @@ use std::time::{Duration, Instant};
 
 use mock_gateway::{build_test_client_tls_config, MockBehavior, MockGateway};
 use umbrella_client::transport::{
-    ClientPayload, NegotiatedSubprotocol, ServerPayload, SpkiPin, WebSocketTransport,
-    WsConfig, WsTlsConfig, WsTransportError, SPKI_PIN_LEN,
+    ClientPayload, NegotiatedSubprotocol, ServerPayload, SpkiPin, WebSocketTransport, WsConfig,
+    WsTlsConfig, WsTransportError, SPKI_PIN_LEN,
 };
 
 const TEST_HOST: &str = "localhost";
@@ -105,9 +105,7 @@ async fn ws_handshake_fails_when_server_picks_subprotocol_not_offered() {
     // SubprotocolRejected.
     match err {
         WsTransportError::SubprotocolRejected { .. } | WsTransportError::Handshake(_) => {}
-        other => panic!(
-            "expected SubprotocolRejected or Handshake, got {other:?}"
-        ),
+        other => panic!("expected SubprotocolRejected or Handshake, got {other:?}"),
     }
 }
 
@@ -157,7 +155,10 @@ async fn ws_send_message_round_trip_yields_ack_with_hex_msg_id() {
         ciphertext: b"opaque-mls-envelope-bytes".to_vec(),
     };
     let sent_seq = conn.send_envelope(payload).await.expect("send envelope");
-    assert!(sent_seq >= 2, "auth used seq 1, send must be ≥ 2; got {sent_seq}");
+    assert!(
+        sent_seq >= 2,
+        "auth used seq 1, send must be ≥ 2; got {sent_seq}"
+    );
 
     let frame = conn.recv_envelope().await.expect("recv ack");
     match frame.payload {
@@ -358,10 +359,8 @@ async fn ws_concurrent_send_and_recv_do_not_deadlock_on_split_streams() {
     let send_handle = {
         let conn = Arc::clone(&conn);
         tokio::spawn(async move {
-            conn.send_envelope(ClientPayload::Ping {
-                client_ts_ms: 42,
-            })
-            .await
+            conn.send_envelope(ClientPayload::Ping { client_ts_ms: 42 })
+                .await
         })
     };
     let recv_handle = {

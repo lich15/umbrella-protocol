@@ -44,7 +44,11 @@ fn d6_attack_anon_id_unique_under_10000_queries() {
     for _ in 0..10000 {
         let salt = fresh_query_salt(&mut OsRng);
         let id = derive_per_query_anon_id(&mk, 1, &salt).unwrap();
-        assert!(seen.insert(id), "anon_id collision at {} entries", seen.len());
+        assert!(
+            seen.insert(id),
+            "anon_id collision at {} entries",
+            seen.len()
+        );
     }
     assert_eq!(seen.len(), 10000);
 }

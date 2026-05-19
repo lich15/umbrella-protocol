@@ -69,8 +69,8 @@ use crate::call::{CallSession, MediaSink, MediaSource, ModeEnforcement};
 use crate::core::ClientCore;
 use crate::error::Result;
 use crate::facade::chat_common::{
-    create_mls_group, fetch_mls_inbox, mls_add_member, open_mls_group_from_welcome,
-    send_mls_text, ChatId, ChatSettings, DecryptedMessage, MessageId, PeerId,
+    create_mls_group, fetch_secret_inbox, mls_add_member, open_mls_group_from_welcome,
+    send_secret_text, ChatId, ChatSettings, DecryptedMessage, MessageId, PeerId,
 };
 
 /// Secret-чат. Зеркало [`CloudChat`] по shared методам, но **без**
@@ -140,11 +140,9 @@ impl SecretChat {
     /// # Errors
     ///
     /// Same as [`crate::facade::CloudChat::open_from_welcome`].
-    pub async fn open_from_welcome(
-        core: Arc<ClientCore>,
-        welcome_bytes: &[u8],
-    ) -> Result<Self> {
-        let (chat_id, effective_ciphersuite) = open_mls_group_from_welcome(&core, welcome_bytes).await?;
+    pub async fn open_from_welcome(core: Arc<ClientCore>, welcome_bytes: &[u8]) -> Result<Self> {
+        let (chat_id, effective_ciphersuite) =
+            open_mls_group_from_welcome(&core, welcome_bytes).await?;
         Ok(Self {
             core,
             chat_id,
@@ -189,40 +187,97 @@ impl SecretChat {
         })
     }
 
-    /// Отправить текстовое сообщение. Secret-режим: MLS-шифрование через
-    /// shared chat_common helper → sealed-sender envelope → blind-postman
-    /// delivery. БЕЗ Cloud-wrap.
+    /// Отправить текстовое сообщение. Secret-режим: MLS encrypt через
+    /// `UmbrellaGroup.encrypt_application` → sealed-sender V1 envelope
+    /// wrap per recipient (`umbrella_sealed_sender::seal`) → per-peer
+    /// gateway `SendMessage` frame с `to_user_id = peer_ed25519` и
+    /// `ciphertext = envelope_bytes`. БЕЗ Cloud-wrap (ADR-006 Вариант C
+    /// — Secret trade'ит multi-device history против sender anonymity на
+    /// gateway / blind-postman).
     ///
-    /// Send a text message. Secret mode: MLS encryption via the shared
-    /// chat_common helper → sealed-sender envelope → blind-postman delivery.
-    /// No Cloud-wrap.
+    /// **F-CLIENT-FACADE-1 session 7 (2026-05-19):** wired end-to-end
+    /// через [`crate::facade::chat_common::send_secret_text`]. До session 7
+    /// SecretChat::send_text вызывал `send_mls_text` напрямую (raw MLS
+    /// ciphertext через gateway, без envelope wrap) — это leak'ило sender
+    /// MLS Ed25519 identity_pk на gateway через MLSCiphertext sender_index
+    /// reconstruction. Session 7 закрыл этот gap полным sealed-sender V1
+    /// wire-up (Signal Lund et al. 2018 design).
+    ///
+    /// **Recipient enumeration**: send path enumerate'ит non-self MLS
+    /// group members через [`umbrella_mls::UmbrellaGroup::member_identities`]
+    /// и для каждого looks up X25519 pubkey в
+    /// [`crate::core::ClientCore::lookup_peer_x25519`]. Missing X25519 →
+    /// fail-closed `ClientError::SealedSender` (постулат 14 — никакого
+    /// silent fallback на unsealed delivery).
+    ///
+    /// **Sender anonymity invariant**: envelope wire bytes содержат только
+    /// `0x01 || eph_pub(32) || AEAD(...)`. Никакого raw sender_pk на wire —
+    /// sender Ed25519 identity_pk зашифрован inside AEAD blob, recoverable
+    /// только recipient'ом после ECDH key agreement + inner-signature
+    /// verify.
+    ///
+    /// Send a text message. Secret mode: MLS encrypt via
+    /// `UmbrellaGroup.encrypt_application` → sealed-sender V1 envelope
+    /// wrap per recipient → per-peer gateway `SendMessage`. No Cloud-wrap.
+    /// **F-CLIENT-FACADE-1 session 7 (2026-05-19):** wired end-to-end via
+    /// [`crate::facade::chat_common::send_secret_text`]; sender Ed25519
+    /// identity_pk never appears on the wire.
     ///
     /// # Errors
     ///
-    /// В Блоке 7.2 — infallible stub. В 7.4 — `ClientError::Mls /
-    /// SealedSender / Network / Padding`.
-    ///
-    /// Infallible stub in Block 7.2. Block 7.4 may return `ClientError::Mls /
-    /// SealedSender / Network / Padding`.
+    /// - `ClientError::SealedSender` — peer X25519 не зарегистрирован в
+    ///   `ClientCore.peer_x25519_directory` (production: KT directory
+    ///   lookup wiring session 8+; tests: explicit `register_peer_x25519`
+    ///   call перед send_text).
+    /// - `ClientError::Mls` — MLS encrypt failed (unusual; group evicted).
+    /// - `ClientError::Network` — gateway send/recv I/O failed либо
+    ///   unexpected server payload variant.
     pub async fn send_text(&self, text: String) -> Result<MessageId> {
-        send_mls_text(&self.core, self.chat_id, text).await
+        send_secret_text(&self.core, self.chat_id, text).await
     }
 
-    /// Получить inbox — сообщения из blind-postman-svc с момента последнего
-    /// `fetch_inbox`. В отличие от Cloud — нет Sealed Server unwrap; каждое
-    /// сообщение сразу MLS-расшифровывается локальным state.
+    /// Получить inbox — sealed-sender envelopes из blind-postman-svc с
+    /// момента последнего `fetch_inbox`. Каждый envelope:
+    /// `umbrella_sealed_sender::unseal` → `(sender PeerId recovered from
+    /// inner Ed25519 signature, MLS ciphertext)` → MLS-decrypt через
+    /// зарегистрированную [`umbrella_mls::UmbrellaGroup`] → plaintext.
     ///
-    /// Fetch the inbox — messages from blind-postman-svc since the last
-    /// `fetch_inbox`. Unlike Cloud, no Sealed Server unwrap; each message
-    /// is MLS-decrypted immediately with local state.
+    /// В отличие от Cloud — нет Sealed Server unwrap (нет at-rest history);
+    /// каждое сообщение sealed-sender unseal'ится immediately локальной
+    /// X25519 identity ключом.
+    ///
+    /// **F-CLIENT-FACADE-1 session 7 (2026-05-19):** wired end-to-end через
+    /// [`crate::facade::chat_common::fetch_secret_inbox`]. До session 7
+    /// fetch_inbox вызывал `fetch_mls_inbox` напрямую (decrypt'ило raw MLS
+    /// ciphertext, sender брался из gateway `from_user_id` — sender-anonymous
+    /// в blind-postman model был неработающим). Session 7 закрыл: sender
+    /// PeerId теперь recovered из inner-signature, fail-closed на
+    /// tampered/wrong-recipient envelope.
+    ///
+    /// **Sender anonymity invariant**: `DecryptedMessage.sender` ≠
+    /// gateway routing `from_user_id`. Sender Ed25519 identity_pk recovered
+    /// только через ECDH с recipient's X25519 + AEAD decrypt + inner
+    /// signature verify — gateway / blind-postman не может ни forge'нуть
+    /// sender, ни прочитать его.
+    ///
+    /// Fetch the inbox — sealed-sender envelopes from blind-postman-svc
+    /// since the last `fetch_inbox`. Each envelope unsealed via
+    /// `umbrella_sealed_sender::unseal` → `(sender PeerId recovered from
+    /// inner Ed25519 signature, MLS ciphertext)` → MLS-decrypt → plaintext.
+    /// Sender recovered from inner signature, NOT gateway routing metadata.
+    ///
+    /// **F-CLIENT-FACADE-1 session 7 (2026-05-19):** wired end-to-end via
+    /// [`crate::facade::chat_common::fetch_secret_inbox`].
     ///
     /// # Errors
     ///
-    /// `ClientError::Network / Mls / SealedSender` в Блоке 7.4.
-    ///
-    /// `ClientError::Network / Mls / SealedSender` in Block 7.4.
+    /// - `ClientError::SealedSender` — first bad envelope (tampered,
+    ///   wrong-recipient, bad inner signature) aborts drain; remainder of
+    ///   inbox stays pending (caller retries fetch_inbox).
+    /// - `ClientError::Network` — gateway recv I/O failed.
+    /// - `ClientError::Mls` — MLS decrypt failure (group epoch desync).
     pub async fn fetch_inbox(&self) -> Result<Vec<DecryptedMessage>> {
-        fetch_mls_inbox(&self.core, self.chat_id).await
+        fetch_secret_inbox(&self.core, self.chat_id).await
     }
 
     /// Добавить участника в Secret-чат. См. doc-comment
@@ -252,11 +307,7 @@ impl SecretChat {
     /// # Errors
     ///
     /// Same as [`crate::facade::CloudChat::add_member`].
-    pub async fn add_member(
-        &self,
-        peer: PeerId,
-        key_package_bytes: Vec<u8>,
-    ) -> Result<Vec<u8>> {
+    pub async fn add_member(&self, peer: PeerId, key_package_bytes: Vec<u8>) -> Result<Vec<u8>> {
         mls_add_member(&self.core, self.chat_id, peer, &key_package_bytes).await
     }
 

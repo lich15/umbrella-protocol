@@ -161,8 +161,7 @@ mod tests {
 
     #[test]
     fn all_five_anon_ids_pairwise_distinct() {
-        let all =
-            derive_per_query_anon_ids_all_servers(&[0xAB; 32], &[0xCD; SALT_LEN]).unwrap();
+        let all = derive_per_query_anon_ids_all_servers(&[0xAB; 32], &[0xCD; SALT_LEN]).unwrap();
         for i in 0..5 {
             for j in (i + 1)..5 {
                 assert_ne!(all[i], all[j], "server {i} == server {j}");
@@ -180,7 +179,11 @@ mod tests {
         for _ in 0..1000 {
             let salt = fresh_query_salt(&mut OsRng);
             let id = derive_per_query_anon_id(&mk, 1, &salt).unwrap();
-            assert!(seen.insert(id), "anon_id collision after {} salts", seen.len());
+            assert!(
+                seen.insert(id),
+                "anon_id collision after {} salts",
+                seen.len()
+            );
         }
         assert_eq!(seen.len(), 1000);
     }

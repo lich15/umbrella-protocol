@@ -123,10 +123,7 @@ impl RecoveryRequest {
     /// Returns remaining seconds until time-lock elapses, or `None` if not pending.
     pub fn remaining_secs(&self, now: SystemTime) -> Option<u64> {
         if let RecoveryState::Pending { unlock_at, .. } = self.state {
-            let now_secs = now
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .ok()?
-                .as_secs();
+            let now_secs = now.duration_since(SystemTime::UNIX_EPOCH).ok()?.as_secs();
             Some(unlock_at.saturating_sub(now_secs))
         } else {
             None
@@ -148,8 +145,13 @@ mod tests {
         let r = RecoveryRequest::initiate([1; 32], t0(), false).unwrap();
         assert_eq!(r.remaining_secs(t0()), Some(86_400));
         let mut r = r;
-        let err = r.try_complete(t0() + Duration::from_secs(86_399)).unwrap_err();
-        assert!(matches!(err, ThresholdIdentityError::TimeLockNotElapsed { .. }));
+        let err = r
+            .try_complete(t0() + Duration::from_secs(86_399))
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            ThresholdIdentityError::TimeLockNotElapsed { .. }
+        ));
         // At 24h+1, completes.
         r.try_complete(t0() + Duration::from_secs(86_401)).unwrap();
         assert!(matches!(r.state, RecoveryState::Completed));
@@ -166,7 +168,9 @@ mod tests {
     fn cancel_by_primary_device_blocks_completion() {
         let mut r = RecoveryRequest::initiate([1; 32], t0(), false).unwrap();
         r.cancel().unwrap();
-        let err = r.try_complete(t0() + Duration::from_secs(100_000)).unwrap_err();
+        let err = r
+            .try_complete(t0() + Duration::from_secs(100_000))
+            .unwrap_err();
         assert!(matches!(err, ThresholdIdentityError::RecoveryCancelled));
     }
 

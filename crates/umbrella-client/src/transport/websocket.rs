@@ -447,12 +447,8 @@ impl WebSocketTransport {
         let connector = tls_connector_from_config(&self.cfg.tls);
         let request = build_client_request(&self.cfg.url, &self.cfg.subprotocols)?;
 
-        let handshake = tokio_tungstenite::connect_async_tls_with_config(
-            request,
-            None,
-            false,
-            Some(connector),
-        );
+        let handshake =
+            tokio_tungstenite::connect_async_tls_with_config(request, None, false, Some(connector));
 
         let (stream, response) = timeout(self.cfg.connect_timeout, handshake)
             .await
@@ -522,10 +518,7 @@ impl WebSocketConnection {
     ///   for the bounded types in this protocol — kept for completeness).
     /// - [`WsTransportError::Io`] / [`WsTransportError::Closed`] on
     ///   send-side I/O failure.
-    pub async fn send_envelope(
-        &self,
-        payload: ClientPayload,
-    ) -> Result<u64, WsTransportError> {
+    pub async fn send_envelope(&self, payload: ClientPayload) -> Result<u64, WsTransportError> {
         let seq = self.next_seq.fetch_add(1, Ordering::Relaxed);
         let envelope = build_client_envelope(seq, payload);
         let mut buf = Vec::with_capacity(envelope.encoded_len());
@@ -563,8 +556,9 @@ impl WebSocketConnection {
             };
             match frame {
                 WsMessage::Binary(bytes) => {
-                    let envelope = proto::ServerEnvelope::decode(bytes.as_ref())
-                        .map_err(|e| WsTransportError::Codec(format!("decode ServerEnvelope: {e}")))?;
+                    let envelope = proto::ServerEnvelope::decode(bytes.as_ref()).map_err(|e| {
+                        WsTransportError::Codec(format!("decode ServerEnvelope: {e}"))
+                    })?;
                     return decode_server_envelope(envelope);
                 }
                 WsMessage::Text(t) => {
@@ -675,9 +669,7 @@ pub(crate) fn build_client_envelope(seq: u64, payload: ClientPayload) -> proto::
         ClientPayload::Auth { token, device_id } => {
             Payload::Auth(proto::ClientAuth { token, device_id })
         }
-        ClientPayload::Presence { online } => {
-            Payload::Presence(proto::PresenceUpdate { online })
-        }
+        ClientPayload::Presence { online } => Payload::Presence(proto::PresenceUpdate { online }),
         ClientPayload::SendMessage {
             to_user_id,
             ciphertext,
@@ -697,7 +689,9 @@ pub(crate) fn build_client_envelope(seq: u64, payload: ClientPayload) -> proto::
     proto::ClientEnvelope { seq, payload }
 }
 
-pub(crate) fn decode_server_envelope(env: proto::ServerEnvelope) -> Result<ServerFrame, WsTransportError> {
+pub(crate) fn decode_server_envelope(
+    env: proto::ServerEnvelope,
+) -> Result<ServerFrame, WsTransportError> {
     use proto::server_envelope::Payload;
     let seq = env.seq;
     let payload = env.payload.ok_or(WsTransportError::UnknownServerPayload)?;
@@ -726,9 +720,7 @@ pub(crate) fn decode_server_envelope(env: proto::ServerEnvelope) -> Result<Serve
     })
 }
 
-fn map_tungstenite_handshake_error(
-    e: tokio_tungstenite::tungstenite::Error,
-) -> WsTransportError {
+fn map_tungstenite_handshake_error(e: tokio_tungstenite::tungstenite::Error) -> WsTransportError {
     use tokio_tungstenite::tungstenite::Error as TE;
     match e {
         TE::Tls(t) => WsTransportError::Tls(format!("{t}")),
@@ -791,7 +783,10 @@ mod tests {
     #[test]
     fn parse_negotiated_subprotocol_accepts_offered_protobuf() {
         let mut headers = tokio_tungstenite::tungstenite::http::HeaderMap::new();
-        headers.insert("Sec-WebSocket-Protocol", HeaderValue::from_static("umx.pb.v1"));
+        headers.insert(
+            "Sec-WebSocket-Protocol",
+            HeaderValue::from_static("umx.pb.v1"),
+        );
         let offered = &["umx.pb.v1", "umx.v1"];
         let p = parse_negotiated_subprotocol(offered, &headers).unwrap();
         assert_eq!(p, NegotiatedSubprotocol::ProtobufV1);
@@ -805,7 +800,9 @@ mod tests {
         let offered = &["umx.pb.v1"];
         let err = parse_negotiated_subprotocol(offered, &headers).unwrap_err();
         match err {
-            WsTransportError::SubprotocolRejected { server_selected, .. } => {
+            WsTransportError::SubprotocolRejected {
+                server_selected, ..
+            } => {
                 assert_eq!(server_selected, Some("umx.v1".to_string()));
             }
             other => panic!("expected SubprotocolRejected, got {other:?}"),
@@ -818,7 +815,9 @@ mod tests {
         let offered = &["umx.pb.v1"];
         let err = parse_negotiated_subprotocol(offered, &headers).unwrap_err();
         match err {
-            WsTransportError::SubprotocolRejected { server_selected, .. } => {
+            WsTransportError::SubprotocolRejected {
+                server_selected, ..
+            } => {
                 assert_eq!(server_selected, None);
             }
             other => panic!("expected SubprotocolRejected, got {other:?}"),

@@ -28,13 +28,13 @@
 //! production пользует dudect-style верификацию (out of scope этого test
 //! — covered round 2 для OPRF blind/unblind hot path).
 
+use rand_core::OsRng;
 use std::collections::HashSet;
 use std::time::Instant;
 use umbrella_discovery::{intersect_with_server_table, simulate_server_table};
 use umbrella_oprf::{
     blind, finalize, generate_test_private_key, BlindedRequest, OprfInput, OprfLabel,
 };
-use rand_core::OsRng;
 
 fn make_client_labels(master_sk: &[u8; 32], contacts: &[&[u8]]) -> Vec<OprfLabel> {
     contacts
@@ -64,8 +64,7 @@ fn d8_attack_cardinality_timing_measured_and_bounded() {
     // - 50 of 500 (первые 50 client contacts present).
     // - 250 of 500.
     // - 500 of 500 (все present).
-    let other_phones: Vec<String> =
-        (0..1000).map(|i| format!("+9019999{i:04}")).collect();
+    let other_phones: Vec<String> = (0..1000).map(|i| format!("+9019999{i:04}")).collect();
     let other_refs: Vec<&[u8]> = other_phones.iter().map(|s| s.as_bytes()).collect();
 
     let mk_table = |overlap: usize| -> HashSet<[u8; 32]> {

@@ -359,7 +359,10 @@ fn kt_v2_self_monitoring_metadata_block_reference_is_9_3() {
 #[test]
 fn kt_v2_self_monitoring_status_is_verified_post_f_kt_v2_model_1_closure() {
     assert!(
-        matches!(KT_V2_SELF_MONITORING.status, VerificationStatus::Verified { .. }),
+        matches!(
+            KT_V2_SELF_MONITORING.status,
+            VerificationStatus::Verified { .. }
+        ),
         "F-KT-V2-MODEL-1 closure (2026-05-19): KT_V2_SELF_MONITORING must transition Pending → \
          Verified after local Tamarin run; status now = {:?}",
         KT_V2_SELF_MONITORING.status
@@ -757,7 +760,10 @@ fn downgrade_resistance_metadata_block_reference_is_9_4() {
 #[test]
 fn downgrade_resistance_status_is_verified_post_f_downgrade_model_1_closure() {
     assert!(
-        matches!(DOWNGRADE_RESISTANCE.status, VerificationStatus::Verified { .. }),
+        matches!(
+            DOWNGRADE_RESISTANCE.status,
+            VerificationStatus::Verified { .. }
+        ),
         "F-DOWNGRADE-MODEL-1 closure (2026-05-19): DOWNGRADE_RESISTANCE must transition \
          Failed (180s alarm 2026-05-09) → Verified after local Tamarin run on refactored \
          model; status now = {:?}",
@@ -875,7 +881,10 @@ fn kt_v1_self_monitoring_metadata_block_reference_is_9_5() {
 #[test]
 fn kt_v1_self_monitoring_status_is_verified_post_f_kt_v1_model_1_closure() {
     assert!(
-        matches!(KT_V1_SELF_MONITORING.status, VerificationStatus::Verified { .. }),
+        matches!(
+            KT_V1_SELF_MONITORING.status,
+            VerificationStatus::Verified { .. }
+        ),
         "F-KT-V1-MODEL-1 closure (2026-05-19): KT_V1_SELF_MONITORING must transition Pending → \
          Verified after local Tamarin run; status now = {:?}",
         KT_V1_SELF_MONITORING.status
@@ -1302,7 +1311,10 @@ fn discovery_has_all_five_d_series_lemmas_plus_sanity() {
         "honest_discovery_executable",
     ];
     for e in &expected {
-        assert!(names.contains(e), "missing lemma {e:?} in DISCOVERY.properties");
+        assert!(
+            names.contains(e),
+            "missing lemma {e:?} in DISCOVERY.properties"
+        );
     }
     assert_eq!(names.len(), expected.len());
 }

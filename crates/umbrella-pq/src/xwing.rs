@@ -32,9 +32,7 @@ use crate::constants::{
     XWING_SECRET_SEED_LEN, XWING_SHARED_SECRET_LEN,
 };
 use crate::error::{PqError, Result};
-use crate::hedged::{
-    derive_hedged_encaps_seed, HedgedWitness, HEDGED_RNG_INPUT_LEN,
-};
+use crate::hedged::{derive_hedged_encaps_seed, HedgedWitness, HEDGED_RNG_INPUT_LEN};
 
 /// X-Wing публичный ключ (1216 байт = ML-KEM-768 pk 1184 || X25519 pk 32).
 /// X-Wing public key (1216 bytes = ML-KEM-768 pk 1184 || X25519 pk 32).
@@ -245,8 +243,7 @@ pub fn xwing_encaps_hedged<R: RngCore + CryptoRng>(
     // с info=(transcript || pk_hash).
     // 3. Hedged seed derivation — HKDF-SHA512 over (rng_input || witness)
     // with info=(transcript || pk_hash).
-    let mut seed =
-        derive_hedged_encaps_seed(&rng_input, hedged_witness, transcript, &pk_hash)?;
+    let mut seed = derive_hedged_encaps_seed(&rng_input, hedged_witness, transcript, &pk_hash)?;
 
     // 4. Очищаем rng_input — он скопирован в HKDF ikm, оригинал не нужен.
     // 4. Wipe rng_input — it was copied into the HKDF ikm, the original is

@@ -156,8 +156,8 @@ impl ClientBudgetState {
         }
         if self.timestamps_hour.len() as u32 >= self.per_hour {
             self.burst_misses = self.burst_misses.saturating_add(1);
-            let exp_backoff = MIN_BACKOFF_SECS
-                .saturating_mul(2u64.saturating_pow(self.burst_misses.min(8)));
+            let exp_backoff =
+                MIN_BACKOFF_SECS.saturating_mul(2u64.saturating_pow(self.burst_misses.min(8)));
             // Минимум до того момента когда самый старый timestamp вылетит.
             let next_free = self
                 .timestamps_hour

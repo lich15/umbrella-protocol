@@ -34,6 +34,7 @@ use mock_gateway::{build_test_client_tls_config, MockBehavior, MockGateway};
 use rand_core::OsRng;
 use umbrella_backup::cloud_wrap::aead::decompress_point;
 use umbrella_backup::cloud_wrap::threshold::shamir_split_for_testing;
+use umbrella_backup::cloud_wrap::ServerUnwrapShare as ShareAlias;
 use umbrella_backup::cloud_wrap::{
     ServerUnwrapShare, ThresholdConfig, WitnessIndex, WrappedKey, WrappingParams, DEFAULT_TOTAL,
     POINT_LEN, PROTOCOL_VERSION,
@@ -44,11 +45,13 @@ use umbrella_client::facade::chat_common::{
 use umbrella_client::transport::{GatewayTransport, WebSocketTransport, WsConfig, WsTlsConfig};
 use umbrella_client::{ClientConfig, CloudChat, SecretChat, UmbrellaClient};
 use umbrella_identity::{IdentitySeed, MnemonicLanguage};
-use umbrella_backup::cloud_wrap::ServerUnwrapShare as ShareAlias;
 
 const TEST_HOST: &str = "localhost";
 
-#[allow(deprecated, reason = "test seed gen — same pattern as facade_session6_postman.rs")]
+#[allow(
+    deprecated,
+    reason = "test seed gen — same pattern as facade_session6_postman.rs"
+)]
 fn test_seed() -> IdentitySeed {
     IdentitySeed::generate(&mut OsRng, MnemonicLanguage::English)
 }
@@ -97,12 +100,10 @@ async fn bootstrap_client_with_ws_gateway_and_wrapping(
     mock: &MockGateway,
     params: WrappingParams,
 ) -> Arc<UmbrellaClient> {
-    let client = UmbrellaClient::bootstrap_for_test(
-        test_config_with_wrapping_params(params),
-        test_seed(),
-    )
-    .await
-    .expect("bootstrap");
+    let client =
+        UmbrellaClient::bootstrap_for_test(test_config_with_wrapping_params(params), test_seed())
+            .await
+            .expect("bootstrap");
     let tls = build_test_client_tls_config(TEST_HOST, mock.spki_pin());
     let ws_cfg = WsConfig {
         url: mock.wss_url(),
@@ -153,11 +154,11 @@ async fn cloud_chat_send_text_writes_at_rest_entry_to_postman_history() {
     );
 
     let entry = &entries[0];
-    assert_eq!(entry.msg_id, msg_id.0, "at-rest msg_id MUST match gateway ack");
     assert_eq!(
-        entry.msg_seq, 0,
-        "first send to a chat allocates msg_seq=0"
+        entry.msg_id, msg_id.0,
+        "at-rest msg_id MUST match gateway ack"
     );
+    assert_eq!(entry.msg_seq, 0, "first send to a chat allocates msg_seq=0");
     assert!(
         entry.ciphertext_at_rest.len() > "session 6c at-rest send".len(),
         "ciphertext_at_rest is plaintext + 16-byte Poly1305 tag — strictly larger than plaintext"
@@ -268,6 +269,14 @@ async fn secret_chat_send_text_does_not_write_at_rest_entry() {
     // SecretChat по дизайну (ADR-006 Variant C) НЕ имеет Sealed Servers
     // backup — потеря всех devices = потеря history. send_text должен
     // НЕ публиковать at-rest entries. Invariant guard.
+    //
+    // F-CLIENT-FACADE-1 session 7 (2026-05-19) note: SecretChat::send_text
+    // на single-member group (без add_member peers) теперь возвращает stub
+    // `MessageId([0u8; 16])` — нет peers, нет sealed-sender envelopes, нет
+    // gateway frames. Это OK для этого test'а — primary invariant («no
+    // at-rest entries written») сохраняется regardless of msg_id outcome.
+    // 2-party SecretChat send/fetch full round-trip coverage:
+    // `tests/facade_session7_sealed_sender.rs`.
     let (params, _shares) = setup_wrapping_params();
     let mock = MockGateway::spawn(MockBehavior::standard_any_token()).await;
     let client = bootstrap_client_with_ws_gateway_and_wrapping(&mock, params).await;
@@ -279,8 +288,14 @@ async fn secret_chat_send_text_does_not_write_at_rest_entry() {
     let msg_id = secret
         .send_text("secret message — no at-rest".to_string())
         .await
-        .expect("send_text secret");
-    assert_ne!(msg_id, MessageId([0u8; 16]), "gateway send succeeds");
+        .expect("send_text secret on single-member group MUST NOT fail");
+
+    // Session 7: single-member SecretChat returns stub (no peers to seal).
+    assert_eq!(
+        msg_id,
+        MessageId([0u8; 16]),
+        "session 7 single-member SecretChat returns stub MessageId"
+    );
 
     let entries = client
         .core()
@@ -301,12 +316,10 @@ async fn cloud_chat_send_text_without_gateway_does_not_write_at_rest_entry() {
     // gate), иначе все stub-sends публиковали бы entries с duplicate
     // msg_id = [0u8; 16] — нарушая postman uniqueness invariant.
     let (params, _shares) = setup_wrapping_params();
-    let client = UmbrellaClient::bootstrap_for_test(
-        test_config_with_wrapping_params(params),
-        test_seed(),
-    )
-    .await
-    .expect("bootstrap without gateway");
+    let client =
+        UmbrellaClient::bootstrap_for_test(test_config_with_wrapping_params(params), test_seed())
+            .await
+            .expect("bootstrap without gateway");
     let cloud = CloudChat::create(client.core(), Vec::new(), ChatSettings::default())
         .await
         .expect("create");
@@ -342,7 +355,11 @@ async fn next_cloud_msg_seq_strictly_monotonic_per_chat_and_independent_across_c
     // Counter invariant: strictly monotonic per chat, independent across.
     assert_eq!(client.core().next_cloud_msg_seq(chat_a).await, 0);
     assert_eq!(client.core().next_cloud_msg_seq(chat_a).await, 1);
-    assert_eq!(client.core().next_cloud_msg_seq(chat_b).await, 0, "chat_b independent of chat_a");
+    assert_eq!(
+        client.core().next_cloud_msg_seq(chat_b).await,
+        0,
+        "chat_b independent of chat_a"
+    );
     assert_eq!(client.core().next_cloud_msg_seq(chat_a).await, 2);
     assert_eq!(client.core().next_cloud_msg_seq(chat_b).await, 1);
 }

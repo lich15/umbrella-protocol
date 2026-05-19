@@ -290,7 +290,9 @@ fn verify_a4_v1_vs_v2_kdf_byte_distinct_for_identical_shared_secret() {
     let chat_id = [0xCCu8; 32];
     let hk_v1 = Hkdf::<Sha512>::new(Some(&chat_id), &shared);
     let mut okm_v1 = [0u8; 32];
-    hk_v1.expand(b"umbrellax-cloud-wrap-v1", &mut okm_v1).unwrap();
+    hk_v1
+        .expand(b"umbrellax-cloud-wrap-v1", &mut okm_v1)
+        .unwrap();
 
     // V2: HKDF-SHA256 salt=v2-domain info=domain || ct || pubkey.
     let hk_v2 = Hkdf::<Sha256>::new(Some(b"umbrellax-cloud-wrap-v2"), &shared);
@@ -330,7 +332,9 @@ fn verify_a5_xwing_kat_coverage_documented_gap() {
     // draft-10 Appendix C vectors. Multi-vector coverage = future work.
     let src = include_str!("xwing_draft10_kat.rs");
     let test_count = src.matches("#[test]").count();
-    let vector_count = src.matches("xwing_matches_draft10_appendix_c_vector_").count();
+    let vector_count = src
+        .matches("xwing_matches_draft10_appendix_c_vector_")
+        .count();
     assert_eq!(
         test_count, 1,
         "KAT file currently has 1 vector test; F-PHD-PQ-5-LOW documents 5+ vector gap to draft-10 Appendix C"
@@ -720,7 +724,10 @@ fn verify_xtra_xwing_concurrent_8threads_200iter_no_race() {
 
     for h in handles {
         let (tid, mismatches) = h.join().expect("thread join");
-        assert_eq!(mismatches, 0, "tid={tid} encountered {mismatches} encaps/decaps roundtrip mismatches");
+        assert_eq!(
+            mismatches, 0,
+            "tid={tid} encountered {mismatches} encaps/decaps roundtrip mismatches"
+        );
     }
 }
 
@@ -872,7 +879,10 @@ fn attack_xtra_ml_kem_first_byte_full_enumeration_255_no_collision() {
             collisions += 1;
         }
     }
-    assert_eq!(collisions, 0, "no 255-other first-byte values yield sender's ss");
+    assert_eq!(
+        collisions, 0,
+        "no 255-other first-byte values yield sender's ss"
+    );
 }
 
 /// Attack — adversary substitutes ML-KEM-768 sk-bytes high-coefficient byte

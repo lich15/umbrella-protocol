@@ -128,11 +128,9 @@ impl CloudChat {
     /// Mirror'ит `open_mls_group_from_welcome` (см. doc-comment в
     /// `chat_common.rs`): Welcome decode/validate gap → `ClientError::Mls(Welcome)`;
     /// non-canonical GroupId shape → `ClientError::Mls(GroupOperation)`.
-    pub async fn open_from_welcome(
-        core: Arc<ClientCore>,
-        welcome_bytes: &[u8],
-    ) -> Result<Self> {
-        let (chat_id, effective_ciphersuite) = open_mls_group_from_welcome(&core, welcome_bytes).await?;
+    pub async fn open_from_welcome(core: Arc<ClientCore>, welcome_bytes: &[u8]) -> Result<Self> {
+        let (chat_id, effective_ciphersuite) =
+            open_mls_group_from_welcome(&core, welcome_bytes).await?;
         Ok(Self {
             core,
             chat_id,
@@ -332,11 +330,7 @@ impl CloudChat {
     ///
     /// - `ClientError::Mls` если группа не зарегистрирована, KeyPackage
     ///   некорректный, или credential.identity_pk не равен `peer.0`.
-    pub async fn add_member(
-        &self,
-        peer: PeerId,
-        key_package_bytes: Vec<u8>,
-    ) -> Result<Vec<u8>> {
+    pub async fn add_member(&self, peer: PeerId, key_package_bytes: Vec<u8>) -> Result<Vec<u8>> {
         mls_add_member(&self.core, self.chat_id, peer, &key_package_bytes).await
     }
 

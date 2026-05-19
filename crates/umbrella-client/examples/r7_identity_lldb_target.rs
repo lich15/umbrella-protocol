@@ -53,10 +53,10 @@
 //! ./docs/audits/device-capture-artifacts/r7_lldb_scan.sh
 //! ```
 
-use umbrella_client::keystore::{SqliteMetadataStore, SqliteStoreConfig};
-use umbrella_identity::{IdentityKey, IdentitySeed, MnemonicLanguage};
 use bip39::{Language, Mnemonic};
 use std::path::PathBuf;
+use umbrella_client::keystore::{SqliteMetadataStore, SqliteStoreConfig};
+use umbrella_identity::{IdentityKey, IdentitySeed, MnemonicLanguage};
 
 /// Known needles for R7+R8 lldb scan.
 const ENTROPY_NEEDLE: [u8; 32] = [0xCDu8; 32];
@@ -116,7 +116,11 @@ fn main() {
     let phrase = mnemonic.to_string();
     eprintln!(
         "[R7] BIP-39 mnemonic from 0xCD-entropy: first 3 words = {}",
-        phrase.split_whitespace().take(3).collect::<Vec<_>>().join(" ")
+        phrase
+            .split_whitespace()
+            .take(3)
+            .collect::<Vec<_>>()
+            .join(" ")
     );
 
     let seed = IdentitySeed::from_mnemonic(&phrase, MnemonicLanguage::English)
@@ -170,7 +174,10 @@ fn main() {
     // Pause for attach-mode scan: if env var R7_PAUSE is set, sleep so an
     // external lldb attach can scan live memory without batch-mode quirks.
     if std::env::var("R7_PAUSE").is_ok() {
-        eprintln!("[R7] PAUSING for 60s — attach with: lldb -p {}", std::process::id());
+        eprintln!(
+            "[R7] PAUSING for 60s — attach with: lldb -p {}",
+            std::process::id()
+        );
         std::thread::sleep(std::time::Duration::from_secs(60));
     }
 
@@ -186,9 +193,7 @@ fn main() {
 
     // Second pause window for the AFTER_DROP phase.
     if std::env::var("R7_PAUSE").is_ok() {
-        eprintln!(
-            "[R7] PAUSING AFTER_DROP for 60s — attach window for verifying zeroize"
-        );
+        eprintln!("[R7] PAUSING AFTER_DROP for 60s — attach window for verifying zeroize");
         std::thread::sleep(std::time::Duration::from_secs(60));
     }
 

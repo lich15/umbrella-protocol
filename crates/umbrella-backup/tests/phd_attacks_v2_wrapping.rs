@@ -23,12 +23,10 @@ use hkdf::Hkdf;
 use sha2::Sha256;
 
 use umbrella_backup::cloud_wrap::{
-    unwrap_v2_to_v1, wrap_message_key, wrap_v1_into_v2, CanonicalAad, ThresholdConfig,
-    WrappedKey, WrappedKeyV2, WrappingCiphersuite, WrappingParams,
+    unwrap_v2_to_v1, wrap_message_key, wrap_v1_into_v2, CanonicalAad, ThresholdConfig, WrappedKey,
+    WrappedKeyV2, WrappingCiphersuite, WrappingParams,
 };
-use umbrella_backup::cloud_wrap::{
-    ED25519_PUB_LEN, MESSAGE_KEY_LEN, POINT_LEN, PROTOCOL_VERSION,
-};
+use umbrella_backup::cloud_wrap::{ED25519_PUB_LEN, MESSAGE_KEY_LEN, POINT_LEN, PROTOCOL_VERSION};
 use umbrella_backup::BackupError;
 use umbrella_pq::{
     xwing_decaps, xwing_encaps, xwing_keygen, HedgedWitness, XWingPublicKey, XWingSecretSeed,
@@ -362,7 +360,10 @@ fn attack_xtra_v2_wire_mutation_5000_iterations_no_silent_decrypt() {
             },
         }
     }
-    assert_eq!(decrypted, 0, "mutation fuzz must NEVER yield decrypt success");
+    assert_eq!(
+        decrypted, 0,
+        "mutation fuzz must NEVER yield decrypt success"
+    );
     println!(
         "[A-xtra] V2 wire mutation 5000 iter: parse_failures={parse_failures} \
          unwrap_failures={unwrap_failures} decrypted={decrypted}"
@@ -460,7 +461,9 @@ fn verify_xtra_v2_concurrent_4threads_25iter_no_race() {
             std::thread::spawn(move || {
                 let mut local_rng = OsRng;
                 for _ in 0..25 {
-                    let v2 = wrap_v1_into_v2(&pk, &v1, &aad, &test_hedged_witness(), &mut local_rng).unwrap();
+                    let v2 =
+                        wrap_v1_into_v2(&pk, &v1, &aad, &test_hedged_witness(), &mut local_rng)
+                            .unwrap();
                     let v1_recovered = unwrap_v2_to_v1(&sk, &pk, &v2, &aad).expect("unwrap");
                     assert_eq!(v1_recovered.to_bytes(), v1.to_bytes());
                 }

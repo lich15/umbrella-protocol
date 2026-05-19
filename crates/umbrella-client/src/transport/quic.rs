@@ -428,10 +428,7 @@ impl QuicConnection {
     /// - [`QuicTransportError::Codec`] on prost encode failure.
     /// - [`QuicTransportError::Io`] / [`QuicTransportError::Closed`] on
     ///   write-side failure.
-    pub async fn send_envelope(
-        &self,
-        payload: ClientPayload,
-    ) -> Result<u64, QuicTransportError> {
+    pub async fn send_envelope(&self, payload: ClientPayload) -> Result<u64, QuicTransportError> {
         let seq = self.next_seq.fetch_add(1, Ordering::Relaxed);
         let envelope = build_client_envelope(seq, payload);
         let mut buf = Vec::with_capacity(envelope.encoded_len() + 10);
@@ -440,10 +437,7 @@ impl QuicConnection {
             .map_err(|e| QuicTransportError::Codec(format!("encode: {e}")))?;
 
         let mut bidi = self.bidi.lock().await;
-        bidi.send
-            .write_all(&buf)
-            .await
-            .map_err(map_write_error)?;
+        bidi.send.write_all(&buf).await.map_err(map_write_error)?;
         Ok(seq)
     }
 
@@ -462,11 +456,7 @@ impl QuicConnection {
                 return decode_server_envelope(envelope)
                     .map_err(|e| QuicTransportError::Codec(format!("translate: {e:?}")));
             }
-            match bidi
-                .recv
-                .read_chunk(QUIC_RECV_CHUNK_BYTES, true)
-                .await
-            {
+            match bidi.recv.read_chunk(QUIC_RECV_CHUNK_BYTES, true).await {
                 Ok(Some(chunk)) => bidi.recv_buf.extend_from_slice(&chunk.bytes),
                 Ok(None) => return Err(QuicTransportError::Closed),
                 Err(e) => return Err(map_read_error(e)),
@@ -495,7 +485,9 @@ impl QuicConnection {
         match frame.payload {
             ServerPayload::AuthOk => Ok(()),
             ServerPayload::Error { code } => Err(QuicTransportError::AuthRejected { code }),
-            other => Err(QuicTransportError::UnexpectedAuthFrame(format!("{other:?}"))),
+            other => Err(QuicTransportError::UnexpectedAuthFrame(format!(
+                "{other:?}"
+            ))),
         }
     }
 
@@ -533,10 +525,12 @@ fn try_decode_length_delimited(
         });
     }
     let prefix_len = original_len - peek.len();
-    let total = prefix_len.checked_add(payload_len).ok_or(QuicTransportError::FrameTooLarge {
-        announced: usize::MAX,
-        limit: QUIC_MAX_FRAME_BYTES,
-    })?;
+    let total = prefix_len
+        .checked_add(payload_len)
+        .ok_or(QuicTransportError::FrameTooLarge {
+            announced: usize::MAX,
+            limit: QUIC_MAX_FRAME_BYTES,
+        })?;
     if buf.len() < total {
         return Ok(None);
     }
@@ -569,18 +563,16 @@ fn map_connection_error(e: quinn::ConnectionError) -> QuicTransportError {
         CE::Reset => QuicTransportError::Closed,
         CE::LocallyClosed => QuicTransportError::Closed,
         CE::VersionMismatch => QuicTransportError::Handshake("QUIC version mismatch".to_string()),
-        CE::CidsExhausted => {
-            QuicTransportError::Handshake("connection IDs exhausted".to_string())
-        }
+        CE::CidsExhausted => QuicTransportError::Handshake("connection IDs exhausted".to_string()),
     }
 }
 
 fn map_write_error(e: quinn::WriteError) -> QuicTransportError {
     use quinn::WriteError as WE;
     match e {
-        WE::Stopped(_) | WE::ClosedStream | WE::ConnectionLost(quinn::ConnectionError::LocallyClosed) => {
-            QuicTransportError::Closed
-        }
+        WE::Stopped(_)
+        | WE::ClosedStream
+        | WE::ConnectionLost(quinn::ConnectionError::LocallyClosed) => QuicTransportError::Closed,
         WE::ConnectionLost(ce) => map_connection_error(ce),
         other => QuicTransportError::Io(format!("{other}")),
     }
@@ -589,9 +581,9 @@ fn map_write_error(e: quinn::WriteError) -> QuicTransportError {
 fn map_read_error(e: quinn::ReadError) -> QuicTransportError {
     use quinn::ReadError as RE;
     match e {
-        RE::Reset(_) | RE::ClosedStream | RE::ConnectionLost(quinn::ConnectionError::LocallyClosed) => {
-            QuicTransportError::Closed
-        }
+        RE::Reset(_)
+        | RE::ClosedStream
+        | RE::ConnectionLost(quinn::ConnectionError::LocallyClosed) => QuicTransportError::Closed,
         RE::ConnectionLost(ce) => map_connection_error(ce),
         other => QuicTransportError::Io(format!("{other}")),
     }

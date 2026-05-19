@@ -56,7 +56,9 @@ fn r26_all_channels_blocked_returns_none() {
     let sel = TransportSelector::default();
     let chosen = sel.pick(&EverythingBlockedProbe);
     assert!(chosen.is_none());
-    eprintln!("[R26] full network adversary (no working channels): cannot unlock until network restored");
+    eprintln!(
+        "[R26] full network adversary (no working channels): cannot unlock until network restored"
+    );
 }
 
 #[test]

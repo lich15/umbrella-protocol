@@ -60,9 +60,7 @@ impl DkgParticipant {
             ));
         }
         if min_signers == 0 || min_signers > max_signers {
-            return Err(ThresholdIdentityError::DkgAborted(
-                "threshold out of range",
-            ));
+            return Err(ThresholdIdentityError::DkgAborted("threshold out of range"));
         }
         let identifier = Identifier::try_from(index)?;
         Ok(Self {
@@ -207,9 +205,7 @@ pub fn run_in_process_dkg<R: CryptoRng + RngCore>(
     rng: &mut R,
 ) -> ThresholdIdentityResult<(Vec<KeyPackage>, PublicKeyPackage)> {
     if n == 0 || t == 0 || t > n {
-        return Err(ThresholdIdentityError::DkgAborted(
-            "invalid n/t parameters",
-        ));
+        return Err(ThresholdIdentityError::DkgAborted("invalid n/t parameters"));
     }
 
     let participants: Vec<DkgParticipant> = (1..=n)
@@ -256,10 +252,7 @@ pub fn run_in_process_dkg<R: CryptoRng + RngCore>(
     for p in &participants {
         let mut their_round1_packages = round1_broadcasts.clone();
         their_round1_packages.remove(&p.identifier);
-        let their_round2_packages = p2p_inbox
-            .get(&p.identifier)
-            .cloned()
-            .unwrap_or_default();
+        let their_round2_packages = p2p_inbox.get(&p.identifier).cloned().unwrap_or_default();
         let secret = round2_secrets
             .get(&p.identifier)
             .ok_or(ThresholdIdentityError::DkgAborted("missing round2 secret"))?;
@@ -279,8 +272,8 @@ pub fn run_in_process_dkg<R: CryptoRng + RngCore>(
         }
     }
 
-    let public_key_package = shared_pubkey_package
-        .ok_or(ThresholdIdentityError::DkgAborted("no PublicKeyPackage"))?;
+    let public_key_package =
+        shared_pubkey_package.ok_or(ThresholdIdentityError::DkgAborted("no PublicKeyPackage"))?;
 
     Ok((key_packages, public_key_package))
 }
@@ -288,7 +281,9 @@ pub fn run_in_process_dkg<R: CryptoRng + RngCore>(
 /// Derives a child CSPRNG from a parent one without consuming the parent's
 /// owned position. Used to give each participant its own sub-rng in the
 /// in-process simulation (so the test is deterministic given a seeded parent).
-fn derive_subrng<R: CryptoRng + RngCore>(parent: &mut R) -> ThresholdIdentityResult<impl CryptoRng + RngCore> {
+fn derive_subrng<R: CryptoRng + RngCore>(
+    parent: &mut R,
+) -> ThresholdIdentityResult<impl CryptoRng + RngCore> {
     let mut seed = [0u8; 32];
     parent.fill_bytes(&mut seed);
     Ok(rand_chacha::ChaCha20Rng::from_seed(seed))
@@ -299,8 +294,8 @@ use rand_chacha::rand_core::SeedableRng;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand_chacha::ChaCha20Rng;
     use rand_chacha::rand_core::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
 
     #[test]
     fn dkg_5of3_completes_and_converges() {
@@ -351,7 +346,9 @@ mod tests {
         let r = DkgParticipant::new(0, 5, 3);
         assert!(matches!(
             r,
-            Err(ThresholdIdentityError::DkgAborted("identifier index out of range"))
+            Err(ThresholdIdentityError::DkgAborted(
+                "identifier index out of range"
+            ))
         ));
     }
 }

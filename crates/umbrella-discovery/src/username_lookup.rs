@@ -353,10 +353,7 @@ mod tests {
     use umbrella_kt::{build_audit_path, leaf_hash, merkle_root};
     use umbrella_oprf::{generate_test_private_key, shamir_split_for_testing, SCALAR_LEN};
 
-    fn make_cluster() -> (
-        [u8; SCALAR_LEN],
-        Vec<(WitnessIndex, [u8; SCALAR_LEN])>,
-    ) {
+    fn make_cluster() -> ([u8; SCALAR_LEN], Vec<(WitnessIndex, [u8; SCALAR_LEN])>) {
         let master_sk = generate_test_private_key(&mut OsRng);
         let k = Scalar::from_canonical_bytes(master_sk).unwrap();
         let cfg = ThresholdConfig::default();
@@ -456,8 +453,7 @@ mod tests {
         let mk = [0xCCu8; 32];
         let mut seen = HashSet::new();
         for _ in 0..1000 {
-            let (req, _state) =
-                prepare_username_query(&mk, b"@alice", 1, &mut OsRng).unwrap();
+            let (req, _state) = prepare_username_query(&mk, b"@alice", 1, &mut OsRng).unwrap();
             assert!(
                 seen.insert(req.anon_id),
                 "collision after {} queries",
@@ -493,7 +489,10 @@ mod tests {
         .unwrap_err();
         assert!(matches!(
             err,
-            DiscoveryError::InsufficientResponses { valid: 2, required: 3 }
+            DiscoveryError::InsufficientResponses {
+                valid: 2,
+                required: 3
+            }
         ));
     }
 }

@@ -36,8 +36,7 @@ fn main() {
     let mk = [0x42u8; 32];
 
     println!("[psi-realistic] building {n_client} client contacts...");
-    let client_phones: Vec<String> =
-        (0..n_client).map(|i| format!("+1212{i:07}")).collect();
+    let client_phones: Vec<String> = (0..n_client).map(|i| format!("+1212{i:07}")).collect();
     let client_refs: Vec<&[u8]> = client_phones.iter().map(|s| s.as_bytes()).collect();
 
     println!("[psi-realistic] building {n_registered} registered users (slow)...");
@@ -69,7 +68,10 @@ fn main() {
         t1.elapsed().as_secs_f64() * 1000.0
     );
     let req_wire = req.encode();
-    println!("[psi-realistic] PSI request wire size: {} bytes", req_wire.len());
+    println!(
+        "[psi-realistic] PSI request wire size: {} bytes",
+        req_wire.len()
+    );
 
     println!("[psi-realistic] 3 of 5 sealed servers evaluate each blinded request...");
     let mut responses = Vec::new();
@@ -112,5 +114,8 @@ fn main() {
     );
     assert_eq!(intersection.len(), n_overlap);
 
-    println!("[psi-realistic] DONE — total {:.2}s", t0.elapsed().as_secs_f64());
+    println!(
+        "[psi-realistic] DONE — total {:.2}s",
+        t0.elapsed().as_secs_f64()
+    );
 }

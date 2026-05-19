@@ -40,9 +40,7 @@ fn d1_attack_500_contacts_zero_plaintext_appears_in_wire() {
     let sk_share = generate_test_private_key(&mut OsRng);
 
     // 500 realistic contacts с распознаваемыми patterns.
-    let contacts: Vec<String> = (0..500)
-        .map(|i| format!("+1212555{i:04}"))
-        .collect();
+    let contacts: Vec<String> = (0..500).map(|i| format!("+1212555{i:04}")).collect();
     let contact_refs: Vec<&[u8]> = contacts.iter().map(|s| s.as_bytes()).collect();
 
     let (req, _state) = prepare_psi_query(&mk, &contact_refs, 1, &mut OsRng).unwrap();
@@ -72,9 +70,7 @@ fn d1_attack_500_contacts_blinded_bytes_have_high_entropy() {
     // одинаковые, blinding broken. Реально blinded — random Ristretto255
     // point, поэтому байты ~ uniform.
     let mk = [0x34u8; 32];
-    let contacts: Vec<String> = (0..500)
-        .map(|i| format!("+1212555{i:04}"))
-        .collect();
+    let contacts: Vec<String> = (0..500).map(|i| format!("+1212555{i:04}")).collect();
     let refs: Vec<&[u8]> = contacts.iter().map(|s| s.as_bytes()).collect();
     let (req, _) = prepare_psi_query(&mk, &refs, 1, &mut OsRng).unwrap();
 
@@ -85,7 +81,11 @@ fn d1_attack_500_contacts_blinded_bytes_have_high_entropy() {
     }
     // Проверка 1: distinct blinded points (никакой не повторился).
     let unique: HashSet<_> = req.entries.iter().map(|e| e.blinded).collect();
-    assert_eq!(unique.len(), 500, "duplicate blinded point — blinding broken");
+    assert_eq!(
+        unique.len(),
+        500,
+        "duplicate blinded point — blinding broken"
+    );
 
     // Проверка 2: байтовое разнообразие. Каждый byte-value 0..256 должен
     // появиться многократно (high entropy).

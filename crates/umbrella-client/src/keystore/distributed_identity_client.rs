@@ -42,8 +42,8 @@ use umbrella_crypto_primitives::mlocked::MlockedSecret;
 // of PIN+salt.
 use umbrella_oprf::{
     blind as oprf_blind, finalize as oprf_finalize, generate_test_private_key,
-    shamir_split_for_testing, threshold_combine, BlindedRequest, OprfInput,
-    ServerEvaluation, ThresholdConfig, WitnessIndex,
+    shamir_split_for_testing, threshold_combine, BlindedRequest, OprfInput, ServerEvaluation,
+    ThresholdConfig, WitnessIndex,
 };
 use umbrella_threshold_identity::{
     anonymous_id,
@@ -571,7 +571,8 @@ fn derive_anon_ids_via_oprf<R: rand_core::CryptoRng + rand_core::RngCore>(
 
     // Step 5: unblind + finalize (SHA-512 with `umbrellax-oprf-output-v1`
     // domain separator) → 32-byte OprfLabel.
-    let oprf_label = oprf_finalize(&blind_state, oprf_input, &combined).map_err(ClientError::from)?;
+    let oprf_label =
+        oprf_finalize(&blind_state, oprf_input, &combined).map_err(ClientError::from)?;
 
     // Step 6: derive 5 per-server anon-IDs from the OPRF label.
     let anon_ids = anonymous_id::derive_all_anonymous_ids(oprf_label.as_bytes())
@@ -711,8 +712,7 @@ mod tests {
             phone_e164: None,
             otp_secret: None,
         };
-        let out =
-            bootstrap_account(&input, fake_identity_pk(), &oprf_cluster, &mut rng).unwrap();
+        let out = bootstrap_account(&input, fake_identity_pk(), &oprf_cluster, &mut rng).unwrap();
         assert_eq!(out.identity_pk, fake_identity_pk());
         // Persisted state contains 16+32 bytes of public material + 5 anon-ids.
         // **No PIN, no master_key, no device_key, no recovery words.**
@@ -731,8 +731,7 @@ mod tests {
             phone_e164: None,
             otp_secret: None,
         };
-        let boot =
-            bootstrap_account(&input, fake_identity_pk(), &oprf_cluster, &mut rng).unwrap();
+        let boot = bootstrap_account(&input, fake_identity_pk(), &oprf_cluster, &mut rng).unwrap();
 
         // Mock server cluster: any pin_root matching Argon2id(123456, salt) unlocks.
         let pin_root_expected =
@@ -781,8 +780,7 @@ mod tests {
             phone_e164: None,
             otp_secret: None,
         };
-        let boot =
-            bootstrap_account(&input, fake_identity_pk(), &oprf_cluster, &mut rng).unwrap();
+        let boot = bootstrap_account(&input, fake_identity_pk(), &oprf_cluster, &mut rng).unwrap();
         let correct_root = *pin_kdf::derive_pin_root(b"123456", &boot.account_local_salt)
             .unwrap()
             .expose();
@@ -795,7 +793,13 @@ mod tests {
                 (correct_root, [5u8; 32]),
             ],
         });
-        let r = unlock_with_pin(b"999999", &boot, &[0; 32], &boot.initial_transcript, &cluster);
+        let r = unlock_with_pin(
+            b"999999",
+            &boot,
+            &[0; 32],
+            &boot.initial_transcript,
+            &cluster,
+        );
         assert!(matches!(r, Err(ClientError::WrongPin)));
     }
 
@@ -1084,8 +1088,8 @@ mod tests {
         // OPRF key shares (k_1, k_2). Tries to reconstruct anon-IDs by
         // blinding pin_root, locally evaluating two partials, and asking
         // threshold_combine to merge them — below quorum.
-        let pin_root = pin_kdf::derive_pin_root(b"123456", &legit.account_local_salt)
-            .expect("pin_root");
+        let pin_root =
+            pin_kdf::derive_pin_root(b"123456", &legit.account_local_salt).expect("pin_root");
         let oprf_input = OprfInput::new(pin_root.expose()).expect("oprf input");
         let mut adv_rng = ChaCha20Rng::seed_from_u64(0xEEEE_DEAD_BEEF_FEED);
         let (blinded, _state) = umbrella_oprf::blind(oprf_input, &mut adv_rng).expect("blind");
@@ -1095,8 +1099,7 @@ mod tests {
 
         let only_two = vec![(k1.0, eval_1), (k2.0, eval_2)];
         let combine_err =
-            umbrella_oprf::threshold_combine(&only_two, ThresholdConfig::default())
-                .unwrap_err();
+            umbrella_oprf::threshold_combine(&only_two, ThresholdConfig::default()).unwrap_err();
 
         assert!(
             matches!(
@@ -1113,7 +1116,9 @@ mod tests {
         eprintln!("[F-2 ADVERSARY BARRIER measurements]");
         eprintln!("  Adversary inputs: PIN (6 digits) + account_local_salt (16 bytes captured)");
         eprintln!("                  + 2 of 5 server OPRF key shares (k_1, k_2)");
-        eprintln!("  Operations: blind(pin_root) + 2 partial OPRF evaluate + threshold_combine attempt");
+        eprintln!(
+            "  Operations: blind(pin_root) + 2 partial OPRF evaluate + threshold_combine attempt"
+        );
         eprintln!("  Result: threshold_combine refuses below quorum (2 < 3)");
         eprintln!("  Bits leaked: 0 (no anon-ID reconstruction possible)");
         eprintln!("  Compromise threshold: ≥ 3 of 5 server OPRF keys required to bypass");

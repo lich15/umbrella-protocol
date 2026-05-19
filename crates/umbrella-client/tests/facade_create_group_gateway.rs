@@ -39,9 +39,7 @@ mod mock_gateway;
 use std::sync::Arc;
 use std::time::Duration;
 
-use mock_gateway::{
-    build_test_client_tls_config, MockBehavior, MockGateway, MockIncomingMessage,
-};
+use mock_gateway::{build_test_client_tls_config, MockBehavior, MockGateway, MockIncomingMessage};
 use openmls::prelude::tls_codec::Serialize as TlsSerialize;
 use rand_core::OsRng;
 use umbrella_backup::cloud_wrap::{ThresholdConfig, WrappingParams};
@@ -86,7 +84,10 @@ fn test_config() -> ClientConfig {
     }
 }
 
-#[allow(deprecated, reason = "test seed gen — same pattern as facade_integration.rs")]
+#[allow(
+    deprecated,
+    reason = "test seed gen — same pattern as facade_integration.rs"
+)]
 fn test_seed() -> IdentitySeed {
     IdentitySeed::generate(&mut OsRng, MnemonicLanguage::English)
 }
@@ -163,13 +164,9 @@ impl SisterClient {
 #[tokio::test]
 async fn cloud_chat_create_returns_random_non_zero_chat_id() {
     let client = bootstrap_alice_facade().await;
-    let chat = CloudChat::create(
-        client.core(),
-        Vec::new(),
-        ChatSettings::default(),
-    )
-    .await
-    .expect("CloudChat::create (session 5: real MLS group)");
+    let chat = CloudChat::create(client.core(), Vec::new(), ChatSettings::default())
+        .await
+        .expect("CloudChat::create (session 5: real MLS group)");
 
     assert_ne!(
         chat.chat_id(),
@@ -181,19 +178,14 @@ async fn cloud_chat_create_returns_random_non_zero_chat_id() {
 #[tokio::test]
 async fn cloud_chat_create_registers_real_mls_group_state_in_core() {
     let client = bootstrap_alice_facade().await;
-    let chat = CloudChat::create(
-        client.core(),
-        Vec::new(),
-        ChatSettings::default(),
-    )
-    .await
-    .expect("create");
-
-    let group_arc = client
-        .core()
-        .get_group(chat.chat_id())
+    let chat = CloudChat::create(client.core(), Vec::new(), ChatSettings::default())
         .await
-        .expect("session 5: ClientCore.groups MUST contain the chat_id after CloudChat::create");
+        .expect("create");
+
+    let group_arc =
+        client.core().get_group(chat.chat_id()).await.expect(
+            "session 5: ClientCore.groups MUST contain the chat_id after CloudChat::create",
+        );
 
     let group = group_arc.lock().await;
     assert_eq!(group.epoch(), 0, "fresh group starts at epoch 0");
@@ -348,7 +340,10 @@ async fn add_member_fails_when_no_group_registered_for_chat_id() {
         .add_member(bob.peer_id(), bob.publish_key_package_bytes())
         .await;
 
-    assert!(result.is_err(), "add_member without registered group MUST fail");
+    assert!(
+        result.is_err(),
+        "add_member without registered group MUST fail"
+    );
     let err_msg = result.unwrap_err().to_string();
     assert!(
         err_msg.contains("no MLS group registered") || err_msg.contains("add_member"),
@@ -455,10 +450,7 @@ async fn two_party_bob_encrypts_via_sister_group_alice_facade_fetch_inbox_decryp
 
     // Phase 8: Alice fetches the inbox → real MLS decrypt via her own group
     // state (registered at create), plaintext recovered.
-    let drained = alice_chat
-        .fetch_inbox()
-        .await
-        .expect("alice fetch_inbox");
+    let drained = alice_chat.fetch_inbox().await.expect("alice fetch_inbox");
     assert_eq!(drained.len(), 1, "expected exactly 1 inbox message");
 
     let msg = &drained[0];
@@ -479,7 +471,11 @@ async fn two_party_bob_encrypts_via_sister_group_alice_facade_fetch_inbox_decryp
         .await
         .expect("alice group registered");
     let alice_group = alice_group_arc.lock().await;
-    assert_eq!(alice_group.epoch(), 1, "Add commit set epoch=1; Application does not change epoch");
+    assert_eq!(
+        alice_group.epoch(),
+        1,
+        "Add commit set epoch=1; Application does not change epoch"
+    );
     assert_eq!(alice_group.member_count(), 2);
 }
 

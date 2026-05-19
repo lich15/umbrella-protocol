@@ -173,7 +173,23 @@ async fn cloud_chat_send_text_with_websocket_gateway_returns_real_message_id() {
 }
 
 #[tokio::test]
-async fn secret_chat_send_text_with_websocket_gateway_returns_real_message_id() {
+async fn secret_chat_send_text_with_websocket_gateway_single_member_returns_stub_session_7_invariant(
+) {
+    // F-CLIENT-FACADE-1 session 7 (2026-05-19) behavior change: SecretChat
+    // wire path теперь sealed-sender per-recipient (Signal Lund et al. 2018).
+    // Single-member group (Alice solo, без add_member) → no peers → no
+    // envelope sealed → SecretChat::send_text returns stub MessageId([0u8;
+    // 16]) (matches gateway-None convention; nothing was actually delivered
+    // to gateway, потому что нет recipient).
+    //
+    // Real 2-party SecretChat round-trip coverage с gateway:
+    // `tests/facade_session7_sealed_sender.rs`
+    // (`secret_chat_send_text_succeeds_when_peer_x25519_registered_for_2_member_group`).
+    //
+    // CloudChat single-member behavior unchanged — Cloud-mode broadcasts MLS
+    // ciphertext через `to_user_id = chat_id`, не нуждается в per-recipient
+    // peers; see `cloud_chat_send_text_with_websocket_gateway_returns_real_message_id`
+    // above для CloudChat coverage этого WS round-trip path.
     let mock = MockGateway::spawn(MockBehavior::standard_any_token()).await;
     let client = bootstrap_client_with_ws_gateway(&mock).await;
     let secret = SecretChat::create(
@@ -187,9 +203,16 @@ async fn secret_chat_send_text_with_websocket_gateway_returns_real_message_id() 
     let msg_id = secret
         .send_text("secret message".to_string())
         .await
-        .expect("send_text via WS gateway succeeds");
+        .expect("send_text on single-member SecretChat MUST NOT fail (no peers to seal to)");
 
-    assert_ne!(msg_id, MessageId([0u8; 16]));
+    assert_eq!(
+        msg_id,
+        MessageId([0u8; 16]),
+        "F-CLIENT-FACADE-1 session 7 invariant: single-member SecretChat (no \
+         add_member calls) MUST return stub MessageId([0u8; 16]) — no peers \
+         means no sealed-sender envelopes were generated; gateway never \
+         received SendMessage frame, so no real server-issued msg_id."
+    );
 }
 
 #[tokio::test]
@@ -238,7 +261,10 @@ async fn cloud_chat_send_text_multiple_invocations_yield_distinct_message_ids() 
         .await
         .expect("third send");
 
-    assert_ne!(first, second, "distinct sends must yield distinct MessageIds");
+    assert_ne!(
+        first, second,
+        "distinct sends must yield distinct MessageIds"
+    );
     assert_ne!(second, third);
     assert_ne!(first, third);
 }

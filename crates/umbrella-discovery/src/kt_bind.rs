@@ -68,8 +68,9 @@ pub fn canonical_leaf_payload(
     device_pubkey: &[u8; DEVICE_PUBKEY_LEN],
     epoch: u64,
 ) -> Vec<u8> {
-    let mut out =
-        Vec::with_capacity(DISCOVERY_LEAF_DOMAIN.len() + 1 + 2 + handle.len() + DEVICE_PUBKEY_LEN + 8);
+    let mut out = Vec::with_capacity(
+        DISCOVERY_LEAF_DOMAIN.len() + 1 + 2 + handle.len() + DEVICE_PUBKEY_LEN + 8,
+    );
     out.extend_from_slice(DISCOVERY_LEAF_DOMAIN);
     out.push(handle_kind);
     out.extend_from_slice(&(handle.len() as u16).to_be_bytes());
@@ -122,7 +123,12 @@ pub fn verify_discovery_bind(
     expectation: &DiscoveryBindExpectation<'_>,
 ) -> DiscoveryResult<[u8; DEVICE_PUBKEY_LEN]> {
     // 1. Pinned root match (D-3 silent swap: forge с другим root отвергнут).
-    if proof.epoch_root.ct_eq(expectation.pinned_epoch_root).unwrap_u8() == 0 {
+    if proof
+        .epoch_root
+        .ct_eq(expectation.pinned_epoch_root)
+        .unwrap_u8()
+        == 0
+    {
         return Err(DiscoveryError::KtBindFailed {
             kind: KtBindKind::RootForked,
         });
@@ -143,9 +149,8 @@ pub fn verify_discovery_bind(
     );
 
     // Стуктурная проверка длины leaf_payload:
-    let min_expected_len = DISCOVERY_LEAF_DOMAIN.len() + 1 + 2 + expectation.handle.len()
-        + DEVICE_PUBKEY_LEN
-        + 8;
+    let min_expected_len =
+        DISCOVERY_LEAF_DOMAIN.len() + 1 + 2 + expectation.handle.len() + DEVICE_PUBKEY_LEN + 8;
     if proof.leaf_payload.len() != min_expected_len {
         return Err(DiscoveryError::KtBindFailed {
             kind: KtBindKind::LeafPayloadMismatch,

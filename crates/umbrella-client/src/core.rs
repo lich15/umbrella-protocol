@@ -16,15 +16,16 @@ use tokio::sync::{Mutex as TokioMutex, RwLock};
 use umbrella_backup::cloud_wrap::WrappingParams;
 use umbrella_calls::CallPolicy;
 use umbrella_identity::{
-    Clock, IdentityKey, IdentitySeed, InMemoryKeyStore, KeyStore, MnemonicLanguage, SystemClock,
+    Clock, IdentityKey, IdentitySeed, IdentityX25519KeyPublic, InMemoryKeyStore, KeyStore,
+    MnemonicLanguage, SystemClock,
 };
 use umbrella_kt::KtLogState;
 use umbrella_mls::{UmbrellaGroup, UmbrellaProvider};
 
 use crate::error::{ClientError, Result};
-use crate::facade::chat_common::{ChatId, UMBRELLA_CIPHERSUITE_CLASSICAL_DEFAULT};
 #[cfg(feature = "pq")]
 use crate::facade::chat_common::UMBRELLA_CIPHERSUITE_PQ_HYBRID;
+use crate::facade::chat_common::{ChatId, UMBRELLA_CIPHERSUITE_CLASSICAL_DEFAULT};
 use crate::keystore::hw_backed::HwBackedKeyStore;
 use crate::keystore::hw_callback::{
     bootstrap_hw_identity, HwKeyHandle, PersistentKeyStoreCallback,
@@ -566,6 +567,36 @@ pub struct ClientCore {
     /// increments on each Cloud-mode send. Production-grade persistence
     /// across restarts is deferred to session 7+.
     pub(crate) cloud_msg_seq_counters: RwLock<HashMap<ChatId, u64>>,
+
+    /// **F-CLIENT-FACADE-1 session 7 (2026-05-19):** Map peer Ed25519
+    /// identity_pk → [`IdentityX25519KeyPublic`] (long-lived X25519 identity
+    /// pubkey, derived deterministically from the peer's seed via
+    /// `m / 0x554D' / account' / 4'` per `umbrella_identity::identity_x25519`).
+    /// Used by [`crate::SecretChat`] send/fetch path to look up recipient
+    /// X25519 pubkey for sealed-sender envelope wrapping (V1 wire-format —
+    /// `umbrella_sealed_sender::seal` requires explicit `recipient_x25519`
+    /// argument, no implicit derivation from Ed25519 identity_pk possible).
+    ///
+    /// **Production**: populated from Key Transparency (KT) directory
+    /// lookups when a chat is opened, a new peer is added, or KT
+    /// self-monitoring catches a rotation — wire-up in session 8+ when
+    /// `umbrella-kt` is consumed.
+    /// **Tests**: populated explicitly via [`Self::register_peer_x25519`]
+    /// before calls to `SecretChat::send_text` so envelope sealing finds
+    /// the recipient X25519 pubkey.
+    ///
+    /// **Fail-closed invariant**: если group member для chat'а отсутствует
+    /// в этом directory во время `SecretChat::send_text`, send fails с
+    /// `ClientError::SealedSender(Malformed { reason: "no X25519 pubkey
+    /// registered..." })`. Постулат 14 — никакого silent fallback на
+    /// unsealed delivery (это бы leak'нуло sender identity_pk на gateway
+    /// для одного-conditional-failed peer).
+    ///
+    /// **F-CLIENT-FACADE-1 session 7:** Map peer Ed25519 identity_pk →
+    /// `IdentityX25519KeyPublic`. Populated from KT directory lookups
+    /// (production) or test fixtures (session 7+). Fail-closed if a group
+    /// member is missing from the directory at send time.
+    pub(crate) peer_x25519_directory: RwLock<HashMap<[u8; 32], IdentityX25519KeyPublic>>,
 }
 
 impl ClientCore {
@@ -635,6 +666,7 @@ impl ClientCore {
             groups: RwLock::new(HashMap::new()),
             stub_unwrap_transport: Some(stub_unwrap),
             cloud_msg_seq_counters: RwLock::new(HashMap::new()),
+            peer_x25519_directory: RwLock::new(HashMap::new()),
         }))
     }
 
@@ -716,12 +748,8 @@ impl ClientCore {
         // operations route through `callback.sign_identity` — no
         // IdentitySeed materialisation. Account index hardcoded to 0
         // for Block 7.2; multi-account work is a Block 7.4+ refactor.
-        let hw_keystore = HwBackedKeyStore::new(
-            0,
-            callback.clone(),
-            handle.clone(),
-            verifying_key,
-        )?;
+        let hw_keystore =
+            HwBackedKeyStore::new(0, callback.clone(), handle.clone(), verifying_key)?;
         let keystore: Arc<dyn KeyStore> = Arc::new(hw_keystore);
 
         // F-CLIENT-FACADE-1 session 5: на hw path нет shared IdentitySeed —
@@ -775,6 +803,7 @@ impl ClientCore {
             groups: RwLock::new(HashMap::new()),
             stub_unwrap_transport: Some(stub_unwrap),
             cloud_msg_seq_counters: RwLock::new(HashMap::new()),
+            peer_x25519_directory: RwLock::new(HashMap::new()),
         }))
     }
 
@@ -982,11 +1011,7 @@ impl ClientCore {
     /// Register an MLS group for `chat_id`. Overwrites any existing group
     /// under the same id (last write wins). Called by `CloudChat::create` /
     /// `SecretChat::create` after `UmbrellaGroup::create_private`.
-    pub async fn register_group(
-        &self,
-        chat_id: ChatId,
-        group: Arc<TokioMutex<UmbrellaGroup>>,
-    ) {
+    pub async fn register_group(&self, chat_id: ChatId, group: Arc<TokioMutex<UmbrellaGroup>>) {
         self.groups.write().await.insert(chat_id, group);
     }
 
@@ -1084,6 +1109,66 @@ impl ClientCore {
             panic!("Cloud-mode msg_seq counter overflow for chat {chat_id:?}")
         });
         value
+    }
+
+    /// **F-CLIENT-FACADE-1 session 7 (2026-05-19):** Register a peer's
+    /// long-lived X25519 identity pubkey, indexed by their Ed25519
+    /// identity_pk. This mapping is consulted by Secret-mode
+    /// `SecretChat::send_text` to wrap MLS ciphertext in a sealed-sender
+    /// envelope per recipient (`umbrella_sealed_sender::seal` requires the
+    /// recipient's X25519 pubkey explicitly; it cannot be derived from
+    /// Ed25519 identity_pk, the two keys come from independent BIP-32
+    /// derivation paths per `umbrella_identity::identity_x25519`).
+    ///
+    /// **Idempotent**: повторный вызов с тем же `peer_ed25519_identity_pk`
+    /// перезаписывает предыдущий X25519 mapping (используется при KT
+    /// rotation event'ах в production session 8+; в тестах поведение
+    /// идемпотентно по re-registration).
+    ///
+    /// **Production**: вызывается из KT directory lookup pipeline когда
+    /// chat opened, new peer added, либо KT self-monitoring обнаружил
+    /// rotation. Wiring к `umbrella-kt` — session 8+ scope.
+    /// **Tests**: вызывается явно перед `SecretChat::send_text` для
+    /// каждого peer'а, который ожидаемо является получателем envelope.
+    ///
+    /// **F-CLIENT-FACADE-1 session 7:** register a peer's X25519 identity
+    /// pubkey by their Ed25519 identity_pk. Idempotent; called from KT
+    /// directory lookups (production, session 8+) or test fixtures.
+    pub async fn register_peer_x25519(
+        &self,
+        peer_ed25519_identity_pk: [u8; 32],
+        peer_x25519_pubkey: IdentityX25519KeyPublic,
+    ) {
+        self.peer_x25519_directory
+            .write()
+            .await
+            .insert(peer_ed25519_identity_pk, peer_x25519_pubkey);
+    }
+
+    /// **F-CLIENT-FACADE-1 session 7 (2026-05-19):** Lookup a peer's
+    /// X25519 identity pubkey by their Ed25519 identity_pk. Returns
+    /// `None` if not registered — caller (typically `send_secret_text`)
+    /// should fail-closed with `ClientError::SealedSender` rather than
+    /// fall back to unsealed delivery (post 14: no silent fallback —
+    /// unsealed delivery would leak sender identity_pk on the wire for
+    /// that one recipient).
+    ///
+    /// Read-only; uses a brief read-lock and clones the
+    /// `IdentityX25519KeyPublic` (`Copy`-able 32-byte value type).
+    ///
+    /// **F-CLIENT-FACADE-1 session 7:** lookup peer X25519 pubkey by
+    /// Ed25519 identity_pk. Returns `None` if not registered; caller
+    /// must fail-closed rather than fall back to unsealed delivery.
+    #[must_use]
+    pub async fn lookup_peer_x25519(
+        &self,
+        peer_ed25519_identity_pk: &[u8; 32],
+    ) -> Option<IdentityX25519KeyPublic> {
+        self.peer_x25519_directory
+            .read()
+            .await
+            .get(peer_ed25519_identity_pk)
+            .copied()
     }
 
     /// Закрытая граница неполного HTTP/2 bootstrap.
@@ -1510,10 +1595,9 @@ mod production_boundary_tests {
 
         // Legacy bootstrap: keystore is None (Block 7.2 facades still
         // use inline InMemoryKeyStore via test wiring).
-        let legacy_core =
-            ClientCore::new_for_test(production_shaped_config(), test_seed())
-                .await
-                .expect("legacy bootstrap");
+        let legacy_core = ClientCore::new_for_test(production_shaped_config(), test_seed())
+            .await
+            .expect("legacy bootstrap");
         assert!(
             legacy_core.keystore.is_none(),
             "F-IDENT-1 closure: legacy bootstrap MUST leave core.keystore None — Block 7.2 \
@@ -1597,10 +1681,7 @@ mod production_boundary_tests {
         )
         .await
         .expect("hw bootstrap");
-        let hw_handle = hw_core
-            .hw_identity_handle
-            .as_ref()
-            .expect("handle present");
+        let hw_handle = hw_core.hw_identity_handle.as_ref().expect("handle present");
         let hw_direct = mock
             .verifying_key(hw_handle)
             .expect("callback verifying_key");

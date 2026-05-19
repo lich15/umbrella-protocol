@@ -22,23 +22,28 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use crate::transport::stub::CloudHistoryEntry;
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::ChaCha20Poly1305;
 use openmls_traits::OpenMlsProvider;
 use rand::RngCore;
+use rand_core::OsRng;
 use tokio::sync::Mutex as TokioMutex;
 use umbrella_backup::cloud_wrap::signed_request::{
-    PlatformAttestation, Platform as BackupPlatform, SignedUnwrapRequest,
+    Platform as BackupPlatform, PlatformAttestation, SignedUnwrapRequest,
 };
 use umbrella_backup::cloud_wrap::wire::canonical_nonce;
 use umbrella_backup::cloud_wrap::{
     unwrap_message_key, wrap_message_key, CanonicalAad, MESSAGE_KEY_LEN,
 };
 use umbrella_backup::BackupError;
-use crate::transport::stub::CloudHistoryEntry;
+use umbrella_identity::IdentityX25519KeyPublic;
 use umbrella_mls::{
     parse_key_package_safe, GroupPolicy, IncomingMessage, MlsError, UmbrellaCiphersuite,
     UmbrellaGroup,
+};
+use umbrella_sealed_sender::{
+    seal as sealed_sender_seal, unseal as sealed_sender_unseal, SealedSenderError,
 };
 
 use crate::core::ClientCore;
@@ -326,12 +331,14 @@ pub(crate) async fn send_mls_text(
         to_user_id: chat_id.0.to_vec(),
         ciphertext,
     };
-    gateway.send_envelope(payload).await.map_err(|e| {
-        ClientError::Network(format!("send_envelope: {e}"))
-    })?;
-    let frame = gateway.recv_envelope().await.map_err(|e| {
-        ClientError::Network(format!("recv_envelope: {e}"))
-    })?;
+    gateway
+        .send_envelope(payload)
+        .await
+        .map_err(|e| ClientError::Network(format!("send_envelope: {e}")))?;
+    let frame = gateway
+        .recv_envelope()
+        .await
+        .map_err(|e| ClientError::Network(format!("recv_envelope: {e}")))?;
     match frame.payload {
         ServerPayload::SendAck { msg_id } => decode_server_msg_id(&msg_id),
         ServerPayload::Error { code } => Err(ClientError::Network(format!(
@@ -555,7 +562,10 @@ pub(crate) async fn mls_add_member(
     // capabilities + lifetime). Errors map to MlsError::KeyPackage.
     let kp_in = parse_key_package_safe(key_package_bytes)?;
     let kp = kp_in
-        .validate(core.mls_provider.crypto(), openmls::versions::ProtocolVersion::Mls10)
+        .validate(
+            core.mls_provider.crypto(),
+            openmls::versions::ProtocolVersion::Mls10,
+        )
         .map_err(|_| MlsError::KeyPackage {
             kind: "KeyPackageIn::validate failed (signature, capabilities, or lifetime)",
         })?;
@@ -685,13 +695,8 @@ pub(crate) async fn cloud_publish_at_rest(
     };
 
     let mut rng = rand::thread_rng();
-    let wrapped_key = wrap_message_key(
-        &core.config.wrapping_params,
-        &message_key,
-        &aad,
-        &mut rng,
-    )
-    .map_err(ClientError::Backup)?;
+    let wrapped_key = wrap_message_key(&core.config.wrapping_params, &message_key, &aad, &mut rng)
+        .map_err(ClientError::Backup)?;
 
     let cipher = ChaCha20Poly1305::new((&message_key).into());
     let nonce_bytes = canonical_nonce(&chat_id.0, msg_seq);
@@ -715,8 +720,7 @@ pub(crate) async fn cloud_publish_at_rest(
         wrapped_key,
     };
 
-    core.postman_transport
-        .push_cloud_history(chat_id.0, entry);
+    core.postman_transport.push_cloud_history(chat_id.0, entry);
 
     Ok(())
 }
@@ -864,11 +868,9 @@ pub(crate) async fn cloud_sync_history_impl(
         //    attestation + device signature + freshness nonce here.
         //    PlatformAttestation::new requires non-empty token; stub prefix
         //    matches what tests stage.
-        let attestation = PlatformAttestation::new(
-            BackupPlatform::Testing,
-            b"facade-cloud-sync-stub",
-        )
-        .map_err(ClientError::Backup)?;
+        let attestation =
+            PlatformAttestation::new(BackupPlatform::Testing, b"facade-cloud-sync-stub")
+                .map_err(ClientError::Backup)?;
         let request = SignedUnwrapRequest {
             ephemeral_r: entry.wrapped_key.ephemeral_r,
             chat_id: chat_id.0,
@@ -921,6 +923,361 @@ pub(crate) async fn cloud_sync_history_impl(
     }
 
     Ok(out)
+}
+
+/// **F-CLIENT-FACADE-1 session 7 (2026-05-19):** wrap MLS ciphertext в
+/// sealed-sender envelope V1 (X25519 ephemeral ECDH + ChaCha20-Poly1305 +
+/// inner Ed25519 signature по `DOMAIN_SEP || eph_pub || message`, padded
+/// до umbrella-padding bucket) для одного recipient. Скрывает sender
+/// identity_pk от gateway / blind-postman — только recipient после
+/// `unseal` получает sender Ed25519 identity (через inner-signature
+/// verification).
+///
+/// Использует `core.mls_keystore` как signer (sender identity = Alice's
+/// MLS-уровневая Ed25519 identity_pk через `keystore.identity_public()`
+/// + `keystore.sign_with_identity` — это согласовано с MLS group member
+/// identity_pk, потому что obie стороны derive'ятся из того же seed на
+/// legacy path, либо из независимого MLS seed на hw path — оба consistent
+/// с `member_identities()` enumeration).
+///
+/// CSPRNG для эфемерного X25519 keypair — `OsRng` (PQ-resistant entropy
+/// source через `getrandom`); seal API уже rust-internal-zeroize'ит
+/// inner buffer + padded blob per F-50 closure.
+///
+/// **F-CLIENT-FACADE-1 session 7:** wrap MLS ciphertext in a sealed-sender
+/// V1 envelope for a single recipient. Uses `core.mls_keystore` as the
+/// signer; CSPRNG is `OsRng`. Caller catches `ClientError::SealedSender`
+/// on payload-too-large / padding errors.
+///
+/// # Errors
+///
+/// - `ClientError::SealedSender(PayloadTooLarge)` если mls_ciphertext +
+///   inner header > umbrella_padding max bucket (1 MiB на момент session
+///   7).
+/// - `ClientError::SealedSender(Padding | Crypto)` если pad_to_bucket
+///   либо AEAD encrypt fail (unusual; AAD too large).
+pub(crate) fn sealed_sender_seal_for_secret(
+    core: &Arc<ClientCore>,
+    recipient_x25519: &IdentityX25519KeyPublic,
+    mls_ciphertext: &[u8],
+) -> Result<Vec<u8>> {
+    let mut rng = OsRng;
+    let wire = sealed_sender_seal(
+        core.mls_keystore.as_ref(),
+        recipient_x25519,
+        mls_ciphertext,
+        &mut rng,
+    )?;
+    Ok(wire)
+}
+
+/// **F-CLIENT-FACADE-1 session 7 (2026-05-19):** unwrap a sealed-sender V1
+/// envelope. Returns `(PeerId, mls_ciphertext)` — sender PeerId recovered
+/// from inner Ed25519 signature payload (NOT from the gateway transport
+/// envelope's `from_user_id` field, which the gateway would set to
+/// sender-anonymous metadata либо even adversary-controlled bytes in
+/// blind-postman model). Inner signature is verified inside
+/// `umbrella_sealed_sender::unseal`; signature failure → `InvalidSignature`.
+///
+/// Использует `core.mls_keystore` как recipient — `keystore.x25519_dh_with_identity`
+/// + `keystore.identity_x25519_public()` для AEAD key derivation. Wrong
+/// recipient (envelope sealed для другого peer'а) → AEAD decrypt fail →
+/// `ClientError::SealedSender(Crypto)`. Tampered eph_pub / ciphertext / tag
+/// → same path.
+///
+/// Возвращаемый `OpenedMessage` (Zeroizing<Vec<u8>>) wrapper копируется в
+/// `Vec<u8>` перед return; tested invariants в umbrella-sealed-sender unit
+/// tests гарантируют zeroize-on-drop для эпохи внутри `unseal`.
+///
+/// **F-CLIENT-FACADE-1 session 7:** unwrap a sealed-sender V1 envelope.
+/// Returns `(sender PeerId, mls_ciphertext)`. Sender comes from inner
+/// signature, not gateway routing metadata.
+///
+/// # Errors
+///
+/// - `ClientError::SealedSender(Malformed | UnsupportedVersion)` если wire
+///   format invalid либо V2-only envelope без feature `pq`.
+/// - `ClientError::SealedSender(Crypto)` если AEAD decrypt fails (wrong
+///   recipient, tampered eph_pub/ciphertext/tag).
+/// - `ClientError::SealedSender(InvalidSignature)` если inner Ed25519
+///   signature verification fails.
+/// - `ClientError::SealedSender(MalformedSenderKey)` если sender identity
+///   in inner plaintext не valid Ed25519 curve point.
+pub(crate) fn sealed_sender_unseal_for_secret(
+    core: &Arc<ClientCore>,
+    wire: &[u8],
+) -> Result<(PeerId, Vec<u8>)> {
+    let opened = sealed_sender_unseal(core.mls_keystore.as_ref(), wire)?;
+    let sender_bytes = opened.sender_identity.to_bytes();
+    let mls_ciphertext = opened.message.as_slice().to_vec();
+    Ok((PeerId(sender_bytes), mls_ciphertext))
+}
+
+/// **F-CLIENT-FACADE-1 session 7 (2026-05-19):** Secret-mode send path —
+/// MLS encrypt + sealed-sender envelope wrap per recipient + per-peer
+/// gateway send.
+///
+/// Flow:
+///   1. Если `core.gateway()` is `None` (test fixture без networking) →
+///      legacy stub `MessageId([0u8; 16])` (backwards compat с pre-
+///      session-3 facade tests).
+///   2. Lookup MLS group по `chat_id`. Если absent (stub `SecretChat::open`
+///      с arbitrary chat_id) → legacy raw-bytes path (session 3 wire-
+///      compat), one SendMessage frame с `to_user_id = chat_id.0`.
+///   3. Real path: MLS encrypt `text` через `UmbrellaGroup::encrypt_application`
+///      под short-lived group lock (lock released перед network I/O).
+///   4. Enumerate non-self group members; для каждого — lookup X25519 в
+///      `core.peer_x25519_directory`. Missing → fail-closed
+///      `ClientError::SealedSender(Malformed { reason: "no X25519 pubkey
+///      registered..." })`.
+///   5. Per-recipient seal envelope + `ClientPayload::SendMessage`
+///      `(to_user_id = peer_ed25519, ciphertext = envelope_bytes)`.
+///      Gateway returns `SendMessageAck.msg_id` per frame.
+///   6. Группа с 0 non-self members (только Alice) → возврат legacy stub
+///      `MessageId([0u8; 16])` (нечего sealed-send'ить; группа single-user).
+///   7. N > 1 recipients → возвращается msg_id первого frame'а (production
+///      session 8+ может вернуть `Vec<MessageId>`; session 7 minimum API
+///      preserves backwards compat с send_mls_text signature).
+///
+/// **Sender anonymity invariant**: envelope wire format содержит только
+/// `version(1) || eph_pub(32) || AEAD(...)`. Никакого raw sender_pk на wire
+/// — sender Ed25519 identity_pk encrypted inside AEAD blob, recoverable
+/// только recipient'ом после ECDH key agreement.
+///
+/// **F-CLIENT-FACADE-1 session 7:** Secret-mode send. MLS encrypt + per-
+/// recipient sealed-sender envelope wrap + per-peer gateway SendMessage.
+/// Fail-closed if any group member missing from `peer_x25519_directory`.
+///
+/// # Errors
+///
+/// - `ClientError::Network` — gateway send/recv I/O failed либо unexpected
+///   server payload variant.
+/// - `ClientError::Mls(MlsError)` — MLS encrypt failed (unusual; group
+///   evicted etc.).
+/// - `ClientError::SealedSender` — seal failed (PayloadTooLarge etc.) либо
+///   peer X25519 not registered.
+pub(crate) async fn send_secret_text(
+    core: &Arc<ClientCore>,
+    chat_id: ChatId,
+    text: String,
+) -> Result<MessageId> {
+    let Some(gateway) = core.gateway().await else {
+        // Legacy facade-test fixture path: no networking wired — preserve
+        // session-3 stub return so existing fixtures stay green.
+        return Ok(MessageId([0u8; 16]));
+    };
+
+    // Lookup MLS group for chat_id. Absent → legacy raw-bytes path (no MLS,
+    // no sealed-sender) matching pre-session-5 stub-chat_id behavior for
+    // test fixtures that opened SecretChat via arbitrary chat_id without
+    // calling `create_mls_group`.
+    //
+    // Lookup MLS group; fall back to raw-bytes path if absent.
+    let group_arc = match core.get_group(chat_id).await {
+        Some(g) => g,
+        None => {
+            let payload = ClientPayload::SendMessage {
+                to_user_id: chat_id.0.to_vec(),
+                ciphertext: text.into_bytes(),
+            };
+            gateway
+                .send_envelope(payload)
+                .await
+                .map_err(|e| ClientError::Network(format!("send_envelope: {e}")))?;
+            let frame = gateway
+                .recv_envelope()
+                .await
+                .map_err(|e| ClientError::Network(format!("recv_envelope: {e}")))?;
+            return match frame.payload {
+                ServerPayload::SendAck { msg_id } => decode_server_msg_id(&msg_id),
+                ServerPayload::Error { code } => Err(ClientError::Network(format!(
+                    "gateway rejected SendMessage with code: {code}"
+                ))),
+                other => Err(ClientError::Network(format!(
+                    "expected SendAck after SendMessage, got: {other:?}"
+                ))),
+            };
+        }
+    };
+
+    // MLS encrypt + member enumeration under a single short-lived group lock
+    // — release lock before any network I/O so concurrent fetches don't
+    // serialise behind a slow send.
+    //
+    // Encrypt + enumerate members under one lock; release before I/O.
+    let (mls_ciphertext, member_identities) = {
+        let mut group = group_arc.lock().await;
+        let ct = group.encrypt_application(
+            core.mls_provider.as_ref(),
+            core.mls_keystore.as_ref(),
+            text.as_bytes(),
+        )?;
+        let members = group.member_identities();
+        (ct, members)
+    };
+
+    // Filter out self from recipient list. Self = `mls_keystore.identity_public`
+    // (same Ed25519 pubkey used in our credential — matches `member_identities`
+    // entries derived from credential.serialized_content).
+    let own_identity_pk = core.mls_keystore.identity_public().to_bytes();
+    let peers: Vec<[u8; 32]> = member_identities
+        .into_iter()
+        .filter(|m| m != &own_identity_pk)
+        .collect();
+
+    // Single-member group (only self) — no envelopes to send via sealed-
+    // sender (would be self-send loopback). Return stub msg_id matching
+    // gateway-None convention; group still exists for future add_member.
+    if peers.is_empty() {
+        return Ok(MessageId([0u8; 16]));
+    }
+
+    let mut first_msg_id: Option<MessageId> = None;
+
+    for peer_ed25519 in &peers {
+        let peer_x25519 = core.lookup_peer_x25519(peer_ed25519).await.ok_or_else(|| {
+            ClientError::SealedSender(SealedSenderError::Malformed {
+                reason: "no X25519 pubkey registered for group member \
+                             (call ClientCore::register_peer_x25519 first; \
+                             production: KT directory lookup wired session 8+)",
+            })
+        })?;
+
+        let envelope_bytes = sealed_sender_seal_for_secret(core, &peer_x25519, &mls_ciphertext)?;
+
+        let payload = ClientPayload::SendMessage {
+            to_user_id: peer_ed25519.to_vec(),
+            ciphertext: envelope_bytes,
+        };
+        gateway
+            .send_envelope(payload)
+            .await
+            .map_err(|e| ClientError::Network(format!("send_envelope: {e}")))?;
+        let frame = gateway
+            .recv_envelope()
+            .await
+            .map_err(|e| ClientError::Network(format!("recv_envelope: {e}")))?;
+        let msg_id = match frame.payload {
+            ServerPayload::SendAck { msg_id } => decode_server_msg_id(&msg_id)?,
+            ServerPayload::Error { code } => {
+                return Err(ClientError::Network(format!(
+                    "gateway rejected SendMessage with code: {code}"
+                )))
+            }
+            other => {
+                return Err(ClientError::Network(format!(
+                    "expected SendAck after SendMessage, got: {other:?}"
+                )))
+            }
+        };
+        first_msg_id.get_or_insert(msg_id);
+    }
+
+    Ok(first_msg_id.unwrap_or(MessageId([0u8; 16])))
+}
+
+/// **F-CLIENT-FACADE-1 session 7 (2026-05-19):** Secret-mode fetch path —
+/// drain pending IncomingMessage envelopes из gateway, sealed-sender unseal
+/// каждое, MLS-decrypt recovered ciphertext, собрать `DecryptedMessage` с
+/// sender PeerId recovered из inner-signature (НЕ из `from_user_id` — это
+/// gateway routing metadata, sender-anonymous в blind-postman модели).
+///
+/// Flow:
+///   1. Если `core.gateway()` is `None` (test fixture без networking) →
+///      empty `Vec` (legacy stub matching `fetch_mls_inbox` behavior).
+///   2. Pre-fetch MLS group state once (releases groups RwLock сразу).
+///   3. Drain loop: `tokio::time::timeout(FETCH_INBOX_DRAIN_TIMEOUT, recv)`.
+///      На каждый `IncomingMessage`:
+///        a. `sealed_sender_unseal_for_secret(core, ciphertext)` →
+///           `(sender PeerId, mls_ciphertext)`. **Fail-closed**: tampered
+///           envelope либо wrong-recipient либо malformed inner-signature
+///           возвращают `Err`, entire `fetch_secret_inbox` пропускает
+///           остаток drain'а — adversary не может smuggle'ить unsealed
+///           bytes под видом sealed envelope.
+///        b. MLS-decrypt mls_ciphertext через registered UmbrellaGroup
+///           (либо UTF-8 lossy fallback если group not registered — test
+///           fixture без real MLS state).
+///        c. Build `DecryptedMessage`: sender_pk **из inner signature**,
+///           timestamp/msg_id из gateway envelope (transport-level, sender-
+///           anonymous).
+///   4. Non-IncomingMessage frame (стрэй SendAck etc.) → log + skip
+///      (consistent с `fetch_mls_inbox` behavior до session 7+ multiplexer).
+///   5. Recv error либо timeout → break + return accumulated out.
+///
+/// **Sender anonymity invariant в fetch path**: decrypted message.sender ≠
+/// gateway-routing from_user_id; sender_pk recovered только через
+/// successful AEAD decrypt + inner-signature verify по recipient'у KeyStore.
+///
+/// **F-CLIENT-FACADE-1 session 7:** Secret-mode fetch. Drain envelopes →
+/// sealed-sender unseal (sender from inner signature) → MLS decrypt →
+/// DecryptedMessage. Fail-closed on sealed-sender errors.
+///
+/// # Errors
+///
+/// - `ClientError::SealedSender` — first bad envelope aborts drain (rest
+///   of inbox stays pending; caller retries fetch).
+/// - `ClientError::Network` — gateway recv failed.
+/// - `ClientError::Mls` — MLS decrypt failure (caller treats as
+///   stream-position desync; production session 8+ retries или device
+///   re-sync).
+pub(crate) async fn fetch_secret_inbox(
+    core: &Arc<ClientCore>,
+    chat_id: ChatId,
+) -> Result<Vec<DecryptedMessage>> {
+    let Some(gateway) = core.gateway().await else {
+        return Ok(Vec::new());
+    };
+
+    let group_opt = core.get_group(chat_id).await;
+
+    let mut out = Vec::new();
+    loop {
+        let recv_future = gateway.recv_envelope();
+        match tokio::time::timeout(FETCH_INBOX_DRAIN_TIMEOUT, recv_future).await {
+            Ok(Ok(frame)) => match frame.payload {
+                ServerPayload::IncomingMessage {
+                    ciphertext,
+                    sent_ts_ms,
+                    msg_id,
+                    ..
+                } => {
+                    let message_id = decode_server_msg_id(&msg_id)?;
+                    // Sealed-sender unseal: gateway ciphertext field carries
+                    // envelope wire bytes. Sender PeerId comes from inner
+                    // Ed25519 signature (NOT from frame.from_user_id which
+                    // is sender-anonymous in blind-postman model). Failure
+                    // → fail-closed, abort drain.
+                    let (sender, mls_ciphertext) =
+                        sealed_sender_unseal_for_secret(core, &ciphertext)?;
+
+                    // MLS decrypt the recovered ciphertext under the
+                    // registered group. Falls back to UTF-8 lossy when no
+                    // group registered (test fixture without real MLS state).
+                    let text =
+                        decrypt_text_with_fallback(core, group_opt.as_ref(), &mls_ciphertext).await;
+
+                    out.push(DecryptedMessage {
+                        message_id,
+                        chat_id,
+                        sender,
+                        timestamp: sent_ts_ms,
+                        text,
+                    });
+                }
+                _other => {
+                    tracing::debug!(
+                        "fetch_secret_inbox: discarded non-IncomingMessage envelope from shared recv"
+                    );
+                }
+            },
+            Ok(Err(e)) => {
+                return Err(ClientError::Network(format!(
+                    "fetch_secret_inbox: gateway recv failed: {e}"
+                )));
+            }
+            Err(_timeout) => return Ok(out),
+        }
+    }
 }
 
 /// Parse a sender 32-byte UserId out of an `IncomingMessage.from_user_id`

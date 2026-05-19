@@ -55,8 +55,9 @@ fn d7_attack_five_sibling_devices_independent_budgets_documented() {
     // backend spec. Здесь test показывает: client-side каждое устройство
     // достигает только своего 100-h cap.
     let clock = MockClock::new(1_700_000_000);
-    let mut devices: Vec<ClientBudgetState> =
-        (0..5).map(|_| ClientBudgetState::with_limits(100, 5000)).collect();
+    let mut devices: Vec<ClientBudgetState> = (0..5)
+        .map(|_| ClientBudgetState::with_limits(100, 5000))
+        .collect();
     let mut total_accepted = 0u32;
     for d in &mut devices {
         for _ in 0..100 {

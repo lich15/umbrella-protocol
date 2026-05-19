@@ -109,7 +109,7 @@ use umbrella_pq::xwing_encaps_derand;
     // Expected error: cannot find xwing_encaps_derand in `umbrella_pq`,
     // или `private item / function gated behind feature` warning.
     let expected_keywords = [
-        "xwing_encaps_derand", // symbol name
+        "xwing_encaps_derand",      // symbol name
         "no `xwing_encaps_derand`", // not in root
     ];
     let stderr_lower = stderr.to_lowercase();

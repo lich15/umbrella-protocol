@@ -78,7 +78,8 @@ fn v2_wire_rejected_by_v1_parser() {
     let aad = sample_aad();
     let v1_wrapped = wrap_message_key(&sample_v1_params(), &mk, &aad, &mut rng).unwrap();
     let (pk, _) = xwing_keygen(&mut rng).unwrap();
-    let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
+    let v2_wrapped =
+        wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
     let v2_bytes = v2_wrapped.to_bytes();
     // V1 parser (`WrappedKey::from_bytes`) ожидает 81 bytes; V2 wire 1218 bytes.
@@ -98,7 +99,8 @@ fn caller_side_dispatch_pattern_works() {
     let aad = sample_aad();
     let v1_wrapped = wrap_message_key(&sample_v1_params(), &mk, &aad, &mut rng).unwrap();
     let (pk, _) = xwing_keygen(&mut rng).unwrap();
-    let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
+    let v2_wrapped =
+        wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
     let v1_wire = v1_wrapped.to_bytes();
     let v2_wire = v2_wrapped.to_bytes();
@@ -213,7 +215,8 @@ fn v1_v2_wire_first_byte_distinct() {
     let aad = sample_aad();
     let v1_wrapped = wrap_message_key(&sample_v1_params(), &mk, &aad, &mut rng).unwrap();
     let (pk, _) = xwing_keygen(&mut rng).unwrap();
-    let v2_wrapped = wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
+    let v2_wrapped =
+        wrap_v1_into_v2(&pk, &v1_wrapped, &aad, &test_hedged_witness(), &mut rng).unwrap();
 
     let v1_bytes = v1_wrapped.to_bytes();
     let v2_bytes = v2_wrapped.to_bytes();
