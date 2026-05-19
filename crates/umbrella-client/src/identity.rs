@@ -236,14 +236,23 @@ pub async fn rotate_identity_publish(
 ///   либо post-1.0.0.
 /// - **SLH-DSA backup signature** (Q5 deferred): V2 entry coupling
 ///   deferred — only Ed25519 dual sigs covered.
-/// - **HW callback / handle / verifying_key field updates on
-///   `core`** — `hw_callback` Arc reference stays unchanged (it's the
-///   same callback impl that rotated); `hw_identity_handle` and
-///   `hw_verifying_key` fields are NOT mutated by this facade (they
-///   would require their own RwLock wrap + swap API). Callers needing
-///   to refresh those fields use a follow-up API or reconstruct the
-///   `ClientCore`. For session 9d acceptance the swap of `mls_keystore`
-///   is sufficient to demonstrate post-rotation pubkey visibility.
+/// - **`hw_callback` field swap** — `hw_callback` Arc reference stays
+///   unchanged (it's the same callback impl that rotated identity;
+///   the trait object is correct as-is). The `keystore` Option slot
+///   (separate from `mls_keystore`) likewise stays as it was at
+///   bootstrap — refresh of that slot is a follow-up concern beyond
+///   session 9e scope (would require its own RwLock wrap).
+///
+/// **What this facade DOES (closure across sessions 9d + 9e)**:
+///
+/// - **Session 9d**: `mls_keystore` swap so
+///   `core.mls_keystore().identity_public()` reflects new pubkey.
+/// - **Session 9e (NEW)**: `hw_identity_state` swap so
+///   `core.hw_identity_handle()` / `core.identity_verifying_key()` /
+///   `core.has_hw_identity()` reflect the new identity. Both fields
+///   (`handle` + `verifying_key`) updated under one write-lock for
+///   atomic-state semantics — readers never see a
+///   `(new_handle, old_vk)` либо `(old_handle, new_vk)` transient.
 ///
 /// # Parameters
 ///
@@ -387,6 +396,25 @@ pub async fn rotate_identity_full(
     })?;
     let new_keystore: Arc<dyn KeyStore> = Arc::new(new_hw_keystore);
     core.swap_mls_keystore(new_keystore);
+
+    // **F-CLIENT-FACADE-1 session 9e (2026-05-19):** also refresh the
+    // HW identity state atomically so subsequent
+    // `core.hw_identity_handle()` / `core.identity_verifying_key()` /
+    // `core.has_hw_identity()` reads reflect the new identity. This
+    // closes the session-9d deferral («hw_callback / hw_identity_handle /
+    // hw_verifying_key fields not mutated by this facade»). The swap
+    // updates `handle` + `verifying_key` together under one write-lock —
+    // no transient `(new_handle, old_vk)` либо `(old_handle, new_vk)`
+    // observable by concurrent readers.
+    //
+    // Note: `core.hw_callback` field intentionally NOT swapped — the
+    // callback impl is the same one that performed the rotation, so
+    // the trait object reference is correct as-is. Re-assigning it
+    // would require another RwLock wrap that has no protocol motivation.
+    core.swap_hw_identity(
+        artifact.new_identity_handle.clone(),
+        artifact.new_identity_pubkey,
+    );
 
     // Layer 5: build outcome bundle.
     Ok(RotationOutcomeFull {

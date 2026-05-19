@@ -227,6 +227,52 @@ impl Default for ClientConfig {
 // Block 7.2 stage: most fields are reserved for Blocks 7.3–7.6 (PersistentKeyStore
 // wire-up, HTTP/2 transports, call stack). Suppress dead_code until those
 // blocks introduce the first readers.
+
+/// **F-CLIENT-FACADE-1 session 9e (2026-05-19):** combined hardware-keystore
+/// identity state — opaque handle + cached 32-byte Ed25519 verifying-key.
+/// Wrapped together in a single `std::sync::RwLock` inside [`ClientCore`]
+/// so post-rotation refresh ([`ClientCore::swap_hw_identity`]) updates
+/// both fields atomically — readers never see an `(new_handle, old_vk)`
+/// либо `(old_handle, new_vk)` transient.
+///
+/// `handle` и `verifying_key` оба `Some` либо оба `None` invariant: the
+/// hw-bootstrap path populates both; legacy / test paths leave both
+/// `None`. The atomic swap operation preserves this invariant.
+///
+/// Public for tests + advanced FFI callers; production usage typically
+/// flows through `ClientCore` accessor methods.
+///
+/// **F-CLIENT-FACADE-1 session 9e (2026-05-19):** combined hardware-
+/// keystore identity state — opaque handle + cached 32-byte Ed25519
+/// verifying-key. Wrapped together in a single `std::sync::RwLock`
+/// inside [`ClientCore`] so post-rotation refresh
+/// ([`ClientCore::swap_hw_identity`]) updates both fields atomically —
+/// readers never observe a `(new_handle, old_vk)` or
+/// `(old_handle, new_vk)` transient.
+#[derive(Clone, Debug, Default)]
+pub struct HwIdentityState {
+    /// Opaque alias на TEE-resident identity key. `None` для legacy /
+    /// test path'ей либо до bootstrap.
+    ///
+    /// Opaque alias to the TEE-resident identity key. `None` for legacy /
+    /// test paths or before bootstrap.
+    pub handle: Option<HwKeyHandle>,
+    /// 32-byte Ed25519 verifying-key for the hardware-resident identity.
+    /// `None` если HW identity ещё не bootstrapped (или legacy path'ей).
+    pub verifying_key: Option<[u8; 32]>,
+}
+
+/// Centralized state container shared across facade methods —
+/// identity material, HW callback wiring, KT/MLS provider, transport
+/// stubs, group registry, etc. Constructed via [`Self::new_for_test`]
+/// (in-memory test path) or [`Self::new_with_hw_callback`] (production
+/// HW-backed path). Mutability is field-scoped through interior locks
+/// (e.g. [`Self::mls_keystore`] swap, [`Self::hw_identity_state`]
+/// rotation refresh); the outer `Arc<ClientCore>` is shared read-only.
+///
+/// Centralized state container shared across facade methods. Mutability
+/// is field-scoped through interior locks; the outer `Arc<ClientCore>`
+/// is shared read-only.
 #[allow(dead_code)]
 pub struct ClientCore {
     /// Identity-key Ed25519 — корень доверия. `Some(...)` для legacy/test
@@ -382,41 +428,30 @@ pub struct ClientCore {
     /// resident) is the sole signing-material source.
     pub(crate) hw_callback: Option<Arc<dyn PersistentKeyStoreCallback>>,
 
-    /// `Some(handle)` если identity_sk живёт в hardware keystore и доступен
-    /// только через [`hw_callback`]. `None` для legacy / test path'ей.
+    /// **F-CLIENT-FACADE-1 session 9e (2026-05-19):** combined HW identity
+    /// state (handle + cached verifying-key) under a single `std::sync::RwLock`
+    /// for **atomic refresh post-rotation** via [`Self::swap_hw_identity`].
+    /// Wrapping both fields together (rather than two independent locks)
+    /// guarantees readers never observe an `(new_handle, old_vk)` либо
+    /// `(old_handle, new_vk)` transient — either both fields reflect the
+    /// pre-rotation identity или both reflect the post-rotation identity.
     ///
-    /// `Some(handle)` if identity_sk lives in the hardware keystore and is
-    /// only accessible via [`hw_callback`]. `None` for legacy / test paths.
-    pub(crate) hw_identity_handle: Option<HwKeyHandle>,
-
-    /// Cache 32-байтовых bytes Ed25519 verifying-key для hardware-resident
-    /// identity. Заполняется в [`ClientCore::new_with_hw_callback`] через
-    /// [`bootstrap_hw_identity`] → [`PersistentKeyStoreCallback::verifying_key`].
-    /// `None` для legacy path'ей — в этом случае verifying-key читается из
-    /// `identity.as_ref().unwrap().public()`.
+    /// **Pre-session-9e**: two independent `Option` fields with no swap
+    /// API — rotation orchestration left these stale (session 9d closure
+    /// docs explicitly noted this as a follow-up). Session 9e closes
+    /// the gap so `core.hw_identity_handle()` /
+    /// `core.identity_verifying_key()` post-rotation reflect the new
+    /// identity, completing the full-state-consistency invariant.
     ///
-    /// **F-CLIENT-HW-2 closure carry-over:** до F-CLIENT-HW-2
-    /// `bootstrap_hw_identity` возвращал `[0u8; 32]` placeholder и call site
-    /// в `new_with_hw_callback` его discard'ил через
-    /// `_verifying_key_placeholder`. F-CLIENT-HW-2 закрыл placeholder; этот
-    /// cache field — F-CLIENT-HW-1 closure storage для real verifying-key
-    /// surfaced на bootstrap-time без round-trip к TEE на каждом read.
-    ///
-    /// Cache for the 32-byte Ed25519 verifying-key of the hardware-resident
-    /// identity. Populated by [`ClientCore::new_with_hw_callback`] via
-    /// [`bootstrap_hw_identity`] →
-    /// [`PersistentKeyStoreCallback::verifying_key`]. `None` for legacy
-    /// paths — in that case the verifying-key is read from
-    /// `identity.as_ref().unwrap().public()`.
-    ///
-    /// **F-CLIENT-HW-2 closure carry-over:** before F-CLIENT-HW-2
-    /// `bootstrap_hw_identity` returned a `[0u8; 32]` placeholder and the
-    /// call site in `new_with_hw_callback` discarded it via
-    /// `_verifying_key_placeholder`. F-CLIENT-HW-2 closed the placeholder
-    /// itself; this cache field is the F-CLIENT-HW-1 closure storage for
-    /// the real verifying-key surfaced at bootstrap-time without round-
-    /// tripping to the TEE on every read.
-    pub(crate) hw_verifying_key: Option<[u8; 32]>,
+    /// **F-CLIENT-FACADE-1 session 9e (2026-05-19):** combined HW identity
+    /// state (handle + cached verifying-key) under a single
+    /// `std::sync::RwLock` for **atomic refresh post-rotation** via
+    /// [`Self::swap_hw_identity`]. Wrapping both fields together (rather
+    /// than two independent locks) guarantees readers never observe an
+    /// `(new_handle, old_vk)` or `(old_handle, new_vk)` transient —
+    /// either both fields reflect the pre-rotation identity or both
+    /// reflect the post-rotation identity.
+    pub(crate) hw_identity_state: std::sync::RwLock<HwIdentityState>,
 
     /// Канонический `KeyStore` impl для этого ClientCore.
     /// `Some(HwBackedKeyStore)` если клиент был bootstrapped через
@@ -694,8 +729,7 @@ impl ClientCore {
             user_policy: Arc::new(RwLock::new(CallPolicy::default())),
             config,
             hw_callback: None,
-            hw_identity_handle: None,
-            hw_verifying_key: None,
+            hw_identity_state: std::sync::RwLock::new(HwIdentityState::default()),
             // Legacy/test path: facades still construct InMemoryKeyStore
             // inline. F-IDENT-1 closure leaves this slot None on legacy
             // bootstraps; Block 7.4+ facade refactor will consolidate.
@@ -839,8 +873,10 @@ impl ClientCore {
             user_policy: Arc::new(RwLock::new(CallPolicy::default())),
             config,
             hw_callback: Some(callback),
-            hw_identity_handle: Some(handle),
-            hw_verifying_key: Some(verifying_key),
+            hw_identity_state: std::sync::RwLock::new(HwIdentityState {
+                handle: Some(handle),
+                verifying_key: Some(verifying_key),
+            }),
             keystore: Some(keystore),
             // F-CLIENT-FACADE-1 session 3: gateway is set post-bootstrap.
             gateway: RwLock::new(None),
@@ -857,22 +893,108 @@ impl ClientCore {
     /// (через `new_with_hw_callback`) — identity_sk физически в TEE, не в
     /// Rust heap.
     ///
+    /// **F-CLIENT-FACADE-1 session 9e (2026-05-19):** reads `handle`
+    /// presence under a brief read-lock on [`Self::hw_identity_state`].
+    /// Post-rotation refresh via [`Self::swap_hw_identity`] preserves
+    /// the invariant: HW identity is bootstrapped iff `hw_callback` is
+    /// `Some` AND the current `hw_identity_state.handle` is `Some`.
+    ///
     /// `true` if ClientCore was bootstrapped with a hardware-backed
     /// identity (via `new_with_hw_callback`) — identity_sk physically
     /// resides in the TEE, not the Rust heap.
+    ///
+    /// **F-CLIENT-FACADE-1 session 9e (2026-05-19):** reads handle
+    /// presence under a brief read-lock on [`Self::hw_identity_state`].
     #[must_use]
     pub fn has_hw_identity(&self) -> bool {
-        self.hw_callback.is_some() && self.hw_identity_handle.is_some()
+        self.hw_callback.is_some()
+            && self
+                .hw_identity_state
+                .read()
+                .expect("hw_identity_state rwlock poisoned")
+                .handle
+                .is_some()
     }
 
-    /// Returns a reference to the HW identity handle if bootstrapped with
-    /// hardware backing.
+    /// **F-CLIENT-FACADE-1 session 9e (2026-05-19) signature change:**
+    /// returns an owned `Option<HwKeyHandle>` (cloned under brief read-
+    /// lock) rather than the pre-9e `Option<&HwKeyHandle>` reference.
+    /// The change is required by the new `RwLock<HwIdentityState>`
+    /// storage — returning a borrow would require an unwieldy
+    /// `MappedRwLockReadGuard` либо lifetime gymnastics that conflict
+    /// with `swap_hw_identity` semantics.
     ///
-    /// Returns a reference to the HW identity handle if bootstrapped with
-    /// hardware backing.
+    /// `HwKeyHandle` is cheap to clone (newtype around `String` alias),
+    /// so this is acceptable for production hot paths. Callers that
+    /// previously took `.as_ref().clone()` can drop the redundant
+    /// `.clone()`.
+    ///
+    /// **F-CLIENT-FACADE-1 session 9e (2026-05-19) signature change:**
+    /// returns an owned `Option<HwKeyHandle>` (cloned under a brief
+    /// read-lock) instead of the pre-9e `Option<&HwKeyHandle>`. The
+    /// `RwLock<HwIdentityState>` storage made a borrow accessor
+    /// awkward; `HwKeyHandle` is a cheap newtype around an alias
+    /// `String`, so cloning is a non-issue on production hot paths.
     #[must_use]
-    pub fn hw_identity_handle(&self) -> Option<&HwKeyHandle> {
-        self.hw_identity_handle.as_ref()
+    pub fn hw_identity_handle(&self) -> Option<HwKeyHandle> {
+        self.hw_identity_state
+            .read()
+            .expect("hw_identity_state rwlock poisoned")
+            .handle
+            .clone()
+    }
+
+    /// **F-CLIENT-FACADE-1 session 9e (2026-05-19):** snapshot of the
+    /// HW identity state — opaque handle + cached verifying-key — under
+    /// a single read-lock. Useful for callers that need both fields
+    /// consistently (e.g. FFI bridge passing both to native UI after
+    /// rotation). The returned value is a cloned [`HwIdentityState`];
+    /// concurrent swap via [`Self::swap_hw_identity`] does not affect
+    /// the snapshot.
+    ///
+    /// **F-CLIENT-FACADE-1 session 9e (2026-05-19):** snapshot of HW
+    /// identity state — opaque handle + cached verifying-key — under a
+    /// single read-lock. Useful when both fields must be observed
+    /// consistently.
+    #[must_use]
+    pub fn hw_identity_state_snapshot(&self) -> HwIdentityState {
+        self.hw_identity_state
+            .read()
+            .expect("hw_identity_state rwlock poisoned")
+            .clone()
+    }
+
+    /// **F-CLIENT-FACADE-1 session 9e (2026-05-19):** atomically replace
+    /// the HW identity state. Intended to be called by the rotation
+    /// orchestration layer ([`crate::identity::rotate_identity_full`])
+    /// after a successful publish + `mls_keystore` swap, so that
+    /// `core.hw_identity_handle()` / `core.identity_verifying_key()`
+    /// post-rotation reflect the new identity instead of going stale.
+    ///
+    /// Both fields update under a single write-lock, satisfying the
+    /// atomic-state invariant: readers either see `(old_handle, old_vk)`
+    /// либо `(new_handle, new_vk)` — never a transient mixed view.
+    ///
+    /// **Does NOT mutate** `hw_callback` (the same callback impl just
+    /// rotated identity; the trait object is unchanged) либо `keystore`
+    /// (the `Some(HwBackedKeyStore)` slot from `new_with_hw_callback`).
+    /// Callers needing to refresh those slots use follow-up APIs либо
+    /// reconstruct `ClientCore`.
+    ///
+    /// **F-CLIENT-FACADE-1 session 9e (2026-05-19):** atomically replace
+    /// the HW identity state. Called by rotation orchestration
+    /// ([`crate::identity::rotate_identity_full`]) after a successful
+    /// publish + `mls_keystore` swap so that `core.hw_identity_handle()`
+    /// / `core.identity_verifying_key()` reflect the new identity
+    /// post-rotation. Both fields update under one write-lock — readers
+    /// either see the old state or the new state, never a mix.
+    pub fn swap_hw_identity(&self, new_handle: HwKeyHandle, new_verifying_key: [u8; 32]) {
+        let mut state = self
+            .hw_identity_state
+            .write()
+            .expect("hw_identity_state rwlock poisoned");
+        state.handle = Some(new_handle);
+        state.verifying_key = Some(new_verifying_key);
     }
 
     /// Унифицированный accessor 32-байтового Ed25519 verifying-key для
@@ -937,7 +1059,18 @@ impl ClientCore {
     ///   construction via [`Self::new_for_test`] /
     ///   [`Self::new_with_hw_callback`] guarantees exactly one branch.
     pub fn identity_verifying_key(&self) -> Result<[u8; 32]> {
-        if let Some(vk) = self.hw_verifying_key {
+        // F-CLIENT-FACADE-1 session 9e (2026-05-19): the HW verifying-key
+        // now lives inside `RwLock<HwIdentityState>`; read under a brief
+        // read-lock and copy out the 32-byte value. Lock is released
+        // before the Option destructuring и the legacy fallback. After
+        // rotation via `swap_hw_identity` this accessor reflects the
+        // new identity (session 9e closure of session 9d deferral).
+        let hw_vk = self
+            .hw_identity_state
+            .read()
+            .expect("hw_identity_state rwlock poisoned")
+            .verifying_key;
+        if let Some(vk) = hw_vk {
             return Ok(vk);
         }
         if let Some(id) = self.identity.as_ref() {
@@ -1653,13 +1786,16 @@ mod production_boundary_tests {
             core.hw_callback.is_none(),
             "F-CLIENT-HW-1: legacy bootstrap MUST leave hw_callback None"
         );
+        // F-CLIENT-FACADE-1 session 9e: read combined state under one
+        // snapshot (cloned under read-lock; concurrent swap is fine).
+        let hw_state = core.hw_identity_state_snapshot();
         assert!(
-            core.hw_identity_handle.is_none(),
-            "F-CLIENT-HW-1: legacy bootstrap MUST leave hw_identity_handle None"
+            hw_state.handle.is_none(),
+            "F-CLIENT-HW-1: legacy bootstrap MUST leave hw_identity_state.handle None"
         );
         assert!(
-            core.hw_verifying_key.is_none(),
-            "F-CLIENT-HW-1: legacy bootstrap MUST leave hw_verifying_key None"
+            hw_state.verifying_key.is_none(),
+            "F-CLIENT-HW-1: legacy bootstrap MUST leave hw_identity_state.verifying_key None"
         );
 
         let accessor_vk = core
@@ -1714,26 +1850,28 @@ mod production_boundary_tests {
             core.hw_callback.is_some(),
             "F-CLIENT-HW-1: hw bootstrap MUST populate hw_callback"
         );
+        // F-CLIENT-FACADE-1 session 9e: combined state read.
+        let hw_state = core.hw_identity_state_snapshot();
         assert!(
-            core.hw_identity_handle.is_some(),
-            "F-CLIENT-HW-1: hw bootstrap MUST populate hw_identity_handle"
+            hw_state.handle.is_some(),
+            "F-CLIENT-HW-1: hw bootstrap MUST populate hw_identity_state.handle"
         );
         assert!(
-            core.hw_verifying_key.is_some(),
-            "F-CLIENT-HW-1: hw bootstrap MUST populate hw_verifying_key cache"
+            hw_state.verifying_key.is_some(),
+            "F-CLIENT-HW-1: hw bootstrap MUST populate hw_identity_state.verifying_key cache"
         );
 
         // Cached verifying_key MUST equal the keystore's verifying_key
         // for the bound handle — no drift between bootstrap-time fetch
         // and runtime callback query (the smoke-test inside
         // bootstrap_hw_identity also covers this, but defense in depth).
-        let handle = core.hw_identity_handle.as_ref().expect("handle present");
+        let handle = hw_state.handle.as_ref().expect("handle present");
         let direct_vk = mock
             .verifying_key(handle)
             .expect("callback yields verifying_key");
-        let cached_vk = core
-            .hw_verifying_key
-            .expect("hw_verifying_key cache populated");
+        let cached_vk = hw_state
+            .verifying_key
+            .expect("hw_identity_state.verifying_key cache populated");
         assert_eq!(
             cached_vk, direct_vk,
             "F-CLIENT-HW-1: cached hw_verifying_key MUST equal callback's verifying_key"
@@ -1806,7 +1944,10 @@ mod production_boundary_tests {
         let msg = b"F-IDENT-1 closure keystore round-trip";
         let sig = keystore.sign_with_identity(msg);
 
-        let hw_vk_bytes = hw_core.hw_verifying_key.expect("hw_verifying_key");
+        let hw_vk_bytes = hw_core
+            .hw_identity_state_snapshot()
+            .verifying_key
+            .expect("hw_identity_state.verifying_key");
         let dalek_vk = ed25519_dalek::VerifyingKey::from_bytes(&hw_vk_bytes)
             .expect("hw_verifying_key decodes as Ed25519 point");
         let dalek_sig = ed25519_dalek::Signature::from_bytes(&sig.to_bytes());
@@ -1851,9 +1992,9 @@ mod production_boundary_tests {
         )
         .await
         .expect("hw bootstrap");
-        let hw_handle = hw_core.hw_identity_handle.as_ref().expect("handle present");
+        let hw_handle = hw_core.hw_identity_handle().expect("handle present");
         let hw_direct = mock
-            .verifying_key(hw_handle)
+            .verifying_key(&hw_handle)
             .expect("callback verifying_key");
         let hw_accessor = hw_core
             .identity_verifying_key()
