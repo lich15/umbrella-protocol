@@ -91,8 +91,14 @@ pub use authorization_entries::{
     KtLogState, RotationReason, DEVICE_PUBKEY_LEN,
 };
 pub use codec::{
-    decode_kt_entry_identity_rotation, decode_signed_epoch_root, encode_kt_entry_identity_rotation,
-    encode_signed_epoch_root, signed_epoch_root_wire_len, KT_ENTRY_IDENTITY_ROTATION_PREFIX,
+    decode_kt_authorization_entry, decode_kt_entry_device_authorization_approval,
+    decode_kt_entry_device_authorization_revocation, decode_kt_entry_identity_rotation,
+    decode_signed_epoch_root, encode_kt_entry_device_authorization_approval,
+    encode_kt_entry_device_authorization_revocation, encode_kt_entry_identity_rotation,
+    encode_signed_epoch_root, signed_epoch_root_wire_len, KtAuthorizationEntry,
+    KT_ENTRY_DEVICE_AUTHORIZATION_APPROVAL_PREFIX, KT_ENTRY_DEVICE_AUTHORIZATION_APPROVAL_WIRE_LEN,
+    KT_ENTRY_DEVICE_AUTHORIZATION_REVOCATION_PREFIX,
+    KT_ENTRY_DEVICE_AUTHORIZATION_REVOCATION_WIRE_LEN, KT_ENTRY_IDENTITY_ROTATION_PREFIX,
     KT_ENTRY_IDENTITY_ROTATION_WIRE_LEN, MAX_WITNESSES_PER_EPOCH, SIGNATURE_WIRE_LEN,
     SIGNED_EPOCH_ROOT_HEADER_LEN, SIGNED_EPOCH_ROOT_WIRE_VERSION,
 };

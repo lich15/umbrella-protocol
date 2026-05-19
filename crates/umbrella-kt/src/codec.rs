@@ -232,9 +232,40 @@ pub fn decode_signed_epoch_root(bytes: &[u8]) -> Result<SignedEpochRoot> {
 // guarantees structural / framing correctness. Cryptographic verification
 // is a layer above (apply_identity_rotation в umbrella-kt::authorization_entries).
 
-use umbrella_backup::cloud_wrap::{IdentityRotationRecord, IDENTITY_ROTATION_LEN};
+use umbrella_backup::cloud_wrap::{
+    DeviceAuthorizationApproval, DeviceAuthorizationRevocation, IdentityRotationRecord,
+    DEVICE_AUTH_APPROVAL_LEN, DEVICE_AUTH_REVOKE_LEN, IDENTITY_ROTATION_LEN,
+};
 
 use crate::authorization_entries::EntryType;
+
+/// EntryType prefix byte для wire-framed KT entry, содержащей
+/// `DeviceAuthorizationApproval` (ADR-008 §EntryType `0x04`).
+///
+/// EntryType prefix byte for the wire-framed KT entry carrying a
+/// `DeviceAuthorizationApproval` (ADR-008 EntryType `0x04`).
+pub const KT_ENTRY_DEVICE_AUTHORIZATION_APPROVAL_PREFIX: u8 = 0x04;
+
+/// Размер wire-format KT entry с `DeviceAuthorizationApproval` (1 byte prefix +
+/// 146 bytes record = 147 bytes, fixed).
+///
+/// Wire-format size of a KT entry carrying a `DeviceAuthorizationApproval`
+/// (1 byte prefix + 146 bytes record = 147 bytes, fixed).
+pub const KT_ENTRY_DEVICE_AUTHORIZATION_APPROVAL_WIRE_LEN: usize = 1 + DEVICE_AUTH_APPROVAL_LEN;
+
+/// EntryType prefix byte для wire-framed KT entry, содержащей
+/// `DeviceAuthorizationRevocation` (ADR-008 §EntryType `0x05`).
+///
+/// EntryType prefix byte for the wire-framed KT entry carrying a
+/// `DeviceAuthorizationRevocation` (ADR-008 EntryType `0x05`).
+pub const KT_ENTRY_DEVICE_AUTHORIZATION_REVOCATION_PREFIX: u8 = 0x05;
+
+/// Размер wire-format KT entry с `DeviceAuthorizationRevocation` (1 byte
+/// prefix + 137 bytes record = 138 bytes, fixed).
+///
+/// Wire-format size of a KT entry carrying a `DeviceAuthorizationRevocation`
+/// (1 byte prefix + 137 bytes record = 138 bytes, fixed).
+pub const KT_ENTRY_DEVICE_AUTHORIZATION_REVOCATION_WIRE_LEN: usize = 1 + DEVICE_AUTH_REVOKE_LEN;
 
 /// EntryType prefix byte для wire-framed KT entry, содержащей
 /// `IdentityRotationRecord` (ADR-008 §EntryType `0x06`).
@@ -313,6 +344,214 @@ pub fn decode_kt_entry_identity_rotation(bytes: &[u8]) -> Result<IdentityRotatio
         }
         _ => KtError::InvalidAuthorizationEntryWire("record_invalid_wire_format"),
     })
+}
+
+// ============================================================================
+// KT authorization-entry framing — DeviceAuthorizationApproval (0x04)
+// ============================================================================
+//
+// Wire layout (147 bytes, fixed):
+//   1 byte    : EntryType prefix = 0x04 (DeviceAuthorizationApproval)
+//   146 bytes : DeviceAuthorizationApproval::encode() body
+//
+// Body sub-layout (см. umbrella_backup::cloud_wrap::authorization):
+//   1 byte    : version (AUTHORIZATION_WIRE_VERSION = 0x01)
+//   32 bytes  : new_device_pubkey (Ed25519)
+//   32 bytes  : approver_device_pubkey (Ed25519)
+//   8 bytes   : authorized_since_timestamp_u64_be
+//   8 bytes   : history_cutoff_timestamp_u64_be (0 = full history)
+//   1 byte    : policy_flags (bit 0 = high-security; bits 1..7 reserved)
+//   64 bytes  : approver_signature
+
+/// Wire-encode `DeviceAuthorizationApproval` как KT entry с `0x04` префиксом.
+/// Возвращает ровно 147 байт (deterministic, fixed-length).
+///
+/// Wire-encode `DeviceAuthorizationApproval` as a KT entry with a `0x04`
+/// prefix. Returns exactly 147 bytes, deterministic.
+#[must_use]
+pub fn encode_kt_entry_device_authorization_approval(
+    record: &DeviceAuthorizationApproval,
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(KT_ENTRY_DEVICE_AUTHORIZATION_APPROVAL_WIRE_LEN);
+    out.push(KT_ENTRY_DEVICE_AUTHORIZATION_APPROVAL_PREFIX);
+    out.extend_from_slice(&record.encode());
+    debug_assert_eq!(out.len(), KT_ENTRY_DEVICE_AUTHORIZATION_APPROVAL_WIRE_LEN);
+    debug_assert_eq!(
+        EntryType::DeviceAuthorizationApproval as u8,
+        KT_ENTRY_DEVICE_AUTHORIZATION_APPROVAL_PREFIX,
+        "prefix const must match EntryType::DeviceAuthorizationApproval tag"
+    );
+    out
+}
+
+/// Wire-decode `DeviceAuthorizationApproval` из KT entry bytes с `0x04`
+/// префиксом. Strict — отвергает любую malformed конфигурацию.
+///
+/// # Errors
+///
+/// - [`KtError::InvalidAuthorizationEntryWire`] с теми же tags что и для
+///   `decode_kt_entry_identity_rotation` (symmetric error model).
+pub fn decode_kt_entry_device_authorization_approval(
+    bytes: &[u8],
+) -> Result<DeviceAuthorizationApproval> {
+    use umbrella_backup::BackupError;
+
+    if bytes.is_empty() {
+        return Err(KtError::InvalidAuthorizationEntryWire("too_short"));
+    }
+    if bytes[0] != KT_ENTRY_DEVICE_AUTHORIZATION_APPROVAL_PREFIX {
+        return Err(KtError::InvalidAuthorizationEntryWire("wrong_prefix"));
+    }
+    if bytes.len() != KT_ENTRY_DEVICE_AUTHORIZATION_APPROVAL_WIRE_LEN {
+        return Err(KtError::InvalidAuthorizationEntryWire("wrong_length"));
+    }
+    DeviceAuthorizationApproval::from_bytes(&bytes[1..]).map_err(|e| match e {
+        BackupError::WrappedKeyVersionMismatch { .. } => {
+            KtError::InvalidAuthorizationEntryWire("record_unknown_wire_version")
+        }
+        _ => KtError::InvalidAuthorizationEntryWire("record_invalid_wire_format"),
+    })
+}
+
+// ============================================================================
+// KT authorization-entry framing — DeviceAuthorizationRevocation (0x05)
+// ============================================================================
+//
+// Wire layout (138 bytes, fixed):
+//   1 byte    : EntryType prefix = 0x05 (DeviceAuthorizationRevocation)
+//   137 bytes : DeviceAuthorizationRevocation::encode() body
+//
+// Body sub-layout (см. umbrella_backup::cloud_wrap::authorization):
+//   1 byte    : version (AUTHORIZATION_WIRE_VERSION = 0x01)
+//   32 bytes  : revoked_device_pubkey (Ed25519)
+//   32 bytes  : revoker_device_pubkey (Ed25519)
+//   8 bytes   : revocation_timestamp_u64_be
+//   64 bytes  : revoker_signature
+
+/// Wire-encode `DeviceAuthorizationRevocation` как KT entry с `0x05`
+/// префиксом. Возвращает ровно 138 байт (deterministic, fixed-length).
+///
+/// Wire-encode `DeviceAuthorizationRevocation` as a KT entry with a `0x05`
+/// prefix. Returns exactly 138 bytes, deterministic.
+#[must_use]
+pub fn encode_kt_entry_device_authorization_revocation(
+    record: &DeviceAuthorizationRevocation,
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(KT_ENTRY_DEVICE_AUTHORIZATION_REVOCATION_WIRE_LEN);
+    out.push(KT_ENTRY_DEVICE_AUTHORIZATION_REVOCATION_PREFIX);
+    out.extend_from_slice(&record.encode());
+    debug_assert_eq!(out.len(), KT_ENTRY_DEVICE_AUTHORIZATION_REVOCATION_WIRE_LEN);
+    debug_assert_eq!(
+        EntryType::DeviceAuthorizationRevocation as u8,
+        KT_ENTRY_DEVICE_AUTHORIZATION_REVOCATION_PREFIX,
+        "prefix const must match EntryType::DeviceAuthorizationRevocation tag"
+    );
+    out
+}
+
+/// Wire-decode `DeviceAuthorizationRevocation` из KT entry bytes с `0x05`
+/// префиксом. Strict — отвергает любую malformed конфигурацию.
+///
+/// # Errors
+///
+/// - [`KtError::InvalidAuthorizationEntryWire`] с теми же tags что и для
+///   `decode_kt_entry_identity_rotation` (symmetric error model).
+pub fn decode_kt_entry_device_authorization_revocation(
+    bytes: &[u8],
+) -> Result<DeviceAuthorizationRevocation> {
+    use umbrella_backup::BackupError;
+
+    if bytes.is_empty() {
+        return Err(KtError::InvalidAuthorizationEntryWire("too_short"));
+    }
+    if bytes[0] != KT_ENTRY_DEVICE_AUTHORIZATION_REVOCATION_PREFIX {
+        return Err(KtError::InvalidAuthorizationEntryWire("wrong_prefix"));
+    }
+    if bytes.len() != KT_ENTRY_DEVICE_AUTHORIZATION_REVOCATION_WIRE_LEN {
+        return Err(KtError::InvalidAuthorizationEntryWire("wrong_length"));
+    }
+    DeviceAuthorizationRevocation::from_bytes(&bytes[1..]).map_err(|e| match e {
+        BackupError::WrappedKeyVersionMismatch { .. } => {
+            KtError::InvalidAuthorizationEntryWire("record_unknown_wire_version")
+        }
+        _ => KtError::InvalidAuthorizationEntryWire("record_invalid_wire_format"),
+    })
+}
+
+// ============================================================================
+// KT authorization-entry dispatcher — tag-routed decoding
+// ============================================================================
+
+/// Один из трёх ADR-008 wire-framed authorization-entry типов. Возвращается
+/// dispatcher'ом [`decode_kt_authorization_entry`], который routes по первому
+/// байту wire format'а.
+///
+/// One of the three ADR-008 wire-framed authorization-entry types. Returned
+/// by the dispatcher [`decode_kt_authorization_entry`], which routes by the
+/// first wire-format byte.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KtAuthorizationEntry {
+    /// EntryType `0x04` — `DeviceAuthorizationApproval`.
+    Approval(DeviceAuthorizationApproval),
+    /// EntryType `0x05` — `DeviceAuthorizationRevocation`.
+    Revocation(DeviceAuthorizationRevocation),
+    /// EntryType `0x06` — `IdentityRotationRecord`.
+    IdentityRotation(IdentityRotationRecord),
+}
+
+impl KtAuthorizationEntry {
+    /// Возвращает соответствующий [`EntryType`] для текущего variant'а
+    /// (i.e. `0x04`, `0x05`, либо `0x06` per ADR-008).
+    ///
+    /// Returns the corresponding [`EntryType`] for the current variant (i.e.
+    /// `0x04`, `0x05`, or `0x06` per ADR-008).
+    #[must_use]
+    pub const fn entry_type(&self) -> EntryType {
+        match self {
+            Self::Approval(_) => EntryType::DeviceAuthorizationApproval,
+            Self::Revocation(_) => EntryType::DeviceAuthorizationRevocation,
+            Self::IdentityRotation(_) => EntryType::IdentityRotationRecord,
+        }
+    }
+}
+
+/// Высокоуровневый dispatcher: parse'ит wire-bytes и route'ит к
+/// соответствующему per-type decoder'у на основе первого байта (EntryType
+/// prefix). Возвращает [`KtAuthorizationEntry`] enum carrying decoded record.
+///
+/// **Defence-in-depth ordering**: empty input → `too_short` ДО prefix
+/// dispatch'а; unknown prefix → `wrong_prefix`. Malformed body внутри
+/// одного из known prefix'ов → tag из per-type decoder'а
+/// (record_invalid_wire_format / record_unknown_wire_version / wrong_length).
+///
+/// High-level dispatcher: parses wire bytes and routes to the per-type
+/// decoder based on the first byte (EntryType prefix). Returns a
+/// [`KtAuthorizationEntry`] enum carrying the decoded record.
+///
+/// # Errors
+///
+/// - [`KtError::InvalidAuthorizationEntryWire("too_short")`] для empty input.
+/// - [`KtError::InvalidAuthorizationEntryWire("wrong_prefix")`] для byte[0]
+///   ∉ {0x04, 0x05, 0x06}.
+/// - Per-type decoder errors propagate через `wrong_length` /
+///   `record_invalid_wire_format` / `record_unknown_wire_version`.
+pub fn decode_kt_authorization_entry(bytes: &[u8]) -> Result<KtAuthorizationEntry> {
+    if bytes.is_empty() {
+        return Err(KtError::InvalidAuthorizationEntryWire("too_short"));
+    }
+    match bytes[0] {
+        KT_ENTRY_DEVICE_AUTHORIZATION_APPROVAL_PREFIX => {
+            decode_kt_entry_device_authorization_approval(bytes).map(KtAuthorizationEntry::Approval)
+        }
+        KT_ENTRY_DEVICE_AUTHORIZATION_REVOCATION_PREFIX => {
+            decode_kt_entry_device_authorization_revocation(bytes)
+                .map(KtAuthorizationEntry::Revocation)
+        }
+        KT_ENTRY_IDENTITY_ROTATION_PREFIX => {
+            decode_kt_entry_identity_rotation(bytes).map(KtAuthorizationEntry::IdentityRotation)
+        }
+        _ => Err(KtError::InvalidAuthorizationEntryWire("wrong_prefix")),
+    }
 }
 
 #[cfg(test)]
@@ -1010,6 +1249,405 @@ mod tests {
                 err,
                 KtError::InvalidAuthorizationEntryWire("record_unknown_wire_version")
             ));
+        }
+    }
+
+    // ========================================================================
+    // KT entry DeviceAuthorizationApproval codec tests (session 9a')
+    // ========================================================================
+
+    mod kt_entry_device_authorization_approval_tests {
+        use super::*;
+
+        fn fresh_approval_record() -> DeviceAuthorizationApproval {
+            DeviceAuthorizationApproval {
+                version: 0x01,
+                new_device_pubkey: [0x11; 32],
+                approver_device_pubkey: [0x22; 32],
+                authorized_since_timestamp: 1_715_000_000_000,
+                history_cutoff_timestamp: 0, // full history
+                policy_flags: 0x00,
+                approver_signature: [0x33; 64],
+            }
+        }
+
+        #[test]
+        fn wire_constants_match_layout_documentation() {
+            assert_eq!(KT_ENTRY_DEVICE_AUTHORIZATION_APPROVAL_PREFIX, 0x04);
+            assert_eq!(KT_ENTRY_DEVICE_AUTHORIZATION_APPROVAL_WIRE_LEN, 147);
+            assert_eq!(KT_ENTRY_DEVICE_AUTHORIZATION_APPROVAL_WIRE_LEN, 1 + 146);
+            assert_eq!(
+                KT_ENTRY_DEVICE_AUTHORIZATION_APPROVAL_PREFIX,
+                EntryType::DeviceAuthorizationApproval as u8
+            );
+        }
+
+        #[test]
+        fn encode_then_decode_round_trip_preserves_all_fields() {
+            let original = fresh_approval_record();
+            let bytes = encode_kt_entry_device_authorization_approval(&original);
+            assert_eq!(bytes.len(), KT_ENTRY_DEVICE_AUTHORIZATION_APPROVAL_WIRE_LEN);
+            let decoded = decode_kt_entry_device_authorization_approval(&bytes)
+                .expect("decode honest 147-byte frame");
+            assert_eq!(decoded, original);
+        }
+
+        #[test]
+        fn encode_produces_deterministic_output_for_same_record() {
+            let record = fresh_approval_record();
+            let a = encode_kt_entry_device_authorization_approval(&record);
+            let b = encode_kt_entry_device_authorization_approval(&record);
+            assert_eq!(a, b);
+        }
+
+        #[test]
+        fn encoded_first_byte_is_kt_entry_device_authorization_approval_prefix_0x04() {
+            let bytes = encode_kt_entry_device_authorization_approval(&fresh_approval_record());
+            assert_eq!(bytes[0], 0x04);
+        }
+
+        #[test]
+        fn decode_rejects_empty_input_with_too_short_tag() {
+            let err =
+                decode_kt_entry_device_authorization_approval(&[]).expect_err("empty must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("too_short")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_wrong_prefix_byte_0x06_identity_rotation_tag() {
+            // 0x06 = IdentityRotation. Routing approval decoder to a
+            // rotation-prefixed frame must reject — guards against caller
+            // dispatching to the wrong per-type decoder.
+            let mut bytes = encode_kt_entry_device_authorization_approval(&fresh_approval_record());
+            bytes[0] = 0x06;
+            let err = decode_kt_entry_device_authorization_approval(&bytes)
+                .expect_err("prefix 0x06 must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("wrong_prefix")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_input_below_wire_length() {
+            let mut bytes = encode_kt_entry_device_authorization_approval(&fresh_approval_record());
+            bytes.pop();
+            let err = decode_kt_entry_device_authorization_approval(&bytes)
+                .expect_err("146-byte must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("wrong_length")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_input_with_trailing_byte() {
+            let mut bytes = encode_kt_entry_device_authorization_approval(&fresh_approval_record());
+            bytes.push(0xAB);
+            let err = decode_kt_entry_device_authorization_approval(&bytes)
+                .expect_err("148-byte must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("wrong_length")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_body_with_unknown_wire_version_byte() {
+            let mut bytes = encode_kt_entry_device_authorization_approval(&fresh_approval_record());
+            bytes[1] = 0xFF; // body's version byte
+            let err = decode_kt_entry_device_authorization_approval(&bytes)
+                .expect_err("version 0xFF must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("record_unknown_wire_version")
+            ));
+        }
+    }
+
+    // ========================================================================
+    // KT entry DeviceAuthorizationRevocation codec tests (session 9a')
+    // ========================================================================
+
+    mod kt_entry_device_authorization_revocation_tests {
+        use super::*;
+
+        fn fresh_revocation_record() -> DeviceAuthorizationRevocation {
+            DeviceAuthorizationRevocation {
+                version: 0x01,
+                revoked_device_pubkey: [0x44; 32],
+                revoker_device_pubkey: [0x55; 32],
+                revocation_timestamp: 1_715_000_000_000,
+                revoker_signature: [0x66; 64],
+            }
+        }
+
+        #[test]
+        fn wire_constants_match_layout_documentation() {
+            assert_eq!(KT_ENTRY_DEVICE_AUTHORIZATION_REVOCATION_PREFIX, 0x05);
+            assert_eq!(KT_ENTRY_DEVICE_AUTHORIZATION_REVOCATION_WIRE_LEN, 138);
+            assert_eq!(KT_ENTRY_DEVICE_AUTHORIZATION_REVOCATION_WIRE_LEN, 1 + 137);
+            assert_eq!(
+                KT_ENTRY_DEVICE_AUTHORIZATION_REVOCATION_PREFIX,
+                EntryType::DeviceAuthorizationRevocation as u8
+            );
+        }
+
+        #[test]
+        fn encode_then_decode_round_trip_preserves_all_fields() {
+            let original = fresh_revocation_record();
+            let bytes = encode_kt_entry_device_authorization_revocation(&original);
+            assert_eq!(
+                bytes.len(),
+                KT_ENTRY_DEVICE_AUTHORIZATION_REVOCATION_WIRE_LEN
+            );
+            let decoded = decode_kt_entry_device_authorization_revocation(&bytes)
+                .expect("decode honest 138-byte frame");
+            assert_eq!(decoded, original);
+        }
+
+        #[test]
+        fn encoded_first_byte_is_kt_entry_device_authorization_revocation_prefix_0x05() {
+            let bytes = encode_kt_entry_device_authorization_revocation(&fresh_revocation_record());
+            assert_eq!(bytes[0], 0x05);
+        }
+
+        #[test]
+        fn decode_rejects_empty_input_with_too_short_tag() {
+            let err =
+                decode_kt_entry_device_authorization_revocation(&[]).expect_err("empty must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("too_short")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_wrong_prefix_byte_0x04_approval_tag() {
+            // 0x04 = DeviceAuthorizationApproval. Routing revocation decoder
+            // to an approval-prefixed frame must reject.
+            let mut bytes =
+                encode_kt_entry_device_authorization_revocation(&fresh_revocation_record());
+            bytes[0] = 0x04;
+            let err = decode_kt_entry_device_authorization_revocation(&bytes)
+                .expect_err("prefix 0x04 must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("wrong_prefix")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_wrong_prefix_byte_0x06_identity_rotation_tag() {
+            let mut bytes =
+                encode_kt_entry_device_authorization_revocation(&fresh_revocation_record());
+            bytes[0] = 0x06;
+            let err = decode_kt_entry_device_authorization_revocation(&bytes)
+                .expect_err("prefix 0x06 must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("wrong_prefix")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_input_below_wire_length() {
+            let mut bytes =
+                encode_kt_entry_device_authorization_revocation(&fresh_revocation_record());
+            bytes.pop();
+            let err = decode_kt_entry_device_authorization_revocation(&bytes)
+                .expect_err("137-byte must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("wrong_length")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_input_with_trailing_byte() {
+            let mut bytes =
+                encode_kt_entry_device_authorization_revocation(&fresh_revocation_record());
+            bytes.push(0x77);
+            let err = decode_kt_entry_device_authorization_revocation(&bytes)
+                .expect_err("139-byte must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("wrong_length")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_body_with_unknown_wire_version_byte() {
+            let mut bytes =
+                encode_kt_entry_device_authorization_revocation(&fresh_revocation_record());
+            bytes[1] = 0xFF;
+            let err = decode_kt_entry_device_authorization_revocation(&bytes)
+                .expect_err("version 0xFF must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("record_unknown_wire_version")
+            ));
+        }
+    }
+
+    // ========================================================================
+    // KT authorization-entry dispatcher tests (session 9a')
+    // ========================================================================
+
+    mod kt_authorization_entry_dispatcher_tests {
+        use super::*;
+        use umbrella_backup::cloud_wrap::RotationReason;
+
+        fn fresh_approval() -> DeviceAuthorizationApproval {
+            DeviceAuthorizationApproval {
+                version: 0x01,
+                new_device_pubkey: [0x11; 32],
+                approver_device_pubkey: [0x22; 32],
+                authorized_since_timestamp: 1_715_000_000_000,
+                history_cutoff_timestamp: 0,
+                policy_flags: 0x00,
+                approver_signature: [0x33; 64],
+            }
+        }
+
+        fn fresh_revocation() -> DeviceAuthorizationRevocation {
+            DeviceAuthorizationRevocation {
+                version: 0x01,
+                revoked_device_pubkey: [0x44; 32],
+                revoker_device_pubkey: [0x55; 32],
+                revocation_timestamp: 1_715_000_000_000,
+                revoker_signature: [0x66; 64],
+            }
+        }
+
+        fn fresh_rotation() -> IdentityRotationRecord {
+            IdentityRotationRecord {
+                version: 0x01,
+                old_identity_pubkey: [0xAA; 32],
+                new_identity_pubkey: [0xBB; 32],
+                rotation_timestamp: 1_715_000_000_000,
+                rotation_reason: RotationReason::PlannedRotation,
+                old_identity_signature: [0xCC; 64],
+                new_identity_signature: [0xDD; 64],
+                code_recovery_public_half_proof: [0xEE; 32],
+            }
+        }
+
+        #[test]
+        fn dispatch_routes_0x04_to_approval_decoder() {
+            let original = fresh_approval();
+            let bytes = encode_kt_entry_device_authorization_approval(&original);
+            match decode_kt_authorization_entry(&bytes).expect("dispatch") {
+                KtAuthorizationEntry::Approval(decoded) => assert_eq!(decoded, original),
+                other => panic!("expected Approval variant, got {other:?}"),
+            }
+        }
+
+        #[test]
+        fn dispatch_routes_0x05_to_revocation_decoder() {
+            let original = fresh_revocation();
+            let bytes = encode_kt_entry_device_authorization_revocation(&original);
+            match decode_kt_authorization_entry(&bytes).expect("dispatch") {
+                KtAuthorizationEntry::Revocation(decoded) => assert_eq!(decoded, original),
+                other => panic!("expected Revocation variant, got {other:?}"),
+            }
+        }
+
+        #[test]
+        fn dispatch_routes_0x06_to_identity_rotation_decoder() {
+            let original = fresh_rotation();
+            let bytes = encode_kt_entry_identity_rotation(&original);
+            match decode_kt_authorization_entry(&bytes).expect("dispatch") {
+                KtAuthorizationEntry::IdentityRotation(decoded) => assert_eq!(decoded, original),
+                other => panic!("expected IdentityRotation variant, got {other:?}"),
+            }
+        }
+
+        #[test]
+        fn dispatch_rejects_empty_input_before_routing() {
+            let err = decode_kt_authorization_entry(&[]).expect_err("empty must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("too_short")
+            ));
+        }
+
+        #[test]
+        fn dispatch_rejects_unknown_prefix_byte_0x00() {
+            let bytes = [0x00u8; 200];
+            let err = decode_kt_authorization_entry(&bytes).expect_err("prefix 0x00 must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("wrong_prefix")
+            ));
+        }
+
+        #[test]
+        fn dispatch_rejects_unknown_prefix_byte_0x01_identity_announce_legacy_tag() {
+            // 0x01 = IdentityAnnounce (V1 EntryType, not framed). Dispatcher
+            // covers ONLY the 3 ADR-008 framed types (0x04/0x05/0x06).
+            let bytes = [0x01u8; 200];
+            let err = decode_kt_authorization_entry(&bytes).expect_err("prefix 0x01 must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("wrong_prefix")
+            ));
+        }
+
+        #[test]
+        fn dispatch_propagates_per_decoder_wrong_length_for_truncated_approval() {
+            // Valid 0x04 prefix but body truncated — dispatch routes to
+            // approval decoder which then fails with wrong_length.
+            let mut bytes = encode_kt_entry_device_authorization_approval(&fresh_approval());
+            bytes.pop();
+            let err = decode_kt_authorization_entry(&bytes).expect_err("truncated must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("wrong_length")
+            ));
+        }
+
+        #[test]
+        fn entry_type_accessor_returns_correct_entry_type_for_each_variant() {
+            let approval = KtAuthorizationEntry::Approval(fresh_approval());
+            let revocation = KtAuthorizationEntry::Revocation(fresh_revocation());
+            let rotation = KtAuthorizationEntry::IdentityRotation(fresh_rotation());
+            assert_eq!(
+                approval.entry_type(),
+                EntryType::DeviceAuthorizationApproval
+            );
+            assert_eq!(
+                revocation.entry_type(),
+                EntryType::DeviceAuthorizationRevocation
+            );
+            assert_eq!(rotation.entry_type(), EntryType::IdentityRotationRecord);
+        }
+
+        #[test]
+        fn dispatch_round_trips_all_three_entry_types_in_one_test() {
+            // Single test exercising encode → dispatch decode for all three
+            // entry types in sequence — confirms dispatcher symmetric coverage.
+            for (entry_type, bytes) in [
+                (
+                    EntryType::DeviceAuthorizationApproval,
+                    encode_kt_entry_device_authorization_approval(&fresh_approval()),
+                ),
+                (
+                    EntryType::DeviceAuthorizationRevocation,
+                    encode_kt_entry_device_authorization_revocation(&fresh_revocation()),
+                ),
+                (
+                    EntryType::IdentityRotationRecord,
+                    encode_kt_entry_identity_rotation(&fresh_rotation()),
+                ),
+            ] {
+                let decoded = decode_kt_authorization_entry(&bytes)
+                    .unwrap_or_else(|e| panic!("dispatch failed for {entry_type:?}: {e:?}"));
+                assert_eq!(decoded.entry_type(), entry_type);
+            }
         }
     }
 }
