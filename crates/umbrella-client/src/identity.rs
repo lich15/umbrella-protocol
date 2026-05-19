@@ -3,7 +3,7 @@
 //! Closes the **rotation publish path** at the client side: вне-устройства
 //! сгенерированные signatures (под HW-Keystore либо distributed signing
 //! либо локальное вычисление, см. design spec Q1) комбинируются с
-//! `core.mls_keystore.identity_public()` в полный
+//! `core.mls_keystore().identity_public()` в полный
 //! `IdentityRotationRecord`, локально verified (постулат 14 defence-in-depth),
 //! wire-encoded через [`umbrella_kt::encode_kt_entry_identity_rotation`]
 //! (session 9a) и published через `kt_transport.publish` (235-byte frame).
@@ -65,6 +65,9 @@ use umbrella_kt::{encode_kt_entry_identity_rotation, DEVICE_PUBKEY_LEN};
 
 use crate::core::ClientCore;
 use crate::error::{ClientError, Result};
+use crate::keystore::hw_callback::{HwKeyHandle, PersistentKeyStoreCallback};
+use crate::keystore::HwBackedKeyStore;
+use umbrella_identity::KeyStore;
 
 /// Длина Ed25519 подписи в байтах (= `umbrella_backup::cloud_wrap::DEVICE_SIG_LEN`).
 /// Length of an Ed25519 signature in bytes (= `umbrella_backup::cloud_wrap::DEVICE_SIG_LEN`).
@@ -78,9 +81,9 @@ pub const IDENTITY_SIGNATURE_LEN: usize = 64;
 /// after the wire-framed entry has been pushed to the KT log.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RotationOutcome {
-    /// Старый identity pubkey, прочитанный из `core.mls_keystore.identity_public()`
+    /// Старый identity pubkey, прочитанный из `core.mls_keystore().identity_public()`
     /// в начале операции. Old identity pubkey, read from
-    /// `core.mls_keystore.identity_public()` at the start of the operation.
+    /// `core.mls_keystore().identity_public()` at the start of the operation.
     pub old_identity_pubkey: [u8; DEVICE_PUBKEY_LEN],
     /// Новый identity pubkey — supplied caller'ом.
     /// New identity pubkey — supplied by the caller.
@@ -142,7 +145,7 @@ pub async fn rotate_identity_publish(
     old_identity_signature: [u8; IDENTITY_SIGNATURE_LEN],
     new_identity_signature: [u8; IDENTITY_SIGNATURE_LEN],
 ) -> Result<RotationOutcome> {
-    let old_identity_pubkey = core.mls_keystore.identity_public().to_bytes();
+    let old_identity_pubkey = core.mls_keystore().identity_public().to_bytes();
 
     if old_identity_pubkey == new_identity_pubkey {
         return Err(ClientError::Kt(
@@ -185,4 +188,255 @@ pub async fn rotate_identity_publish(
         rotation_timestamp,
         published_entry_size,
     })
+}
+
+/// **F-CLIENT-FACADE-1 session 9d (2026-05-19):** full identity rotation
+/// orchestration. Drives the rotation through the HW-backed keystore
+/// callback (`Q1 = Option C` per design spec), publishes the resulting
+/// `IdentityRotationRecord` to KT, then swaps `core.mls_keystore` to a
+/// fresh [`HwBackedKeyStore`] bound to the new HW handle. Returns
+/// [`RotationOutcomeFull`] holding both the published outcome and the
+/// new HW handle (so callers могут persist the alias / wire native UI).
+///
+/// **Layered defence-in-depth chain** (5 layers, постулат 14, all
+/// fail-closed):
+///
+/// 1. **Pre-flight `old_pk` cross-check** — read `old_pk` from
+///    `core.mls_keystore().identity_public()` AND from
+///    `hw_callback.verifying_key(old_identity_handle)`. Refuse with
+///    `ClientError::Internal` if they disagree — a state-machine bug
+///    where the local keystore and the HW callback see different
+///    identities, must be surfaced immediately rather than silently
+///    rotating the wrong identity.
+/// 2. **Atomic HW rotation** — single call to
+///    [`PersistentKeyStoreCallback::rotate_identity`] which generates
+///    new identity material in TEE, signs canonical input with old and
+///    new keys, returns artifact. New seed never enters Rust heap.
+/// 3. **Publish path defence** — delegate to [`rotate_identity_publish`]
+///    (session 9b) which performs `record.verify()` over the canonical
+///    input + wire-encodes + pushes 235 bytes via `kt_transport.publish`.
+///    `verify()` catches any signing inconsistency between facade-built
+///    canonical input and HW-callback-built canonical input (this is the
+///    primary detection for native-side wire-format drift).
+/// 4. **Post-publish keystore swap** — construct fresh
+///    [`HwBackedKeyStore`] wrapping new HW handle + new pubkey, atomic
+///    `core.swap_mls_keystore(new_keystore)` via the RwLock. After this
+///    call `core.mls_keystore().identity_public()` returns the new
+///    pubkey — verifies acceptance criterion #9 from design spec.
+/// 5. **Outcome bundle** — return [`RotationOutcomeFull`] holding old +
+///    new pubkeys + new handle + timestamp + published wire size. The
+///    caller (UX layer / FFI) wires this back to native UI for handle
+///    persistence + safety-number-changed banner trigger.
+///
+/// **What this facade DOES NOT do**:
+///
+/// - **MLS group repair** (design spec Q3 Option I): rotation cascades
+///   device-entry revocation under old identity → all MLS groups under
+///   that identity need leave/rejoin. Deferred to follow-up session
+///   либо post-1.0.0.
+/// - **SLH-DSA backup signature** (Q5 deferred): V2 entry coupling
+///   deferred — only Ed25519 dual sigs covered.
+/// - **HW callback / handle / verifying_key field updates on
+///   `core`** — `hw_callback` Arc reference stays unchanged (it's the
+///   same callback impl that rotated); `hw_identity_handle` and
+///   `hw_verifying_key` fields are NOT mutated by this facade (they
+///   would require their own RwLock wrap + swap API). Callers needing
+///   to refresh those fields use a follow-up API or reconstruct the
+///   `ClientCore`. For session 9d acceptance the swap of `mls_keystore`
+///   is sufficient to demonstrate post-rotation pubkey visibility.
+///
+/// # Parameters
+///
+/// - `core` — target `ClientCore`. `core.mls_keystore()` must currently
+///   return identity_public matching `hw_callback.verifying_key(old_handle)`;
+///   facade verifies this invariant.
+/// - `hw_callback` — the keystore callback. Production caller passes
+///   `core.hw_callback.clone().expect("HW-bootstrapped")`; tests pass a
+///   mock directly. Decoupling from `core.hw_callback` lets the test rig
+///   construct a coherent state (mls_keystore = HwBackedKeyStore wrapping
+///   the same mock) without needing a separate `ClientCore` constructor.
+/// - `old_identity_handle` — handle to the currently-active HW identity.
+///   Production: `core.hw_identity_handle.clone().expect(...)`. Tests:
+///   the handle returned by `bootstrap_hw_identity`.
+/// - `new_identity_label` — alias under which the native side stores the
+///   new identity (e.g. `"xyz.umbrellax.identity.rotated.<ts>"`).
+/// - `rotation_reason` — `CatastrophicRecovery` / `PlannedRotation` /
+///   `IdentityCompromise` per `RotationReason`.
+/// - `rotation_timestamp` — unix-millis moment of rotation. Caller
+///   supplied to keep facade deterministic for tests.
+/// - `code_recovery_public_half_proof` — 32-byte HKDF-SHA512 of the
+///   12-word recovery mnemonic (F-PHD-RETRO-3-E binding). Caller
+///   supplies; facade does not derive (12-word mnemonic «никогда на
+///   устройстве» per Round-6).
+///
+/// # Errors
+///
+/// - `ClientError::Internal("rotation pre-flight: old_identity_pubkey
+///   mismatch ...")` — local mls_keystore and HW callback disagree on
+///   `old_pk` (layer 1).
+/// - `ClientError::Platform(...)` — HW callback `rotate_identity` failed
+///   (layer 2; mapped from `HwKeystoreError`).
+/// - Any error from [`rotate_identity_publish`] (layer 3):
+///   `ClientError::Kt(InvalidAuthorizationEntryWire("old_and_new_identity_pubkeys_identical"))`
+///   либо `ClientError::Internal` for sig-verify failure.
+/// - `ClientError::Internal("new HwBackedKeyStore construction failed
+///   ...")` — new pubkey didn't decode as Ed25519 (layer 4; should not
+///   happen for a healthy mock/native impl, but defended).
+pub async fn rotate_identity_full(
+    core: &Arc<ClientCore>,
+    hw_callback: Arc<dyn PersistentKeyStoreCallback>,
+    old_identity_handle: HwKeyHandle,
+    new_identity_label: impl Into<String>,
+    rotation_reason: RotationReason,
+    rotation_timestamp: u64,
+    code_recovery_public_half_proof: [u8; CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN],
+) -> Result<RotationOutcomeFull> {
+    let new_identity_label = new_identity_label.into();
+
+    // Layer 1: cross-check `old_pk` consistency between local mls_keystore
+    // and HW callback's view of the same handle. Discrepancy here means
+    // some prior code path corrupted the state (e.g. failed to swap
+    // mls_keystore after a previous rotation, or hw_callback was wired
+    // to a different identity than mls_keystore). Refusing prevents
+    // signing a rotation record whose `old_identity_pubkey` field does
+    // not match what the HW key actually is — which would otherwise
+    // either pass verify (if HW happens to sign with matching key) and
+    // publish a misleading record, or fail verify and leak the bug
+    // through an obscure error path.
+    let mls_old_pk = core.mls_keystore().identity_public().to_bytes();
+    let hw_old_pk = hw_callback
+        .verifying_key(&old_identity_handle)
+        .map_err(|err| {
+            ClientError::Platform(format!(
+                "rotation pre-flight: hw_callback.verifying_key(old_handle) failed: {err}"
+            ))
+        })?;
+    if mls_old_pk != hw_old_pk {
+        return Err(ClientError::Internal(format!(
+            "rotation pre-flight: old_identity_pubkey mismatch — \
+             core.mls_keystore() reports {:?} but hw_callback.verifying_key(old_handle) reports {:?}; \
+             refuse to rotate inconsistent state",
+            hex_short(&mls_old_pk),
+            hex_short(&hw_old_pk),
+        )));
+    }
+    let old_identity_pubkey = mls_old_pk;
+
+    // Layer 2: atomic HW rotation. Returns new handle + new pubkey + both
+    // signatures. New seed material stays in TEE.
+    let artifact = hw_callback
+        .rotate_identity(
+            &old_identity_handle,
+            new_identity_label.clone(),
+            old_identity_pubkey,
+            rotation_timestamp,
+            rotation_reason.tag(),
+            code_recovery_public_half_proof,
+        )
+        .map_err(|err| {
+            ClientError::Platform(format!(
+                "hw_callback.rotate_identity failed: {err} — \
+                 native side may be left in half-rotated state, \
+                 client retry behaviour is up to the caller"
+            ))
+        })?;
+
+    // Layer 3: delegate publish path to session 9b. record.verify() inside
+    // catches any wire-format / canonical-input drift between this Rust
+    // side and the native HW side (the strongest defence against
+    // protocol divergence). Layer 3 also handles the identical-pubkey
+    // check via session 9b's existing fail-closed guard.
+    let publish_outcome = rotate_identity_publish(
+        core,
+        artifact.new_identity_pubkey,
+        rotation_reason,
+        rotation_timestamp,
+        code_recovery_public_half_proof,
+        artifact.old_identity_signature,
+        artifact.new_identity_signature,
+    )
+    .await?;
+
+    // Layer 4: construct new HwBackedKeyStore + atomic swap. The new
+    // keystore returns `artifact.new_identity_pubkey` from
+    // `identity_public()` and routes signing through `hw_callback` with
+    // the new handle. account index preserved (Block 7.2 single-device
+    // single-account assumption); future multi-account/multi-device
+    // rotation will revisit this.
+    //
+    // **Why HwBackedKeyStore** (not a new InMemoryKeyStore): the new
+    // identity SK lives in TEE; we have no seed material on the Rust
+    // side from which to construct an InMemoryKeyStore. HwBackedKeyStore
+    // is the canonical wrap of "identity in TEE, public material cached"
+    // semantics. Limitations of HwBackedKeyStore (no device APIs, no
+    // x25519, no PQ) are documented in the module-level docs of
+    // `keystore/hw_backed.rs`; production callers must follow up with
+    // device-key bootstrap separately (F-IDENT-DEVICE-1 v1.2.x scope).
+    let account = core.mls_keystore().account();
+    let new_hw_keystore = HwBackedKeyStore::new(
+        account,
+        hw_callback.clone(),
+        artifact.new_identity_handle.clone(),
+        artifact.new_identity_pubkey,
+    )
+    .map_err(|err| {
+        ClientError::Internal(format!(
+            "post-rotation HwBackedKeyStore construction failed — \
+             new_identity_pubkey returned by HW callback did not decode as Ed25519: {err}"
+        ))
+    })?;
+    let new_keystore: Arc<dyn KeyStore> = Arc::new(new_hw_keystore);
+    core.swap_mls_keystore(new_keystore);
+
+    // Layer 5: build outcome bundle.
+    Ok(RotationOutcomeFull {
+        old_identity_pubkey,
+        new_identity_pubkey: artifact.new_identity_pubkey,
+        new_identity_handle: artifact.new_identity_handle,
+        rotation_timestamp,
+        published_entry_size: publish_outcome.published_entry_size,
+    })
+}
+
+/// **F-CLIENT-FACADE-1 session 9d (2026-05-19):** result of a successful
+/// [`rotate_identity_full`] call. Extends the publish-only
+/// [`RotationOutcome`] (session 9b) with the new HW handle so that
+/// callers (FFI / UX layer) can persist the native-side alias and wire
+/// follow-up native UI (safety-number-changed banner, post-rotation
+/// device-key bootstrap, etc.).
+#[derive(Debug, Clone)]
+pub struct RotationOutcomeFull {
+    /// Old identity pubkey at the moment of rotation (read from local
+    /// mls_keystore + cross-checked with HW callback verifying_key).
+    pub old_identity_pubkey: [u8; DEVICE_PUBKEY_LEN],
+    /// New identity pubkey returned by `hw_callback.rotate_identity` —
+    /// also reflected in `core.mls_keystore().identity_public()` after
+    /// the post-publish swap.
+    pub new_identity_pubkey: [u8; DEVICE_PUBKEY_LEN],
+    /// Opaque alias of the new TEE-resident identity. Caller persists
+    /// this so subsequent app restarts re-bootstrap against the rotated
+    /// identity (production: stored in app local settings; tests: held
+    /// in scope для assertions).
+    pub new_identity_handle: HwKeyHandle,
+    /// Rotation timestamp echoed from the call site (unix millis).
+    pub rotation_timestamp: u64,
+    /// Size of the published wire frame (always `235` for
+    /// `IdentityRotation` per ADR-008 EntryType 0x06; returned для
+    /// observability / тест assertions).
+    pub published_entry_size: usize,
+}
+
+/// Short-hex pretty-printer for error diagnostics. NOT for production
+/// logging (full pubkeys are public-by-definition; this is only used in
+/// error messages where space matters).
+fn hex_short(bytes: &[u8; DEVICE_PUBKEY_LEN]) -> String {
+    let prefix: String = bytes.iter().take(4).map(|b| format!("{b:02x}")).collect();
+    let suffix: String = bytes
+        .iter()
+        .rev()
+        .take(4)
+        .rev()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    format!("{prefix}…{suffix}")
 }

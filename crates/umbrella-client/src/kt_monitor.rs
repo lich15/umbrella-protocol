@@ -11,7 +11,7 @@
 //! - **In scope**: on-demand `verify_own_kt_entry_for_epoch` against
 //!   [`crate::transport::stub::StubKtTransport::fetch_staged_entry`] —
 //!   typed-value path для facade integration tests. Construct
-//!   `OwnExpectations` из `core.mls_keystore.identity_public()` +
+//!   `OwnExpectations` из `core.mls_keystore().identity_public()` +
 //!   `identity_x25519_public()` + single device `(0, device_public(0))`
 //!   (Block 7.2 single-device).
 //! - **Deferred to session 8b**: 3-of-5 witness signature verification
@@ -88,15 +88,15 @@ use crate::transport::KtSignedRootsFetcher;
 ///   - `field = "entry_absent_from_log"` — stub returned `None` for the
 ///     requested `(account_id, epoch)`.
 ///   - `field = "identity_ed25519_pub"` — entry's identity_ed25519_pub
-///     differs from `core.mls_keystore.identity_public()`.
+///     differs from `core.mls_keystore().identity_public()`.
 ///   - `field = "identity_x25519_pub"` — analogous для X25519.
 ///   - `field = "account_id"` — entry's account_id ≠ derive_account_id(
 ///     identity_ed25519_pub).
 ///   - `field = "device_count" / "device_set_missing_expected" /
 ///     "device_set_unexpected_entry"` — device-set mismatch.
 pub async fn verify_own_kt_entry_for_epoch(core: &Arc<ClientCore>, epoch: u64) -> Result<()> {
-    let identity_ed25519 = core.mls_keystore.identity_public();
-    let identity_x25519 = core.mls_keystore.identity_x25519_public();
+    let identity_ed25519 = core.mls_keystore().identity_public();
+    let identity_x25519 = core.mls_keystore().identity_x25519_public();
     let account_id = KtEntry::derive_account_id(&identity_ed25519);
 
     let entry: KtEntry = core
@@ -116,7 +116,7 @@ pub async fn verify_own_kt_entry_for_epoch(core: &Arc<ClientCore>, epoch: u64) -
     //
     // Block 7.2 single-device: device_index 0 only. Missing device_public(0)
     // is a bootstrap invariant violation, not a KT log issue → Internal.
-    let device_pub = core.mls_keystore.device_public(0).ok_or_else(|| {
+    let device_pub = core.mls_keystore().device_public(0).ok_or_else(|| {
         ClientError::Internal(
             "ClientCore bootstrap invariant violation: device_public(0) is None — \
                  KT self-monitoring requires at least the primary device registered \

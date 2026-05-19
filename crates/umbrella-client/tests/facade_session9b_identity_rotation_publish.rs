@@ -3,7 +3,7 @@
 //! identity rotation facade path. Closes the **identity rotation wire
 //! publish** leg on the client side: caller supplies all cryptographic
 //! material (new pubkey, both Ed25519 signatures, code-recovery proof),
-//! facade reads old pubkey from `core.mls_keystore.identity_public()`,
+//! facade reads old pubkey from `core.mls_keystore().identity_public()`,
 //! does defence-in-depth local verify pre-publish, encodes via session 9a
 //! codec (235-byte frame) and pushes through `kt_transport.publish`.
 //!
@@ -31,7 +31,7 @@
 //! ## Local state semantics
 //!
 //! `rotate_identity_publish` does NOT mutate `core.mls_keystore`. After
-//! publish, `core.mls_keystore.identity_public()` still returns the OLD
+//! publish, `core.mls_keystore().identity_public()` still returns the OLD
 //! identity. Caller is responsible for downstream keystore swap + MLS
 //! group repair (deferred to session 9c+).
 //!
@@ -47,7 +47,7 @@
 //!    surfaces as `Internal` after local verify.
 //! 6. Fail-closed: tampered `code_recovery_public_half_proof` after
 //!    signing — signatures no longer match canonical input.
-//! 7. Local state invariant: `core.mls_keystore.identity_public()`
+//! 7. Local state invariant: `core.mls_keystore().identity_public()`
 //!    unchanged after publish (publish-only semantics).
 //! 8. KT transport interaction: `kt_transport().published_entry_count()`
 //!    increments by 1 per publish; published bytes have correct prefix.
@@ -203,7 +203,7 @@ async fn read_old_identity(client: &Arc<UmbrellaClient>) -> ([u8; 32], SigningKe
 /// that property.
 ///
 /// For test 1 (happy path) we workaround: build canonical input using the
-/// client's actual old_pk (read from `core.mls_keystore.identity_public()`),
+/// client's actual old_pk (read from `core.mls_keystore().identity_public()`),
 /// then sign using a substitute «attacker» key. The verify will fail
 /// (signatures don't match the canonical-input-as-published old_pk → new
 /// VerifyingKey re-derived from old_pk doesn't validate sig). We accept
@@ -348,7 +348,7 @@ async fn rotate_identity_publish_fails_closed_with_signatures_over_tampered_proo
 #[tokio::test]
 async fn rotate_identity_publish_fails_closed_when_old_signature_does_not_match_keystore_pubkey() {
     // Caller signs old-side using a key that doesn't match
-    // `core.mls_keystore.identity_public()`. record.verify() reconstructs
+    // `core.mls_keystore().identity_public()`. record.verify() reconstructs
     // VerifyingKey from old_identity_pubkey (which facade reads from
     // keystore), then attempts verify of old_signature over canonical —
     // mismatch fails.

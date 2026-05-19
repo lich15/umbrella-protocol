@@ -370,7 +370,7 @@ async fn bob_opens_chat_from_welcome_and_joins_alice_group_at_epoch_1() {
         .expect("alice create");
 
     // Build Bob's KeyPackage via his own keystore (not sister) so identity_pk
-    // is real and matches what bob.core().mls_keystore.identity_public() returns.
+    // is real and matches what bob.core().mls_keystore().identity_public() returns.
     let bob_provider = bob.core().mls_provider();
     let bob_keystore = bob.core().mls_keystore();
     let bob_kp_bundle =

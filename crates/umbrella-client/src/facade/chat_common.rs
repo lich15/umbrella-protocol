@@ -320,7 +320,7 @@ pub(crate) async fn send_mls_text(
         // network I/O.
         group.encrypt_application(
             core.mls_provider.as_ref(),
-            core.mls_keystore.as_ref(),
+            core.mls_keystore().as_ref(),
             text.as_bytes(),
         )?
     } else {
@@ -519,7 +519,7 @@ pub(crate) async fn create_mls_group(
     let group_id = openmls::group::GroupId::from_slice(&chat_id_bytes);
     let group = UmbrellaGroup::create_private(
         core.mls_provider.as_ref(),
-        core.mls_keystore.as_ref(),
+        core.mls_keystore().as_ref(),
         0,
         cs,
         group_id,
@@ -588,7 +588,7 @@ pub(crate) async fn mls_add_member(
     let mut group = group_arc.lock().await;
     let outcome = group.add_members(
         core.mls_provider.as_ref(),
-        core.mls_keystore.as_ref(),
+        core.mls_keystore().as_ref(),
         &[kp],
         unix_now_secs(),
     )?;
@@ -678,7 +678,7 @@ pub(crate) async fn cloud_publish_at_rest(
     plaintext: &[u8],
     msg_id: MessageId,
 ) -> Result<()> {
-    let sender_pk = core.mls_keystore.identity_public().to_bytes();
+    let sender_pk = core.mls_keystore().identity_public().to_bytes();
     let recipient_device_pk = sender_pk;
     let msg_seq = core.next_cloud_msg_seq(chat_id).await;
 
@@ -762,7 +762,7 @@ pub(crate) async fn open_mls_group_from_welcome(
 ) -> Result<(ChatId, u16)> {
     let group = UmbrellaGroup::join_from_welcome(
         core.mls_provider.as_ref(),
-        core.mls_keystore.as_ref(),
+        core.mls_keystore().as_ref(),
         0,
         welcome_bytes,
         GroupPolicy::Private,
@@ -850,7 +850,7 @@ pub(crate) async fn cloud_sync_history_impl(
         return Ok(Vec::new());
     }
 
-    let recipient_device_pubkey = core.mls_keystore.identity_public().to_bytes();
+    let recipient_device_pubkey = core.mls_keystore().identity_public().to_bytes();
     let mut out = Vec::with_capacity(entries.len());
 
     for entry in entries {
@@ -963,7 +963,7 @@ pub(crate) fn sealed_sender_seal_for_secret(
 ) -> Result<Vec<u8>> {
     let mut rng = OsRng;
     let wire = sealed_sender_seal(
-        core.mls_keystore.as_ref(),
+        core.mls_keystore().as_ref(),
         recipient_x25519,
         mls_ciphertext,
         &mut rng,
@@ -1007,7 +1007,7 @@ pub(crate) fn sealed_sender_unseal_for_secret(
     core: &Arc<ClientCore>,
     wire: &[u8],
 ) -> Result<(PeerId, Vec<u8>)> {
-    let opened = sealed_sender_unseal(core.mls_keystore.as_ref(), wire)?;
+    let opened = sealed_sender_unseal(core.mls_keystore().as_ref(), wire)?;
     let sender_bytes = opened.sender_identity.to_bytes();
     let mls_ciphertext = opened.message.as_slice().to_vec();
     Ok((PeerId(sender_bytes), mls_ciphertext))
@@ -1109,7 +1109,7 @@ pub(crate) async fn send_secret_text(
         let mut group = group_arc.lock().await;
         let ct = group.encrypt_application(
             core.mls_provider.as_ref(),
-            core.mls_keystore.as_ref(),
+            core.mls_keystore().as_ref(),
             text.as_bytes(),
         )?;
         let members = group.member_identities();
@@ -1119,7 +1119,7 @@ pub(crate) async fn send_secret_text(
     // Filter out self from recipient list. Self = `mls_keystore.identity_public`
     // (same Ed25519 pubkey used in our credential — matches `member_identities`
     // entries derived from credential.serialized_content).
-    let own_identity_pk = core.mls_keystore.identity_public().to_bytes();
+    let own_identity_pk = core.mls_keystore().identity_public().to_bytes();
     let peers: Vec<[u8; 32]> = member_identities
         .into_iter()
         .filter(|m| m != &own_identity_pk)

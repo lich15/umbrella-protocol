@@ -81,6 +81,11 @@ use std::sync::Arc;
 use thiserror::Error;
 use zeroize::Zeroize;
 
+use umbrella_backup::cloud_wrap::identity_rotation::{
+    canonical_signing_input_rotation, CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN,
+};
+use umbrella_backup::cloud_wrap::{RotationReason, AUTHORIZATION_WIRE_VERSION};
+
 use crate::error::ClientError;
 
 /// Opaque handle для hardware-backed identity. Содержит ТОЛЬКО строковый
@@ -279,6 +284,139 @@ pub trait PersistentKeyStoreCallback: Send + Sync + 'static {
     /// Production wiring fetches from the TEE-resident handle without
     /// the seed ever materialising in Rust.
     fn verifying_key(&self, handle: &HwKeyHandle) -> Result<[u8; 32], HwKeystoreError>;
+
+    /// **F-CLIENT-FACADE-1 session 9d (2026-05-19):** rotate the
+    /// hardware-resident identity key atomically.
+    ///
+    /// Native side MUST atomically:
+    ///
+    /// 1. Generate a fresh identity SK + verifying key inside the HW
+    ///    keystore under `new_identity_label` (iOS: a new Keychain entry
+    ///    with `kSecAttrTokenIDSecureEnclave`; Android: a new StrongBox-
+    ///    backed AndroidKeyStore alias). New secret material lives in
+    ///    TEE and never enters userspace.
+    /// 2. Compute the **canonical signing input** using the exact same
+    ///    algorithm and constants as
+    ///    [`umbrella_backup::cloud_wrap::identity_rotation::canonical_signing_input_rotation`]:
+    ///    `b"umbrellax-identity-rotation-v1" || version(1) ||
+    ///    old_identity_pubkey(32) || new_identity_pubkey(32) ||
+    ///    rotation_timestamp_be(8) || rotation_reason_tag(1) ||
+    ///    code_recovery_public_half_proof(32)` (115 bytes total). The
+    ///    wire-format requirement is **fixed by ADR-008 § identity rotation**
+    ///    and SPEC-12 §A.5.1; native impls cannot deviate without
+    ///    breaking dual-signature verification on the publish path.
+    /// 3. Sign the canonical input with the **OLD identity SK** (via
+    ///    `old_identity_handle`, which the native side already knows).
+    /// 4. Sign the canonical input with the **NEW identity SK** (just
+    ///    generated under `new_identity_label`).
+    /// 5. Return [`RotatedIdentityArtifact`] containing the new HW
+    ///    handle alias, the new 32-byte verifying key, and both 64-byte
+    ///    Ed25519 signatures. The Rust facade
+    ///    ([`crate::identity::rotate_identity_full`]) constructs an
+    ///    `IdentityRotationRecord`, performs defence-in-depth local
+    ///    verification, wire-encodes it, and publishes to KT.
+    ///
+    /// `rotation_reason_tag` must be one of `0x01` (CatastrophicRecovery),
+    /// `0x02` (PlannedRotation), `0x03` (IdentityCompromise) per
+    /// `umbrella_backup::cloud_wrap::RotationReason::tag`. Implementations
+    /// MUST reject unknown tags with [`HwKeystoreError::Native`] before
+    /// generating new HW material (an unknown tag is a caller bug; refusing
+    /// early avoids polluting the TEE with an orphan key whose semantic
+    /// status is undefined).
+    ///
+    /// **Atomicity**: if any step fails after the new HW material is
+    /// generated (e.g. signing fails), implementations SHOULD attempt to
+    /// delete the new HW handle before returning the error, so a half-
+    /// rotated TEE state is not left behind. Failure to clean up is not a
+    /// fatal error from Rust's perspective — the new handle simply
+    /// becomes unreachable garbage — but native implementations are
+    /// encouraged to do best-effort cleanup.
+    ///
+    /// **Default impl** returns
+    /// [`HwKeystoreError::Native`] with an explicit "not implemented"
+    /// message. This preserves backward compatibility with existing
+    /// [`PersistentKeyStoreCallback`] implementations that pre-date
+    /// session 9d while making missing wire-up surface immediately
+    /// rather than silently masquerading as success.
+    ///
+    /// # Errors
+    ///
+    /// - [`HwKeystoreError::KeyNotFound`] — `old_identity_handle` not
+    ///   present in the keystore (e.g. user wiped keychain).
+    /// - [`HwKeystoreError::HardwareUnavailable`] — TEE physically not
+    ///   present.
+    /// - [`HwKeystoreError::UserDenied`] — biometric / passcode prompt
+    ///   refused.
+    /// - [`HwKeystoreError::SigningFailed`] — either signature operation
+    ///   failed inside TEE.
+    /// - [`HwKeystoreError::Native`] — unknown `rotation_reason_tag` or
+    ///   other native-side error.
+    fn rotate_identity(
+        &self,
+        old_identity_handle: &HwKeyHandle,
+        new_identity_label: String,
+        old_identity_pubkey: [u8; 32],
+        rotation_timestamp: u64,
+        rotation_reason_tag: u8,
+        code_recovery_public_half_proof: [u8; CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN],
+    ) -> Result<RotatedIdentityArtifact, HwKeystoreError> {
+        let _ = (
+            old_identity_handle,
+            new_identity_label,
+            old_identity_pubkey,
+            rotation_timestamp,
+            rotation_reason_tag,
+            code_recovery_public_half_proof,
+        );
+        Err(HwKeystoreError::Native(
+            "rotate_identity not implemented by this PersistentKeyStoreCallback impl \
+             (default impl reject; override required for F-CLIENT-FACADE-1 session 9d \
+             rotation orchestration)"
+                .to_string(),
+        ))
+    }
+}
+
+/// **F-CLIENT-FACADE-1 session 9d (2026-05-19):** result of a successful
+/// [`PersistentKeyStoreCallback::rotate_identity`] call.
+///
+/// Holds the public material the Rust facade needs to build, verify, and
+/// publish an `IdentityRotationRecord`: the new HW handle (opaque alias
+/// the native side just created), the new 32-byte verifying key, and the
+/// two 64-byte Ed25519 signatures over the canonical signing input.
+///
+/// **No secret material**: the new identity signing scalar stays in TEE.
+/// Adversary with read access к `RotatedIdentityArtifact` gets only
+/// public bytes (pubkey + signatures + handle alias).
+///
+/// **F-CLIENT-FACADE-1 session 9d (2026-05-19):** result of a successful
+/// [`PersistentKeyStoreCallback::rotate_identity`] call. Carries the
+/// public material the Rust facade needs to construct, verify, and
+/// publish an `IdentityRotationRecord`. No secret material crosses this
+/// boundary.
+#[derive(Clone, Debug)]
+pub struct RotatedIdentityArtifact {
+    /// Opaque alias for the newly-generated TEE-resident identity key.
+    /// Каллер (facade) использует это для конструирования нового
+    /// [`crate::keystore::HwBackedKeyStore`] и follow-up
+    /// `core.swap_mls_keystore(...)` call.
+    ///
+    /// Opaque alias for the newly-generated TEE-resident identity key.
+    /// The caller (facade) uses this to construct a new
+    /// [`crate::keystore::HwBackedKeyStore`] and a follow-up
+    /// `core.swap_mls_keystore(...)` call.
+    pub new_identity_handle: HwKeyHandle,
+    /// 32-byte Ed25519 verifying-key for the new identity. Goes into
+    /// `IdentityRotationRecord::new_identity_pubkey`.
+    pub new_identity_pubkey: [u8; 32],
+    /// 64-byte Ed25519 signature by the OLD identity SK over the
+    /// canonical signing input. Goes into
+    /// `IdentityRotationRecord::old_identity_signature`.
+    pub old_identity_signature: [u8; 64],
+    /// 64-byte Ed25519 signature by the NEW identity SK over the SAME
+    /// canonical signing input. Goes into
+    /// `IdentityRotationRecord::new_identity_signature`.
+    pub new_identity_signature: [u8; 64],
 }
 
 /// `MockHwKeystore` — software-only implementation for macOS test rig.
@@ -500,6 +638,113 @@ impl PersistentKeyStoreCallback for MockHwKeystore {
             .ok_or_else(|| HwKeystoreError::KeyNotFound(handle.label().to_string()))?;
         let signing = SigningKey::from_bytes(material.seed.expose());
         Ok(signing.verifying_key().to_bytes())
+    }
+
+    /// **F-CLIENT-FACADE-1 session 9d (2026-05-19) Mock implementation.**
+    ///
+    /// Mirrors the production atomic-rotation contract: generates a fresh
+    /// 32-byte Ed25519 seed using `OsRng`, stores it under
+    /// `new_identity_label`, computes the canonical signing input via
+    /// [`canonical_signing_input_rotation`] (same algorithm a real native
+    /// side would use), and signs the canonical input with both the old
+    /// and new identity keys. Returns the new handle, new pubkey, and
+    /// both signatures.
+    ///
+    /// **Verification properties** (lock-in invariants enforced via
+    /// `cargo test --release` against the mock):
+    ///
+    /// 1. `new_identity_pubkey` is the real Ed25519 verifying-key for the
+    ///    just-generated seed — never `[0u8; 32]`.
+    /// 2. `new_identity_pubkey ≠ old_identity_pubkey` with overwhelming
+    ///    probability (collision-resistance of fresh CSPRNG seed).
+    /// 3. `old_identity_signature` verifies under `old_identity_pubkey`
+    ///    over the canonical input. Verifiable by caller via
+    ///    `IdentityRotationRecord::verify()`.
+    /// 4. `new_identity_signature` verifies under `new_identity_pubkey`
+    ///    over the SAME canonical input.
+    /// 5. The new HW handle is added to the mock's in-memory map; subsequent
+    ///    `sign_identity(new_handle, data)` produces signatures verifiable
+    ///    under `new_identity_pubkey`.
+    fn rotate_identity(
+        &self,
+        old_identity_handle: &HwKeyHandle,
+        new_identity_label: String,
+        old_identity_pubkey: [u8; 32],
+        rotation_timestamp: u64,
+        rotation_reason_tag: u8,
+        code_recovery_public_half_proof: [u8; CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN],
+    ) -> Result<RotatedIdentityArtifact, HwKeystoreError> {
+        use ed25519_dalek::{Signer, SigningKey};
+        use rand_core::{OsRng, RngCore};
+
+        // Validate the rotation reason tag against the canonical enum
+        // before any HW state mutation. An unknown tag indicates a caller
+        // bug; refusing early avoids leaving an orphan seed in the mock's
+        // map. Production native impls SHOULD perform the same check
+        // before generating new TEE material.
+        let rotation_reason = RotationReason::from_tag(rotation_reason_tag).ok_or_else(|| {
+            HwKeystoreError::Native(format!(
+                "unknown rotation_reason_tag {rotation_reason_tag:#04x} — \
+                 must be one of 0x01 (CatastrophicRecovery), 0x02 (PlannedRotation), \
+                 0x03 (IdentityCompromise)"
+            ))
+        })?;
+
+        // Generate the new identity seed. Production: native SE/StrongBox
+        // create. Mock: OsRng + in-memory store.
+        let mut new_seed_bytes = [0u8; 32];
+        OsRng.fill_bytes(&mut new_seed_bytes);
+        let new_signing = SigningKey::from_bytes(&new_seed_bytes);
+        let new_identity_pubkey = new_signing.verifying_key().to_bytes();
+
+        // Compute the canonical signing input using the wire-format spec
+        // from `umbrella-backup`. Production native code mirrors this
+        // byte-for-byte; deviation here means the dual signatures will
+        // not verify against `record.verify()` on the facade side.
+        let canonical = canonical_signing_input_rotation(
+            AUTHORIZATION_WIRE_VERSION,
+            &old_identity_pubkey,
+            &new_identity_pubkey,
+            rotation_timestamp,
+            rotation_reason,
+            &code_recovery_public_half_proof,
+        );
+
+        // Sign with OLD identity SK (pull from existing map entry).
+        let old_signing = {
+            let guard = self.keys.lock().map_err(|_| {
+                HwKeystoreError::Native("mock mutex poisoned during rotate_identity".into())
+            })?;
+            let material = guard.get(old_identity_handle).ok_or_else(|| {
+                HwKeystoreError::KeyNotFound(old_identity_handle.label().to_string())
+            })?;
+            SigningKey::from_bytes(material.seed.expose())
+        };
+        let old_identity_signature = old_signing.sign(&canonical).to_bytes();
+
+        // Sign with NEW identity SK (just generated).
+        let new_identity_signature = new_signing.sign(&canonical).to_bytes();
+
+        // Persist the new seed under the new handle. Lock taken after
+        // signing to keep the critical section short.
+        let new_identity_handle = HwKeyHandle::new(new_identity_label);
+        let material = MockKeyMaterial {
+            seed: umbrella_crypto_primitives::MlockedSecret::new(new_seed_bytes),
+        };
+        new_seed_bytes.zeroize();
+        self.keys
+            .lock()
+            .map_err(|_| {
+                HwKeystoreError::Native("mock mutex poisoned during rotate_identity insert".into())
+            })?
+            .insert(new_identity_handle.clone(), material);
+
+        Ok(RotatedIdentityArtifact {
+            new_identity_handle,
+            new_identity_pubkey,
+            old_identity_signature,
+            new_identity_signature,
+        })
     }
 }
 
@@ -731,5 +976,213 @@ mod tests {
         let sig = Signature::from_slice(&sig_bytes).expect("sig 64 bytes");
         vk.verify(msg, &sig)
             .expect("mock signature verifies under dalek VerifyingKey");
+    }
+
+    /// **F-CLIENT-FACADE-1 session 9d (2026-05-19):** end-to-end mock
+    /// rotation contract test. Verifies all five lock-in invariants from
+    /// the impl doc-comment: real new pubkey, distinct from old, both
+    /// signatures verify, new handle subsequently signable.
+    #[test]
+    fn mock_rotate_identity_signs_canonical_input_with_both_keys_and_persists_new_handle() {
+        use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+        use umbrella_backup::cloud_wrap::identity_rotation::canonical_signing_input_rotation;
+        use umbrella_backup::cloud_wrap::{RotationReason, AUTHORIZATION_WIRE_VERSION};
+
+        let mock = MockHwKeystore::new();
+        let (old_handle, old_pk) = bootstrap_hw_identity(
+            &(Arc::new(MockHwKeystore::new()) as Arc<dyn PersistentKeyStoreCallback>),
+            "session-9d.mock.bootstrap-discard",
+        )
+        .expect("discarded bootstrap");
+        // Re-use a fresh handle inside `mock` (the keystore we actually
+        // rotate) to mirror the production wiring.
+        let _ = old_handle;
+        let _ = old_pk;
+        let bootstrap_handle = mock
+            .generate_identity("session-9d.mock.old".into())
+            .expect("generate old identity");
+        let bootstrap_old_pk = mock
+            .verifying_key(&bootstrap_handle)
+            .expect("verifying_key old");
+
+        let rotation_timestamp: u64 = 1_715_000_000_000;
+        let reason = RotationReason::PlannedRotation;
+        let proof = [0x42u8; CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN];
+
+        let artifact = mock
+            .rotate_identity(
+                &bootstrap_handle,
+                "session-9d.mock.new".into(),
+                bootstrap_old_pk,
+                rotation_timestamp,
+                reason.tag(),
+                proof,
+            )
+            .expect("rotate_identity succeeds");
+
+        // Invariant 1: new pubkey is real (decodes as Ed25519, not zero).
+        assert_ne!(
+            artifact.new_identity_pubkey, [0u8; 32],
+            "new_identity_pubkey must be real Ed25519, not zero placeholder"
+        );
+        let new_vk = VerifyingKey::from_bytes(&artifact.new_identity_pubkey)
+            .expect("new_identity_pubkey decodes as Ed25519");
+        let old_vk = VerifyingKey::from_bytes(&bootstrap_old_pk)
+            .expect("bootstrap old_pk decodes as Ed25519");
+
+        // Invariant 2: new ≠ old.
+        assert_ne!(
+            artifact.new_identity_pubkey, bootstrap_old_pk,
+            "rotation must yield a distinct pubkey"
+        );
+
+        // Invariant 3 + 4: both signatures verify over canonical input.
+        let canonical = canonical_signing_input_rotation(
+            AUTHORIZATION_WIRE_VERSION,
+            &bootstrap_old_pk,
+            &artifact.new_identity_pubkey,
+            rotation_timestamp,
+            reason,
+            &proof,
+        );
+        let old_sig = Signature::from_slice(&artifact.old_identity_signature)
+            .expect("old_identity_signature is 64 bytes");
+        old_vk
+            .verify(&canonical, &old_sig)
+            .expect("old_identity_signature verifies under old_pk over canonical input");
+        let new_sig = Signature::from_slice(&artifact.new_identity_signature)
+            .expect("new_identity_signature is 64 bytes");
+        new_vk
+            .verify(&canonical, &new_sig)
+            .expect("new_identity_signature verifies under new_pk over canonical input");
+
+        // Invariant 5: new handle is now signable via the mock.
+        let smoke = mock
+            .sign_identity(&artifact.new_identity_handle, b"smoke-after-rotation")
+            .expect("sign with new handle");
+        let smoke_sig = Signature::from_slice(&smoke).expect("64-byte sig");
+        new_vk
+            .verify(b"smoke-after-rotation", &smoke_sig)
+            .expect("new handle's signatures verify under new_pk");
+    }
+
+    /// **F-CLIENT-FACADE-1 session 9d (2026-05-19):** unknown rotation
+    /// reason tags are rejected before any HW state mutation.
+    #[test]
+    fn mock_rotate_identity_rejects_unknown_reason_tag() {
+        let mock = MockHwKeystore::new();
+        let handle = mock
+            .generate_identity("session-9d.bad-tag.bootstrap".into())
+            .expect("generate");
+        let old_pk = mock.verifying_key(&handle).expect("vk");
+
+        let mock_len_before = mock.len();
+        let result = mock.rotate_identity(
+            &handle,
+            "session-9d.bad-tag.new".into(),
+            old_pk,
+            0,
+            0xFE, // not in {0x01, 0x02, 0x03}
+            [0u8; CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN],
+        );
+        match result {
+            Err(HwKeystoreError::Native(msg)) => {
+                assert!(
+                    msg.contains("unknown rotation_reason_tag"),
+                    "error message must point at the invalid tag, got: {msg}"
+                );
+            }
+            other => panic!("expected HwKeystoreError::Native, got {other:?}"),
+        }
+        assert_eq!(
+            mock.len(),
+            mock_len_before,
+            "no HW state mutation on invalid tag rejection"
+        );
+    }
+
+    /// **F-CLIENT-FACADE-1 session 9d (2026-05-19):** unknown handle
+    /// reference returns `KeyNotFound` before generating new material.
+    #[test]
+    fn mock_rotate_identity_rejects_unknown_old_handle() {
+        use umbrella_backup::cloud_wrap::RotationReason;
+
+        let mock = MockHwKeystore::new();
+        let nonexistent = HwKeyHandle::new("session-9d.nonexistent");
+        let result = mock.rotate_identity(
+            &nonexistent,
+            "session-9d.unreachable.new".into(),
+            [0u8; 32],
+            0,
+            RotationReason::PlannedRotation.tag(),
+            [0u8; CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN],
+        );
+        assert!(
+            matches!(result, Err(HwKeystoreError::KeyNotFound(_))),
+            "missing handle must surface as KeyNotFound, got {result:?}"
+        );
+    }
+
+    /// **F-CLIENT-FACADE-1 session 9d (2026-05-19):** default trait impl
+    /// rejects callers that have not overridden `rotate_identity` —
+    /// ensures missing wire-up surfaces with a deterministic error
+    /// rather than silent placeholder behaviour.
+    #[test]
+    fn default_rotate_identity_impl_returns_not_implemented_native_error() {
+        use umbrella_backup::cloud_wrap::RotationReason;
+
+        struct StubCallback;
+        impl PersistentKeyStoreCallback for StubCallback {
+            fn generate_identity(&self, _label: String) -> Result<HwKeyHandle, HwKeystoreError> {
+                unimplemented!()
+            }
+            fn sign_identity(
+                &self,
+                _handle: &HwKeyHandle,
+                _data: &[u8],
+            ) -> Result<Vec<u8>, HwKeystoreError> {
+                unimplemented!()
+            }
+            fn wrap_secret(
+                &self,
+                _handle: &HwKeyHandle,
+                _plaintext: &[u8],
+            ) -> Result<Vec<u8>, HwKeystoreError> {
+                unimplemented!()
+            }
+            fn unwrap_secret(
+                &self,
+                _handle: &HwKeyHandle,
+                _ct: &[u8],
+            ) -> Result<Vec<u8>, HwKeystoreError> {
+                unimplemented!()
+            }
+            fn delete_identity(&self, _handle: &HwKeyHandle) -> Result<(), HwKeystoreError> {
+                unimplemented!()
+            }
+            fn verifying_key(&self, _handle: &HwKeyHandle) -> Result<[u8; 32], HwKeystoreError> {
+                unimplemented!()
+            }
+        }
+
+        let stub = StubCallback;
+        let dummy_handle = HwKeyHandle::new("unused");
+        let result = stub.rotate_identity(
+            &dummy_handle,
+            "unused".into(),
+            [0u8; 32],
+            0,
+            RotationReason::PlannedRotation.tag(),
+            [0u8; CODE_RECOVERY_PUBLIC_HALF_PROOF_LEN],
+        );
+        match result {
+            Err(HwKeystoreError::Native(msg)) => {
+                assert!(
+                    msg.contains("not implemented"),
+                    "default impl must surface 'not implemented' diagnostic, got: {msg}"
+                );
+            }
+            other => panic!("expected default impl Err(Native), got {other:?}"),
+        }
     }
 }

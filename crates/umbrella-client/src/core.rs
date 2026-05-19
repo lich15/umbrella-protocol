@@ -534,7 +534,27 @@ pub struct ClientCore {
     /// bootstrap path; on the hw path it derives from an independent random
     /// seed (production HW MLS device-key callback is F-IDENT-DEVICE-1, tracked
     /// for v1.2.x — outside session 5 scope).
-    pub(crate) mls_keystore: Arc<dyn KeyStore>,
+    ///
+    /// **F-CLIENT-FACADE-1 session 9d (2026-05-19):** обёрнут в
+    /// `std::sync::RwLock` для поддержки atomic replacement через
+    /// [`Self::swap_mls_keystore`] после publication ротации identity
+    /// (`rotate_identity_full` facade). Все readers идут через accessor
+    /// [`Self::mls_keystore`] который returns `Arc` clone — поэтому
+    /// держатели старого Arc продолжают видеть pre-rotation state, а
+    /// новые `core.mls_keystore()` calls видят post-rotation state.
+    /// Lock — `std::sync::RwLock` (не tokio): identity_public/sign — sync
+    /// операции, не требуют `.await`.
+    ///
+    /// **F-CLIENT-FACADE-1 session 9d (2026-05-19):** wrapped in
+    /// `std::sync::RwLock` to support atomic replacement via
+    /// [`Self::swap_mls_keystore`] after an identity-rotation publish
+    /// (`rotate_identity_full` facade). All readers go through accessor
+    /// [`Self::mls_keystore`] which returns an `Arc` clone — holders of
+    /// the old `Arc` continue to see pre-rotation state while subsequent
+    /// `core.mls_keystore()` calls see the post-rotation state. The lock
+    /// is `std::sync::RwLock` (not tokio): identity_public/sign are sync
+    /// operations and do not need `.await`.
+    pub(crate) mls_keystore: std::sync::RwLock<Arc<dyn KeyStore>>,
 
     /// Map `ChatId -> UmbrellaGroup` — active MLS group state per chat.
     /// `Arc<TokioMutex<UmbrellaGroup>>` per value — каждой группе нужна
@@ -659,6 +679,7 @@ impl ClientCore {
             InMemoryKeyStore::open(seed, 0, Arc::new(SystemClock) as Arc<dyn Clock>)?;
         mls_keystore_inner.add_device(0, None)?;
         let mls_keystore: Arc<dyn KeyStore> = Arc::new(mls_keystore_inner);
+        let mls_keystore = std::sync::RwLock::new(mls_keystore);
         let mls_provider = Arc::new(UmbrellaProvider::default());
 
         Ok(Arc::new(Self {
@@ -803,6 +824,7 @@ impl ClientCore {
             InMemoryKeyStore::open(mls_seed, 0, Arc::new(SystemClock) as Arc<dyn Clock>)?;
         mls_keystore_inner.add_device(0, None)?;
         let mls_keystore: Arc<dyn KeyStore> = Arc::new(mls_keystore_inner);
+        let mls_keystore = std::sync::RwLock::new(mls_keystore);
         let mls_provider = Arc::new(UmbrellaProvider::default());
 
         Ok(Arc::new(Self {
@@ -1010,11 +1032,79 @@ impl ClientCore {
     /// add_members. См. doc-comment поля [`Self::mls_keystore`] для partition
     /// invariant vs [`Self::keystore`].
     ///
+    /// **F-CLIENT-FACADE-1 session 9d (2026-05-19):** accessor читает
+    /// `RwLock<Arc<dyn KeyStore>>` под кратким read-lock'ом и возвращает
+    /// `Arc` clone. Lock освобождается до того как caller вызовет любой
+    /// метод KeyStore — concurrent readers полностью lock-free после
+    /// получения Arc'а. Atomic swap через [`Self::swap_mls_keystore`]
+    /// видит pending readers через write-lock contention; новые reader'ы
+    /// после swap'а видят новый keystore.
+    ///
     /// MLS keystore (Block 7.2 device 0 single-device). See the field
     /// doc-comment for the partition invariant vs [`Self::keystore`].
+    ///
+    /// **F-CLIENT-FACADE-1 session 9d (2026-05-19):** the accessor reads
+    /// the `RwLock<Arc<dyn KeyStore>>` under a brief read-lock and returns
+    /// an `Arc` clone. The lock is released before the caller invokes any
+    /// KeyStore method — concurrent readers are fully lock-free once they
+    /// hold the `Arc`. Atomic swap via [`Self::swap_mls_keystore`] sees
+    /// pending readers through write-lock contention; readers acquired
+    /// after the swap see the new keystore.
     #[must_use]
     pub fn mls_keystore(&self) -> Arc<dyn KeyStore> {
-        self.mls_keystore.clone()
+        self.mls_keystore
+            .read()
+            .expect("mls_keystore rwlock poisoned — fatal invariant violation")
+            .clone()
+    }
+
+    /// **F-CLIENT-FACADE-1 session 9d (2026-05-19):** atomically replace the
+    /// internal `mls_keystore` with a new implementation. Intended to be
+    /// called by the rotation orchestration layer (`rotate_identity_full`
+    /// facade либо follow-up state-management code) after an
+    /// `IdentityRotationRecord` has been successfully published to KT.
+    ///
+    /// **Семантика concurrent access**: метод берёт `write`-lock на
+    /// `mls_keystore` RwLock на время swap'а. Любые in-flight reader'ы
+    /// (которые уже клонировали Arc до swap'а) продолжают видеть
+    /// pre-swap keystore — это intentional invariant: facade operations
+    /// в полёте не должны частично-переключаться между identity'ями.
+    /// Readers acquired после swap'а возвращают новый keystore.
+    ///
+    /// **Не очищает hw_callback / hw_identity_handle / hw_verifying_key**:
+    /// rotation orchestration отвечает за обновление этих полей через
+    /// follow-up API (session 9e либо позже). На session 9d swap чисто
+    /// MLS-keystore-scoped; tests verify post-rotation
+    /// `core.mls_keystore().identity_public()` returns the new pubkey
+    /// (acceptance criterion #9 из design spec).
+    ///
+    /// **F-CLIENT-FACADE-1 session 9d (2026-05-19):** atomically replace
+    /// the internal `mls_keystore` with a new implementation. Intended to
+    /// be called by the rotation orchestration layer
+    /// (`rotate_identity_full` facade or a follow-up state-management
+    /// step) after an `IdentityRotationRecord` has been successfully
+    /// published to KT.
+    ///
+    /// **Concurrent access**: this method takes a `write` lock on the
+    /// `mls_keystore` RwLock for the duration of the swap. In-flight
+    /// readers (which already cloned the `Arc` before the swap) continue
+    /// to see the pre-swap keystore — this is the intentional invariant:
+    /// in-flight facade operations must not flip between identities mid
+    /// way. Readers acquired after the swap see the new keystore.
+    ///
+    /// **Does NOT clear `hw_callback` / `hw_identity_handle` /
+    /// `hw_verifying_key`**: rotation orchestration is responsible for
+    /// updating those fields via follow-up APIs (session 9e or later).
+    /// In session 9d this swap is purely MLS-keystore-scoped; tests
+    /// verify that after rotation
+    /// `core.mls_keystore().identity_public()` returns the new pubkey
+    /// (acceptance criterion #9 from the design spec).
+    pub fn swap_mls_keystore(&self, new_keystore: Arc<dyn KeyStore>) {
+        let mut guard = self
+            .mls_keystore
+            .write()
+            .expect("mls_keystore rwlock poisoned — fatal invariant violation");
+        *guard = new_keystore;
     }
 
     /// Извлечь `Arc<TokioMutex<UmbrellaGroup>>` для данного `chat_id`. Возвращает
