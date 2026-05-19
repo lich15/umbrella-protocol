@@ -52,6 +52,7 @@
 pub mod attestation;
 pub mod call;
 pub mod core;
+pub mod device_authorization;
 pub mod error;
 pub mod facade;
 pub mod identity;
