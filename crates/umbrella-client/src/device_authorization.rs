@@ -30,8 +30,8 @@
 use std::sync::Arc;
 
 use umbrella_backup::cloud_wrap::{
-    DeviceAuthorizationApproval, DeviceAuthorizationRevocation, AUTHORIZATION_WIRE_VERSION,
-    POLICY_FLAGS_RESERVED_MASK,
+    canonical_signing_input_approval, DeviceAuthorizationApproval, DeviceAuthorizationRevocation,
+    AUTHORIZATION_WIRE_VERSION, POLICY_FLAGS_RESERVED_MASK,
 };
 use umbrella_kt::{
     encode_kt_entry_device_authorization_approval, encode_kt_entry_device_authorization_revocation,
@@ -41,6 +41,7 @@ use umbrella_kt::{
 use crate::core::ClientCore;
 use crate::error::{ClientError, Result};
 use crate::identity::IDENTITY_SIGNATURE_LEN;
+use crate::keystore::hw_callback::{HwKeyHandle, PersistentKeyStoreCallback};
 
 /// Outcome от successful publish'а одной из двух authorization entry types.
 /// Returned by [`publish_device_authorization_approval`] и
@@ -172,4 +173,159 @@ pub async fn publish_device_authorization_revocation(
         published_entry_size,
         timestamp: revocation_timestamp,
     })
+}
+
+/// **F-CLIENT-FACADE-1 session 10f (2026-05-19):** initiate a device-transfer
+/// flow на existing («approver») device. Orchestrates HW signing of the
+/// canonical approval input on the TEE-resident identity key + composes the
+/// session 9c publish path. Caller supplies only `new_device_pubkey` (from
+/// incoming-device side via QR / mutually-attested channel) + timestamps +
+/// `policy_flags` — the approver's own pubkey is resolved from
+/// `hw_callback.verifying_key(approver_handle)` (single source of truth).
+///
+/// SPEC-11 §4 device add flow: existing active device authorizes a new
+/// device by publishing a `DeviceAuthorizationApproval` (ADR-008 EntryType
+/// 0x04) record signed by the approver's identity key. The new device, once
+/// online, observes the entry in KT and bootstraps its local state from the
+/// approval metadata + cloud-wrap material.
+///
+/// ## Defence-in-depth (5 layers)
+///
+/// 1. **Policy-flags reserved bits** — `policy_flags & POLICY_FLAGS_RESERVED_MASK
+///    != 0` → fail-closed before any HW round-trip. Matches the same
+///    invariant in `seal_device_authorization_approval` /
+///    [`publish_device_authorization_approval`] (defence-in-depth — caller,
+///    facade, and seal helper all enforce).
+/// 2. **HW pubkey resolution** — `hw_callback.verifying_key(approver_handle)`
+///    fetches the approver pubkey directly from the TEE. Single source of
+///    truth ensures the canonical input's `approver_device_pubkey` field
+///    matches the key that will actually sign — no opportunity for a
+///    caller-supplied stale pubkey to corrupt the record.
+/// 3. **Self-approval rejection** — `new_device_pubkey ==
+///    approver_device_pubkey` is rejected as a caller-side bug: device
+///    transfer adds a **new** device. A device retiring its own identity
+///    uses `rotate_identity_full` (session 9d), not this flow.
+/// 4. **HW signature length** — `sign_identity` returns `Vec<u8>` per the
+///    callback ABI; we strictly enforce the Ed25519 64-byte length so a
+///    misbehaving native impl (or a mock returning wrong length) is caught
+///    immediately rather than corrupting downstream wire frames.
+/// 5. **Publish-side re-verify** — delegate to
+///    [`publish_device_authorization_approval`] whose
+///    `verify_self_consistent` step Ed25519-verifies the signature under
+///    the embedded `approver_device_pubkey`. Catches HW key-handle
+///    mismatch (signing key not paired with the resolved pubkey — would
+///    indicate keystore corruption).
+///
+/// ## Why parametric `hw_callback` + `approver_handle`, not read from `core`
+///
+/// Mirrors `rotate_identity_full` (session 9d) rationale verbatim:
+///
+/// 1. **Test ergonomics** — `core.hw_callback` is `pub(crate)`; integration
+///    tests can inject a `MockHwKeystore` directly.
+/// 2. **Decoupling** — production callers (FFI layer) MAY wrap `core.hw_callback`
+///    с telemetry или audit middleware before passing to this method.
+/// 3. **Single-responsibility** — facade is pure orchestration; ClientCore
+///    holds shared transport state but is not the source of truth for HW
+///    callback wiring.
+///
+/// **F-CLIENT-FACADE-1 session 10f (2026-05-19):** initiate device-transfer
+/// on existing approver device. HW signing + session 9c publish orchestration.
+///
+/// # Errors
+///
+/// - `ClientError::Kt(KtError::InvalidAuthorizationEntryWire("policy_flags_reserved_bits_set"))`
+///   if `policy_flags & POLICY_FLAGS_RESERVED_MASK != 0`.
+/// - `ClientError::Platform(...)` if `hw_callback.verifying_key(approver_handle)`
+///   or `sign_identity` returns an error (TEE failure, key not found, etc.).
+/// - `ClientError::Internal("...self-approval not allowed...")` if
+///   `new_device_pubkey == approver_device_pubkey`.
+/// - `ClientError::Internal("...HW signature length...")` if
+///   `sign_identity` returns a `Vec<u8>` of length other than 64
+///   (`IDENTITY_SIGNATURE_LEN`).
+/// - Any error from [`publish_device_authorization_approval`] (Layer 5
+///   self-consistency re-verify).
+pub async fn initiate_device_transfer(
+    core: &Arc<ClientCore>,
+    hw_callback: Arc<dyn PersistentKeyStoreCallback>,
+    approver_handle: HwKeyHandle,
+    new_device_pubkey: [u8; DEVICE_PUBKEY_LEN],
+    authorized_since_timestamp: u64,
+    history_cutoff_timestamp: u64,
+    policy_flags: u8,
+) -> Result<DeviceAuthorizationPublishOutcome> {
+    // Layer 1: policy_flags reserved bits guard. Fails closed before HW
+    // round-trip to avoid wasting a TEE operation on a wire-frame that
+    // would be rejected at publish time.
+    if policy_flags & POLICY_FLAGS_RESERVED_MASK != 0 {
+        return Err(ClientError::Kt(
+            umbrella_kt::KtError::InvalidAuthorizationEntryWire("policy_flags_reserved_bits_set"),
+        ));
+    }
+
+    // Layer 2: resolve approver pubkey from HW callback. Source of truth
+    // is the TEE — never a caller-supplied parameter.
+    let approver_device_pubkey = hw_callback.verifying_key(&approver_handle).map_err(|err| {
+        ClientError::Platform(format!(
+            "initiate_device_transfer: hw_callback.verifying_key(approver_handle) failed: {err}"
+        ))
+    })?;
+
+    // Layer 3: self-approval rejection.
+    if new_device_pubkey == approver_device_pubkey {
+        return Err(ClientError::Internal(format!(
+            "initiate_device_transfer: self-approval not allowed — new_device_pubkey \
+             equals approver_device_pubkey ({}); device transfer requires a different \
+             new device. For self-rotation use rotate_identity_full (session 9d)",
+            hex_short_pk(&approver_device_pubkey),
+        )));
+    }
+
+    // Layer 4: HW sign canonical approval input.
+    let canonical = canonical_signing_input_approval(
+        AUTHORIZATION_WIRE_VERSION,
+        &new_device_pubkey,
+        &approver_device_pubkey,
+        authorized_since_timestamp,
+        history_cutoff_timestamp,
+        policy_flags,
+    );
+    let sig_vec = hw_callback
+        .sign_identity(&approver_handle, &canonical)
+        .map_err(|err| {
+            ClientError::Platform(format!(
+                "initiate_device_transfer: hw_callback.sign_identity over \
+                 canonical_signing_input_approval failed: {err}"
+            ))
+        })?;
+    let sig_len = sig_vec.len();
+    let approver_signature: [u8; IDENTITY_SIGNATURE_LEN] =
+        sig_vec.as_slice().try_into().map_err(|_| {
+            ClientError::Internal(format!(
+                "initiate_device_transfer: hw_callback.sign_identity returned {sig_len} bytes, \
+                 expected {IDENTITY_SIGNATURE_LEN} (Ed25519 signature length)"
+            ))
+        })?;
+
+    // Layer 5: publish via session 9c facade. publish_device_authorization_approval's
+    // verify_self_consistent re-verifies signature → catches HW key-handle
+    // mismatch (approver_handle paired with different identity key).
+    publish_device_authorization_approval(
+        core,
+        new_device_pubkey,
+        approver_device_pubkey,
+        authorized_since_timestamp,
+        history_cutoff_timestamp,
+        policy_flags,
+        approver_signature,
+    )
+    .await
+}
+
+/// Render the first 4 bytes of a 32-byte pubkey as hex with a trailing `...`
+/// — used only in error messages so wallet inspectors can correlate a
+/// failed approval to the device pubkey без leaking the full bytes into
+/// logs. Same convention as `identity::hex_short`.
+fn hex_short_pk(bytes: &[u8; DEVICE_PUBKEY_LEN]) -> String {
+    let prefix: String = bytes.iter().take(4).map(|b| format!("{b:02x}")).collect();
+    format!("{prefix}...{}b", bytes.len())
 }
