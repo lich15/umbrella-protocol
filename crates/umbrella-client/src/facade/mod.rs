@@ -12,6 +12,7 @@
 
 pub mod chat_common;
 pub mod cloud_chat;
+pub mod max_ratchet_envelope;
 pub mod secret_chat;
 
 #[doc(inline)]

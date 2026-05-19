@@ -127,6 +127,18 @@ pub enum ClientError {
     /// fail with this — same UX as never-registered.
     #[error("account permanently deleted")]
     AccountDeleted,
+
+    /// **Task 6 max_ratchet v3 facade integration (2026-05-20):** SPQR HMAC
+    /// verification rejected входящего v3 message. Возможные причины:
+    /// (a) сообщение fabricated третьим лицом без знания epoch_secret;
+    /// (b) sender и receiver разошлись в epoch'е (race condition между
+    /// concurrent send/receive); (c) wire-level повреждение бит.
+    /// Receiver отбрасывает сообщение fail-closed без silent fallback.
+    ///
+    /// **Task 6:** SPQR HMAC verification rejected an incoming v3 message.
+    /// Fail-closed: receiver discards the message without silent fallback.
+    #[error("SPQR HMAC verification failed for incoming v3 message")]
+    SpqrAuthFailed,
 }
 
 /// Результат операций клиента.

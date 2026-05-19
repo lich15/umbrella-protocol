@@ -45,7 +45,9 @@ pub mod config;
 pub mod counter;
 pub mod group;
 pub mod spqr;
+pub mod state;
 pub mod timer;
 
 pub use config::MaxRatchetConfig;
 pub use group::{MaxRatchetGroup, MaxRatchetOutgoing};
+pub use state::MaxRatchetState;

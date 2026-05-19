@@ -42,6 +42,9 @@ use umbrella_mls::{
     parse_key_package_safe, GroupPolicy, IncomingMessage, MlsError, UmbrellaCiphersuite,
     UmbrellaGroup,
 };
+use umbrella_mls::max_ratchet::spqr;
+
+use crate::facade::max_ratchet_envelope;
 use umbrella_sealed_sender::{
     seal as sealed_sender_seal, unseal as sealed_sender_unseal, SealedSenderError,
 };
@@ -302,27 +305,63 @@ pub(crate) async fn send_mls_text(
         return Ok(MessageId([0u8; 16]));
     };
 
-    // F-CLIENT-FACADE-1 session 5: real MLS encrypt iff an MLS group is
-    // registered for `chat_id` in `ClientCore.groups`. Backwards compat:
-    // если группа не зарегистрирована (e.g. test через `CloudChat::open(
-    // ChatId([0u8; 32]))` без предварительного `create`), сохраняем
-    // legacy path text-as-bytes — session 3 wire-format остаётся
-    // exercised mock'ом.
+    // Task 6 max_ratchet v3 facade integration (2026-05-20): real MLS encrypt
+    // через MaxRatchetState когда group зарегистрирован + ratchet_state найден.
+    // Поток на send_text:
+    //   1. force_rekey (aggressive DH ratchet, epoch+1)
+    //   2. encrypt_application (MLS AEAD)
+    //   3. SPQR HMAC over ciphertext
+    //   4. encode_v3 bundle с marker 0xFF + commit + ciphertext + mac
     //
-    // F-CLIENT-FACADE-1 session 5: real MLS encrypt when a group is
-    // registered; otherwise raw text bytes (legacy/test backwards compat).
+    // Fallback: если group не зарегистрирована (legacy/test path через `open(
+    // ChatId([0u8; 32]))` без `create`), сохраняем raw text bytes path —
+    // session-3 mock gateway тестам это нужно.
+    //
+    // Lock ordering: group первым, затем state. State используется только
+    // совместно с group; обратный порядок невозможен в кодовой базе.
+    //
+    // Task 6 max_ratchet v3 facade integration (2026-05-20): real MLS encrypt
+    // via MaxRatchetState (aggressive DH ratchet → encrypt_application →
+    // SPQR HMAC → v3 bundle) when both group and ratchet_state are registered.
+    // Falls back to raw text bytes for legacy/test paths without MLS.
     let ciphertext = if let Some(group_arc) = core.get_group(chat_id).await {
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO)
+            .as_secs();
+
         let mut group = group_arc.lock().await;
-        // MLS AEAD encrypt + signing — sync. Lock держим only during
-        // crypto, не во время network I/O. Result Vec<u8> освобождает
-        // lock после `?`.
-        // MLS AEAD encrypt + sign — sync; the lock is dropped before
-        // network I/O.
-        group.encrypt_application(
-            core.mls_provider.as_ref(),
-            core.mls_keystore().as_ref(),
-            text.as_bytes(),
-        )?
+        if let Some(state_arc) = core.get_ratchet_state(chat_id).await {
+            let mut state = state_arc.lock().await;
+            let outgoing = state.encrypt_with_rekey_authenticated(
+                &mut *group,
+                core.mls_provider.as_ref(),
+                core.mls_keystore().as_ref(),
+                text.as_bytes(),
+                now_unix,
+            )?;
+            let spqr_mac_arr: Option<[u8; max_ratchet_envelope::SPQR_MAC_LEN]> = outgoing
+                .spqr_mac
+                .as_ref()
+                .map(|v| {
+                    let mut arr = [0u8; max_ratchet_envelope::SPQR_MAC_LEN];
+                    arr.copy_from_slice(v);
+                    arr
+                });
+            max_ratchet_envelope::encode_v3(
+                outgoing.commit_bytes.as_deref(),
+                &outgoing.ciphertext_bytes,
+                spqr_mac_arr.as_ref(),
+            )
+        } else {
+            // Group registered но state нет — legacy backwards-compat path до
+            // Task 6 migration. Прямой encrypt_application без max ratchet.
+            group.encrypt_application(
+                core.mls_provider.as_ref(),
+                core.mls_keystore().as_ref(),
+                text.as_bytes(),
+            )?
+        }
     } else {
         text.into_bytes()
     };
@@ -459,33 +498,133 @@ pub(crate) async fn fetch_mls_inbox(
 /// legacy fallback path — application-level encoding выбор лежит на стороне
 /// chat protocol (Block 8.6 will introduce MIME-typed payload framing).
 ///
-/// F-CLIENT-FACADE-1 session 5: try MLS decrypt if group is Some, otherwise
-/// UTF-8 lossy fallback. Transitional behaviour for session 5; tightens to
-/// strict-MLS-only in session 7+.
+/// F-CLIENT-FACADE-1 session 5 + Task 6 max_ratchet v3 facade integration (2026-05-20):
+/// dispatch decrypt по wire format:
+/// - v3 bundle (marker `0xFF`) → process commit (if present) + decrypt ciphertext +
+///   **verify SPQR HMAC** over ciphertext. На SPQR auth failure возвращает
+///   marker `<SPQR-AUTH-FAILED>` и log warning (fail-closed: показывает что
+///   что-то пошло не так, но не silent drop чтобы test видел; production layer
+///   может filter эти).
+/// - legacy v2 (raw MLS message) → process_incoming напрямую, UTF-8 lossy.
+/// - non-MLS ciphertext или group отсутствует → UTF-8 lossy fallback (legacy
+///   stub path).
+///
+/// Возвращает plaintext String. Sender identity KT verification (session 8) +
+/// strict-MLS-only без UTF-8 lossy (session 7+) — отдельные carry-overs.
+///
+/// Task 6 dispatch: v3 bundle (marker 0xFF) → process commit + decrypt + verify SPQR
+/// (returns "<SPQR-AUTH-FAILED>" marker on auth failure, fail-loud). Legacy v2 path →
+/// raw MLS decrypt with UTF-8 lossy fallback.
+const SPQR_AUTH_FAILED_MARKER: &str = "<SPQR-AUTH-FAILED>";
+
 async fn decrypt_text_with_fallback(
     core: &Arc<ClientCore>,
     group: Option<&Arc<TokioMutex<UmbrellaGroup>>>,
     ciphertext: &[u8],
 ) -> String {
-    if let Some(group_arc) = group {
+    let Some(group_arc) = group else {
+        return String::from_utf8_lossy(ciphertext).into_owned();
+    };
+
+    // Task 6: detect v3 bundle (marker 0xFF) — fast path before legacy MLS decode.
+    if let Some(v3) = max_ratchet_envelope::try_decode_v3(ciphertext) {
         let mut g = group_arc.lock().await;
-        match g.process_incoming(core.mls_provider.as_ref(), ciphertext) {
-            Ok(IncomingMessage::Application { payload, .. }) => {
-                return String::from_utf8_lossy(&payload).into_owned();
-            }
-            Ok(_other) => {
-                tracing::debug!(
-                    "fetch_mls_inbox: non-Application MLS message variant, falling back to UTF-8 lossy"
-                );
-            }
-            Err(_) => {
-                tracing::debug!(
-                    "fetch_mls_inbox: MLS decrypt failed on payload, falling back to UTF-8 lossy (legacy/test fixture path)"
-                );
+
+        // 1. Process commit first (if present) — merges epoch advance on receiver side.
+        if let Some(commit) = v3.commit_bytes {
+            match g.process_incoming(core.mls_provider.as_ref(), commit) {
+                Ok(IncomingMessage::CommitApplied { .. }) | Ok(IncomingMessage::Application { .. }) => {
+                    // CommitApplied — expected. Application would be unusual (commit slot
+                    // contains application message?) — accept defensively.
+                }
+                Ok(other) => {
+                    tracing::debug!(
+                        "fetch_mls_inbox v3: unexpected commit variant {other:?}, continuing"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "fetch_mls_inbox v3: commit process_incoming failed: {e:?}; \
+                         dropping message"
+                    );
+                    return SPQR_AUTH_FAILED_MARKER.to_string();
+                }
             }
         }
+
+        // 2. Process application ciphertext — decrypt.
+        let payload = match g.process_incoming(core.mls_provider.as_ref(), v3.ciphertext_bytes) {
+            Ok(IncomingMessage::Application { payload, .. }) => payload,
+            Ok(_other) => {
+                tracing::warn!(
+                    "fetch_mls_inbox v3: ciphertext slot не Application variant; dropping"
+                );
+                return SPQR_AUTH_FAILED_MARKER.to_string();
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "fetch_mls_inbox v3: application decrypt failed: {e:?}; dropping"
+                );
+                return SPQR_AUTH_FAILED_MARKER.to_string();
+            }
+        };
+
+        // 3. Verify SPQR HMAC over the ciphertext_bytes via current epoch exporter.
+        let exporter_result = g.exporter_secret(
+            core.mls_provider.as_ref(),
+            "umbrellax-spqr-deniable-auth",
+            b"",
+            32,
+        );
+        let exporter = match exporter_result {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!(
+                    "fetch_mls_inbox v3: exporter_secret extraction failed: {e:?}; \
+                     dropping (cannot verify SPQR)"
+                );
+                return SPQR_AUTH_FAILED_MARKER.to_string();
+            }
+        };
+        let epoch_secret = match spqr::derive_epoch_secret_from_exporter(&exporter.expose()[..32]) {
+            Ok(s) => s,
+            Err(_) => {
+                tracing::warn!(
+                    "fetch_mls_inbox v3: SPQR epoch_secret derivation failed; dropping"
+                );
+                return SPQR_AUTH_FAILED_MARKER.to_string();
+            }
+        };
+        if !spqr::verify_hmac(&epoch_secret, v3.ciphertext_bytes, &v3.spqr_mac) {
+            tracing::warn!(
+                "fetch_mls_inbox v3: SPQR HMAC verification REJECTED — possible fabrication \
+                 либо epoch desync; dropping message fail-closed"
+            );
+            return SPQR_AUTH_FAILED_MARKER.to_string();
+        }
+
+        return String::from_utf8_lossy(&payload).into_owned();
     }
-    String::from_utf8_lossy(ciphertext).into_owned()
+
+    // Legacy v2 path: raw MLS message without v3 marker.
+    let mut g = group_arc.lock().await;
+    match g.process_incoming(core.mls_provider.as_ref(), ciphertext) {
+        Ok(IncomingMessage::Application { payload, .. }) => {
+            String::from_utf8_lossy(&payload).into_owned()
+        }
+        Ok(_other) => {
+            tracing::debug!(
+                "fetch_mls_inbox: non-Application MLS message variant, falling back to UTF-8 lossy"
+            );
+            String::from_utf8_lossy(ciphertext).into_owned()
+        }
+        Err(_) => {
+            tracing::debug!(
+                "fetch_mls_inbox: MLS decrypt failed on payload, falling back to UTF-8 lossy (legacy/test fixture path)"
+            );
+            String::from_utf8_lossy(ciphertext).into_owned()
+        }
+    }
 }
 
 /// **F-CLIENT-FACADE-1 session 5 (2026-05-19):** create a real MLS group for a

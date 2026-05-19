@@ -20,7 +20,7 @@ use umbrella_identity::{
     MnemonicLanguage, SystemClock,
 };
 use umbrella_kt::{KtLogState, WitnessSet};
-use umbrella_mls::{UmbrellaGroup, UmbrellaProvider};
+use umbrella_mls::{MaxRatchetState, UmbrellaGroup, UmbrellaProvider};
 
 use crate::error::{ClientError, Result};
 #[cfg(feature = "pq")]
@@ -689,6 +689,17 @@ pub struct ClientCore {
     /// (production) or test fixtures (session 7+). Fail-closed if a group
     /// member is missing from the directory at send time.
     pub(crate) peer_x25519_directory: RwLock<HashMap<[u8; 32], IdentityX25519KeyPublic>>,
+
+    /// **Task 6 max_ratchet v3 facade integration (2026-05-20):** per-chat
+    /// [`MaxRatchetState`] storage. Параллельно с `groups` хранит state защит
+    /// (commit_counter + last_timer_check_unix + config) для каждого active chat'а.
+    /// Auto-create'ится при [`Self::register_group`]; unregister'ится вместе с group.
+    /// Sender side в `send_mls_text` lock'ает state перед encrypt_with_rekey_authenticated.
+    ///
+    /// **Task 6 max_ratchet v3 facade integration (2026-05-20):** per-chat
+    /// `MaxRatchetState` storage, kept in parallel to `groups`. Auto-created at
+    /// `register_group` and unregistered alongside the group.
+    pub(crate) ratchet_states: RwLock<HashMap<ChatId, Arc<TokioMutex<MaxRatchetState>>>>,
 }
 
 impl ClientCore {
@@ -760,6 +771,7 @@ impl ClientCore {
             stub_unwrap_transport: Some(stub_unwrap),
             cloud_msg_seq_counters: RwLock::new(HashMap::new()),
             peer_x25519_directory: RwLock::new(HashMap::new()),
+            ratchet_states: RwLock::new(HashMap::new()),
         }))
     }
 
@@ -901,6 +913,7 @@ impl ClientCore {
             stub_unwrap_transport: Some(stub_unwrap),
             cloud_msg_seq_counters: RwLock::new(HashMap::new()),
             peer_x25519_directory: RwLock::new(HashMap::new()),
+            ratchet_states: RwLock::new(HashMap::new()),
         }))
     }
 
@@ -1306,8 +1319,18 @@ impl ClientCore {
     /// Register an MLS group for `chat_id`. Overwrites any existing group
     /// under the same id (last write wins). Called by `CloudChat::create` /
     /// `SecretChat::create` after `UmbrellaGroup::create_private`.
+    ///
+    /// **Task 6 max_ratchet v3 facade integration (2026-05-20):** также
+    /// auto-create'ит `MaxRatchetState` под тем же `chat_id` (с дефолтной
+    /// конфигурацией — все 4 защиты ON). Это обеспечивает что каждый
+    /// зарегистрированный chat получает max ratchet защиты автоматически без
+    /// явного opt-in caller'а — это base v3 design «default-on для всех».
     pub async fn register_group(&self, chat_id: ChatId, group: Arc<TokioMutex<UmbrellaGroup>>) {
         self.groups.write().await.insert(chat_id, group);
+        self.ratchet_states
+            .write()
+            .await
+            .insert(chat_id, Arc::new(TokioMutex::new(MaxRatchetState::new())));
     }
 
     /// Удалить MLS-группу для `chat_id`. Возвращает `Arc<TokioMutex<UmbrellaGroup>>`
@@ -1319,11 +1342,31 @@ impl ClientCore {
     /// Remove the MLS group for `chat_id`. Returns the group if present so the
     /// caller can decide on final state handling. Tests-only today; production
     /// cleanup (logout, remove last device) arrives in session 6+.
+    ///
+    /// **Task 6 max_ratchet v3 facade integration (2026-05-20):** также удаляет
+    /// `MaxRatchetState` под тем же `chat_id` для consistency.
     pub async fn unregister_group(
         &self,
         chat_id: ChatId,
     ) -> Option<Arc<TokioMutex<UmbrellaGroup>>> {
+        self.ratchet_states.write().await.remove(&chat_id);
         self.groups.write().await.remove(&chat_id)
+    }
+
+    /// **Task 6 max_ratchet v3 facade integration (2026-05-20):** lookup
+    /// `MaxRatchetState` для `chat_id`. Возвращает `None` если group не
+    /// зарегистрирована либо устаревший test path где register_group ранее
+    /// не вызывался. Используется sender side в `send_mls_text` для lock'а
+    /// state'а перед `encrypt_with_rekey_authenticated`.
+    ///
+    /// **Task 6:** look up `MaxRatchetState` for `chat_id`. Used by the sender
+    /// side in `send_mls_text` to lock the state before
+    /// `encrypt_with_rekey_authenticated`.
+    pub async fn get_ratchet_state(
+        &self,
+        chat_id: ChatId,
+    ) -> Option<Arc<TokioMutex<MaxRatchetState>>> {
+        self.ratchet_states.read().await.get(&chat_id).cloned()
     }
 
     /// **F-CLIENT-FACADE-1 session 6 (2026-05-19):** drain pending Welcome
