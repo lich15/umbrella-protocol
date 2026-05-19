@@ -275,13 +275,31 @@ Snapdragon 8 Gen 4 (current flagship) ~1.5-2x slower vs Apple M2 на crypto wor
 
 ## 7. Открытые вопросы / Carry-over
 
-### 7.1 Реальная X-Wing combine integration (Task 4 partial)
+### 7.1 ~~Реальная X-Wing combine integration~~ (Task 4 partial) — **CLOSED 2026-05-20**
 
-Текущая реализация **flag-only**: `MaxRatchetOutgoing.pq_extension_used` сообщает что commit *должен* включать PQ extension, но **реальная** X-Wing combine между классическим и post-quantum shared secrets выполняется на уровне `OpenMlsProvider` который сейчас не подменяется.
+Real X-Wing combine integration реализована через 2 новых метода `#[cfg(feature = "pq")]`:
 
-**Что нужно:** новый метод `UmbrellaGroup::force_rekey_with_pq(provider, keystore, now_unix)` который использует `UmbrellaXWingProvider` (определён в `crates/umbrella-mls/src/provider/xwing.rs`) вместо стандартного `UmbrellaProvider`. Затем в `MaxRatchetGroup::encrypt_with_rekey` при `should_trigger_pq=true` использовать этот вариант.
+**`UmbrellaGroup::force_rekey_with_pq(pq_provider, keystore, now_unix) -> (Vec<u8>, [u8; 32])`:**
+- Выполняет обычный `force_rekey` (MLS commit + self_update + merge); под ciphersuite 0x004D + `UmbrellaXWingProvider` это **реальный** X-Wing combine (X25519 || ML-KEM-768 → SHA3-256) на уровне HPKE encaps под новый leaf node.
+- Извлекает 32-байтовый exporter с label `"umbrellax-max-ratchet-pq-shared-v1"` из нового epoch'a — HKDF chain over PQ-augmented joiner_secret.
+- Возвращает `(commit_bytes, pq_shared_secret[32])`.
 
-**Carry-over reason:** требует глубокого понимания openmls 0.7 API + UmbrellaXWingProvider integration patterns. Отдельная сессия 2-4 часа per [[feedback-phd-no-partial]].
+**`MaxRatchetGroup::encrypt_with_rekey_pq_authenticated(pq_provider, keystore, plaintext, now_unix)`:**
+- Принимает `UmbrellaXWingProvider` вместо обычного `UmbrellaProvider`.
+- При `should_trigger_pq=true` (каждый 3-й commit по умолчанию) вызывает `force_rekey_with_pq` + комбинирует `pq_shared` в SPQR HMAC keying через `spqr::pq_extend_epoch_secret(classical_secret, pq_shared)`.
+- На non-trigger commits — обычный classical SPQR HMAC; force_rekey всё равно X-Wing на уровне MLS commit потому что ciphersuite=0x004D.
+
+**Integration tests** (6 tests, `tests/test_max_ratchet_pq_real.rs`, gated `#![cfg(feature = "pq")]`):
+1. `force_rekey_with_pq_returns_nonzero_pq_shared_on_xwing_group` — sanity: extracted secret ≠ all-zero/0xFF
+2. `force_rekey_with_pq_changes_pq_shared_across_consecutive_epochs` — per-epoch fresh keying
+3. `encrypt_with_rekey_pq_authenticated_triggers_pq_extension_on_3rd_send` — counter cycle: sends 1,2,4,5 → no PQ flag; sends 3, 6 → PQ flag
+4. **`pq_triggered_mac_differs_from_classical_only_mac_on_same_ciphertext`** — **HMAC при PQ-trigger отличается от HMAC того же ciphertext'а вычисленного classical-only — доказывает что pq_shared реально задействован в keying material (не paperwork flag)**
+5. `encrypt_with_rekey_pq_authenticated_advances_epoch_per_message` — aggressive DH ratchet preserved под PQ provider
+6. `commit_counter_increments_under_pq_authenticated_path` — counter ↔ send number bijection
+
+**Запуск:** `cargo test --features pq,test-utils -p umbrella-mls --test test_max_ratchet_pq_real` → 6/6 passing.
+
+**Закрытие paperwork-vs-real concern:** до Task 4.7 `pq_extension_used` был flag-only (boolean, не влияет на keying material). Теперь test #4 явно доказывает что PQ-derived secret меняет HMAC output → flag действительно reflects real cryptographic effect.
 
 ### 7.2 Facade integration (Task 6)
 
@@ -307,11 +325,9 @@ Real numbers Apple M2 captured в §5.1. Bench file `crates/umbrella-mls/benches
 
 Carry-over: Android/iOS device-native benchmarks через NDK toolchain (vne scope Task 7).
 
-### 7.4 Real X-Wing shared secret extraction для SPQR PQ extension
+### 7.4 ~~Real X-Wing shared secret extraction для SPQR PQ extension~~ — **CLOSED 2026-05-20**
 
-В `spqr::pq_extend_epoch_secret` сейчас параметр `pq_shared_secret: &[u8; 32]` — это placeholder. В реальной интеграции нужно извлечь shared secret **из** X-Wing combine операции в commit. UmbrellaXWingProvider должен expose этот secret через дополнительный API.
-
-**Carry-over вместе с 7.1.**
+Закрыто вместе с §7.1: `pq_shared_secret` извлекается из MLS exporter (`umbrellax-max-ratchet-pq-shared-v1` label) который HKDF-derived over PQ-augmented joiner_secret под ciphersuite 0x004D. Это canonical способ extract'а post-quantum keying material из MLS state — не требует custom API в UmbrellaXWingProvider.
 
 ---
 
@@ -324,12 +340,12 @@ Carry-over: Android/iOS device-native benchmarks через NDK toolchain (vne s
 - [x] `MaxRatchetOutgoing::Debug` redacts wire payloads (нет утечки plaintext в логи)
 - [x] HMAC verify использует constant-time `verify_slice`
 - [x] Все HKDF derive используют explicit domain-separation labels
-- [ ] Real X-Wing integration в provider layer (Task 4 partial — carry-over §7.1)
+- [x] Real X-Wing integration в provider layer (Task 4.7 — closed 2026-05-20, см. §7.1)
 - [ ] CloudChat / SecretChat использует MaxRatchetGroup (Task 6 — carry-over §7.2)
 - [x] Criterion benchmarks с реальными числами (Task 7 — closed 2026-05-20, см. §5.1)
 - [ ] External audit (рекомендуется: Cure53, NCC, Trail of Bits)
 
-8 of 10 acceptance criteria achieved. Carry-overs документированы для дальнейших сессий.
+9 of 10 acceptance criteria achieved. Remaining: Task 6 facade integration + external audit.
 
 ---
 

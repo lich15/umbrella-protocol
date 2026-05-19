@@ -448,6 +448,55 @@ impl UmbrellaGroup {
         Ok(commit_bytes)
     }
 
+    /// Принудительное обновление group_secret + извлечение post-quantum shared secret из
+    /// нового epoch'a (для max ratchet PQ-extension SPQR HMAC).
+    ///
+    /// Поток:
+    /// 1. [`force_rekey`](Self::force_rekey) — выполняет MLS commit + self_update + merge.
+    ///    При ciphersuite 0x004D (`MLS_256_XWING_CHACHA20POLY1305_SHA256_Ed25519`) + provider
+    ///    [`UmbrellaXWingProvider`](crate::provider::UmbrellaXWingProvider) — это реальный
+    ///    X-Wing combine (X25519 || ML-KEM-768 → SHA3-256) на уровне HPKE encaps под new leaf.
+    /// 2. Извлекает 32-байтовый exporter с label `"umbrellax-max-ratchet-pq-shared-v1"` из
+    ///    нового epoch'a — это HKDF-derived chain over PQ-augmented joiner_secret. Любая
+    ///    компрометация classical-only X25519 не раскрывает этот secret пока ML-KEM-768
+    ///    компонент uncompromised (X-Wing joint security).
+    ///
+    /// Возвращает `(commit_bytes, pq_shared_secret[32])`.
+    ///
+    /// **Требование:** group должна быть создана с ciphersuite 0x004D + provider должен быть
+    /// `UmbrellaXWingProvider`. Под non-PQ ciphersuite (например 0x0003 default) exporter
+    /// вернёт X25519-derived value без реального PQ benefit — caller responsibility выбрать
+    /// правильный ciphersuite. Документировано в `crates/umbrella-mls/src/max_ratchet/`.
+    ///
+    /// Forces a group_secret refresh and extracts a post-quantum shared secret from the
+    /// new epoch (used by the max ratchet PQ-extension SPQR HMAC).
+    ///
+    /// Flow: 1) [`force_rekey`](Self::force_rekey) advances the MLS epoch with full
+    /// self_update + merge; under ciphersuite 0x004D + `UmbrellaXWingProvider` this is a
+    /// real X-Wing combine at the HPKE encaps layer. 2) Extracts a 32-byte exporter under
+    /// label `"umbrellax-max-ratchet-pq-shared-v1"` from the new epoch; the exporter is
+    /// HKDF-derived over the PQ-augmented joiner_secret, so X-Wing joint security carries
+    /// over. Returns `(commit_bytes, pq_shared_secret[32])`.
+    ///
+    /// **Requirement:** the group must be created with ciphersuite 0x004D and the provider
+    /// must be `UmbrellaXWingProvider`. Under a non-PQ ciphersuite (e.g. the default
+    /// 0x0003) the exporter will return an X25519-only derived value without real PQ
+    /// benefit — picking the right ciphersuite is the caller's responsibility.
+    #[cfg(feature = "pq")]
+    pub fn force_rekey_with_pq(
+        &mut self,
+        pq_provider: &impl OpenMlsProvider,
+        keystore: &dyn KeyStore,
+        now_unix: u64,
+    ) -> Result<(Vec<u8>, [u8; 32])> {
+        let commit = self.force_rekey(pq_provider, keystore, now_unix)?;
+        let pq_secret_wrapped =
+            self.exporter_secret(pq_provider, "umbrellax-max-ratchet-pq-shared-v1", b"", 32)?;
+        let mut out = [0u8; 32];
+        out.copy_from_slice(&pq_secret_wrapped.expose()[..32]);
+        Ok((commit, out))
+    }
+
     /// Шифрует application-сообщение для рассылки всем членам группы.
     /// Encrypts an application message for delivery to all group members.
     pub fn encrypt_application(

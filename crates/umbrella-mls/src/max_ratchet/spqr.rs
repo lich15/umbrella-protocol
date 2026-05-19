@@ -82,12 +82,18 @@ pub fn derive_epoch_secret_from_exporter(exporter_secret: &[u8]) -> Result<[u8; 
 
 /// Расширяет epoch_secret post-quantum X-Wing shared secret через HKDF-SHA256.
 ///
-/// Используется когда commit включал PQ extension (Task 4 flag). Защита от квантового
-/// противника. Domain separation label: `"umbrellax-spqr-pq-extend-v1"`.
+/// Используется когда commit включал X-Wing PQ extension (counter triggers через
+/// `pq_ratchet_every_n_commits`). Защита от квантового противника. `pq_shared_secret`
+/// извлекается из MLS exporter под label `"umbrellax-max-ratchet-pq-shared-v1"` через
+/// [`UmbrellaGroup::force_rekey_with_pq`](crate::group::UmbrellaGroup::force_rekey_with_pq).
+/// Domain separation label HKDF: `"umbrellax-spqr-pq-extend-v1"`.
 ///
 /// Extends epoch_secret with a post-quantum X-Wing shared secret via HKDF-SHA256. Used
-/// when the commit included a PQ extension (Task 4 flag). Defends against a quantum
-/// adversary. Domain separation label: `"umbrellax-spqr-pq-extend-v1"`.
+/// when the commit included an X-Wing PQ extension (counter triggers via
+/// `pq_ratchet_every_n_commits`). Defends against a quantum adversary. `pq_shared_secret`
+/// is extracted from the MLS exporter under label `"umbrellax-max-ratchet-pq-shared-v1"`
+/// via `UmbrellaGroup::force_rekey_with_pq`. HKDF domain separation label:
+/// `"umbrellax-spqr-pq-extend-v1"`.
 pub fn pq_extend_epoch_secret(
     classical_epoch_secret: &[u8; 32],
     pq_shared_secret: &[u8; 32],
