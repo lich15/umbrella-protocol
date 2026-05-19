@@ -209,6 +209,112 @@ pub fn decode_signed_epoch_root(bytes: &[u8]) -> Result<SignedEpochRoot> {
     })
 }
 
+// ============================================================================
+// KT authorization-entry framing — IdentityRotation (ADR-008 EntryType 0x06)
+// ============================================================================
+//
+// Wire layout (235 bytes, fixed):
+//   1 byte    : EntryType prefix = 0x06 (IdentityRotationRecord)
+//   234 bytes : IdentityRotationRecord::encode() body
+//
+// Body sub-layout (see umbrella_backup::cloud_wrap::identity_rotation):
+//   1 byte    : version (AUTHORIZATION_WIRE_VERSION = 0x01)
+//   32 bytes  : old_identity_pubkey (Ed25519)
+//   32 bytes  : new_identity_pubkey (Ed25519)
+//   8 bytes   : rotation_timestamp_u64_be
+//   1 byte    : rotation_reason tag (0x01 / 0x02 / 0x03)
+//   64 bytes  : old_identity_signature
+//   64 bytes  : new_identity_signature
+//   32 bytes  : code_recovery_public_half_proof (F-PHD-RETRO-3-E)
+//
+// Body verify (signatures + identical-pubkey rejection) lives in
+// `IdentityRotationRecord::verify()`; the strict wire decoder here only
+// guarantees structural / framing correctness. Cryptographic verification
+// is a layer above (apply_identity_rotation в umbrella-kt::authorization_entries).
+
+use umbrella_backup::cloud_wrap::{IdentityRotationRecord, IDENTITY_ROTATION_LEN};
+
+use crate::authorization_entries::EntryType;
+
+/// EntryType prefix byte для wire-framed KT entry, содержащей
+/// `IdentityRotationRecord` (ADR-008 §EntryType `0x06`).
+///
+/// EntryType prefix byte for the wire-framed KT entry carrying an
+/// `IdentityRotationRecord` (ADR-008 EntryType `0x06`).
+pub const KT_ENTRY_IDENTITY_ROTATION_PREFIX: u8 = 0x06;
+
+/// Размер wire-format KT entry с `IdentityRotationRecord` (1 byte prefix +
+/// 234 bytes record = 235 bytes, fixed).
+///
+/// Wire-format size of a KT entry carrying an `IdentityRotationRecord`
+/// (1 byte prefix + 234 bytes record = 235 bytes, fixed).
+pub const KT_ENTRY_IDENTITY_ROTATION_WIRE_LEN: usize = 1 + IDENTITY_ROTATION_LEN;
+
+/// Wire-encode `IdentityRotationRecord` как KT entry с `0x06` префиксом.
+/// Возвращает ровно 235 байт (deterministic, fixed-length).
+///
+/// # Determinism
+///
+/// Same input → same bytes. Никакой randomness, никакого аллокатор-зависимого
+/// порядка полей. Длина гарантированно равна
+/// [`KT_ENTRY_IDENTITY_ROTATION_WIRE_LEN`].
+///
+/// Wire-encode `IdentityRotationRecord` as a KT entry with a `0x06` prefix.
+/// Returns exactly 235 bytes, deterministic.
+#[must_use]
+pub fn encode_kt_entry_identity_rotation(record: &IdentityRotationRecord) -> Vec<u8> {
+    let mut out = Vec::with_capacity(KT_ENTRY_IDENTITY_ROTATION_WIRE_LEN);
+    out.push(KT_ENTRY_IDENTITY_ROTATION_PREFIX);
+    out.extend_from_slice(&record.encode());
+    debug_assert_eq!(out.len(), KT_ENTRY_IDENTITY_ROTATION_WIRE_LEN);
+    debug_assert_eq!(
+        EntryType::IdentityRotationRecord as u8,
+        KT_ENTRY_IDENTITY_ROTATION_PREFIX,
+        "prefix const must match EntryType::IdentityRotationRecord tag"
+    );
+    out
+}
+
+/// Wire-decode `IdentityRotationRecord` из KT entry bytes с `0x06` префиксом.
+/// Strict — отвергает любую malformed конфигурацию.
+///
+/// Defence-in-depth (постулат 14):
+/// - input короче 1 байта → `"too_short"`
+/// - первый байт ≠ `0x06` → `"wrong_prefix"` (KT entry содержит другой
+///   EntryType либо corruption)
+/// - длина ≠ 235 → `"wrong_length"` (truncated либо trailing bytes)
+/// - body decode failure (identical pubkeys, unknown reason, version != 0x01,
+///   и т.д.) — propagates через granular tag
+///
+/// # Errors
+///
+/// - [`KtError::InvalidAuthorizationEntryWire`] с одним из тэгов:
+///   - `"too_short"` — input пустой.
+///   - `"wrong_prefix"` — первый байт ≠ `KT_ENTRY_IDENTITY_ROTATION_PREFIX`.
+///   - `"wrong_length"` — `bytes.len() != KT_ENTRY_IDENTITY_ROTATION_WIRE_LEN`.
+///   - `"record_invalid_wire_format"` — body decode failed (identical
+///     pubkeys, unknown reason tag, и т.д.).
+///   - `"record_unknown_wire_version"` — body's leading version byte ≠ 0x01.
+pub fn decode_kt_entry_identity_rotation(bytes: &[u8]) -> Result<IdentityRotationRecord> {
+    use umbrella_backup::BackupError;
+
+    if bytes.is_empty() {
+        return Err(KtError::InvalidAuthorizationEntryWire("too_short"));
+    }
+    if bytes[0] != KT_ENTRY_IDENTITY_ROTATION_PREFIX {
+        return Err(KtError::InvalidAuthorizationEntryWire("wrong_prefix"));
+    }
+    if bytes.len() != KT_ENTRY_IDENTITY_ROTATION_WIRE_LEN {
+        return Err(KtError::InvalidAuthorizationEntryWire("wrong_length"));
+    }
+    IdentityRotationRecord::from_bytes(&bytes[1..]).map_err(|e| match e {
+        BackupError::WrappedKeyVersionMismatch { .. } => {
+            KtError::InvalidAuthorizationEntryWire("record_unknown_wire_version")
+        }
+        _ => KtError::InvalidAuthorizationEntryWire("record_invalid_wire_format"),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -658,5 +764,252 @@ mod tests {
             "decoded SignedEpochRoot MUST verify under pinned set with threshold 3 — \
              confirms wire layout binds to canonical_sign_payload correctly",
         );
+    }
+
+    // ========================================================================
+    // KT entry IdentityRotation codec tests (session 9a)
+    // ========================================================================
+
+    mod kt_entry_identity_rotation_tests {
+        use super::*;
+        use umbrella_backup::cloud_wrap::RotationReason;
+
+        /// Build a structurally-valid `IdentityRotationRecord` for wire-level
+        /// testing. Signatures and proof are non-cryptographic placeholder
+        /// bytes — these tests cover **wire framing**, not cryptographic
+        /// verification (the latter lives in `IdentityRotationRecord::verify`
+        /// + `apply_identity_rotation`).
+        fn fresh_rotation_record() -> IdentityRotationRecord {
+            IdentityRotationRecord {
+                version: 0x01,
+                old_identity_pubkey: [0xAA; 32],
+                new_identity_pubkey: [0xBB; 32],
+                rotation_timestamp: 1_715_000_000_000,
+                rotation_reason: RotationReason::PlannedRotation,
+                old_identity_signature: [0xCC; 64],
+                new_identity_signature: [0xDD; 64],
+                code_recovery_public_half_proof: [0xEE; 32],
+            }
+        }
+
+        // --- Constants invariants ---
+
+        #[test]
+        fn wire_constants_match_layout_documentation() {
+            // 1 byte prefix + 234 byte record = 235 bytes total.
+            assert_eq!(KT_ENTRY_IDENTITY_ROTATION_PREFIX, 0x06);
+            assert_eq!(KT_ENTRY_IDENTITY_ROTATION_WIRE_LEN, 235);
+            assert_eq!(KT_ENTRY_IDENTITY_ROTATION_WIRE_LEN, 1 + 234);
+            // Prefix const MUST equal the canonical EntryType tag.
+            assert_eq!(
+                KT_ENTRY_IDENTITY_ROTATION_PREFIX,
+                EntryType::IdentityRotationRecord as u8
+            );
+        }
+
+        // --- Round-trip ---
+
+        #[test]
+        fn encode_then_decode_round_trip_preserves_all_fields_for_kt_entry_identity_rotation() {
+            let original = fresh_rotation_record();
+            let bytes = encode_kt_entry_identity_rotation(&original);
+            assert_eq!(bytes.len(), KT_ENTRY_IDENTITY_ROTATION_WIRE_LEN);
+            let decoded =
+                decode_kt_entry_identity_rotation(&bytes).expect("decode honest 235-byte frame");
+            assert_eq!(decoded, original);
+        }
+
+        #[test]
+        fn encode_produces_deterministic_output_for_same_record() {
+            let record = fresh_rotation_record();
+            let a = encode_kt_entry_identity_rotation(&record);
+            let b = encode_kt_entry_identity_rotation(&record);
+            assert_eq!(
+                a, b,
+                "encoder MUST be byte-deterministic given identical input"
+            );
+        }
+
+        #[test]
+        fn encoded_first_byte_is_kt_entry_identity_rotation_prefix_0x06() {
+            let record = fresh_rotation_record();
+            let bytes = encode_kt_entry_identity_rotation(&record);
+            assert_eq!(bytes[0], KT_ENTRY_IDENTITY_ROTATION_PREFIX);
+            assert_eq!(bytes[0], 0x06);
+        }
+
+        #[test]
+        fn encoded_body_matches_record_encode_after_prefix() {
+            // Wire layout: byte[0] = prefix, byte[1..235] = record.encode().
+            let record = fresh_rotation_record();
+            let wire = encode_kt_entry_identity_rotation(&record);
+            let body_encoded = record.encode();
+            assert_eq!(&wire[1..], &body_encoded[..]);
+        }
+
+        // --- Strict rejection: framing ---
+
+        #[test]
+        fn decode_rejects_empty_input_with_too_short_tag() {
+            let err = decode_kt_entry_identity_rotation(&[]).expect_err("empty must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("too_short")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_only_prefix_byte_without_body_via_wrong_length() {
+            // 1-byte input with correct prefix passes the "too_short" / "wrong_prefix"
+            // gates but trips wrong_length (expected 235, got 1).
+            let bytes = [KT_ENTRY_IDENTITY_ROTATION_PREFIX];
+            let err = decode_kt_entry_identity_rotation(&bytes).expect_err("1-byte must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("wrong_length")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_input_one_byte_below_wire_length() {
+            let record = fresh_rotation_record();
+            let mut bytes = encode_kt_entry_identity_rotation(&record);
+            bytes.pop();
+            assert_eq!(bytes.len(), KT_ENTRY_IDENTITY_ROTATION_WIRE_LEN - 1);
+            let err = decode_kt_entry_identity_rotation(&bytes).expect_err("234-byte must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("wrong_length")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_input_with_trailing_byte_above_wire_length() {
+            let record = fresh_rotation_record();
+            let mut bytes = encode_kt_entry_identity_rotation(&record);
+            bytes.push(0x00);
+            assert_eq!(bytes.len(), KT_ENTRY_IDENTITY_ROTATION_WIRE_LEN + 1);
+            let err = decode_kt_entry_identity_rotation(&bytes).expect_err("236-byte must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("wrong_length")
+            ));
+        }
+
+        // --- Strict rejection: prefix byte ---
+
+        #[test]
+        fn decode_rejects_prefix_byte_0x04_device_authorization_approval_tag() {
+            // 0x04 is the canonical tag for DeviceAuthorizationApproval —
+            // a different ADR-008 entry-type. KT entry shouldn't be
+            // routed to identity-rotation decoder.
+            let record = fresh_rotation_record();
+            let mut bytes = encode_kt_entry_identity_rotation(&record);
+            bytes[0] = 0x04;
+            let err = decode_kt_entry_identity_rotation(&bytes).expect_err("prefix 0x04 must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("wrong_prefix")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_prefix_byte_0x05_device_authorization_revocation_tag() {
+            // 0x05 is DeviceAuthorizationRevocation — different entry-type.
+            let record = fresh_rotation_record();
+            let mut bytes = encode_kt_entry_identity_rotation(&record);
+            bytes[0] = 0x05;
+            let err = decode_kt_entry_identity_rotation(&bytes).expect_err("prefix 0x05 must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("wrong_prefix")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_zero_prefix_byte() {
+            let record = fresh_rotation_record();
+            let mut bytes = encode_kt_entry_identity_rotation(&record);
+            bytes[0] = 0x00;
+            let err = decode_kt_entry_identity_rotation(&bytes).expect_err("prefix 0x00 must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("wrong_prefix")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_every_non_0x06_prefix_byte() {
+            // Exhaustive enumeration of all 255 non-0x06 prefix bytes.
+            let record = fresh_rotation_record();
+            let template = encode_kt_entry_identity_rotation(&record);
+            for bad_prefix in 0u8..=255u8 {
+                if bad_prefix == KT_ENTRY_IDENTITY_ROTATION_PREFIX {
+                    continue;
+                }
+                let mut bytes = template.clone();
+                bytes[0] = bad_prefix;
+                match decode_kt_entry_identity_rotation(&bytes) {
+                    Err(KtError::InvalidAuthorizationEntryWire("wrong_prefix")) => {}
+                    other => {
+                        panic!("bad_prefix=0x{bad_prefix:02x} expected wrong_prefix, got {other:?}")
+                    }
+                }
+            }
+        }
+
+        // --- Strict rejection: record body ---
+
+        #[test]
+        fn decode_rejects_body_with_identical_old_and_new_pubkeys() {
+            // SPEC-09 §7.2 rule 3: identity rotation MUST change identity.
+            // IdentityRotationRecord::from_bytes guards this — wire codec
+            // surfaces as record_invalid_wire_format.
+            let record = fresh_rotation_record();
+            let mut bytes = encode_kt_entry_identity_rotation(&record);
+            // Copy old_identity_pubkey (wire[2..34]) into new_identity_pubkey
+            // (wire[34..66]) — now old_pk == new_pk.
+            let old_pk: [u8; 32] = bytes[2..34].try_into().expect("32 bytes");
+            bytes[34..66].copy_from_slice(&old_pk);
+            let err =
+                decode_kt_entry_identity_rotation(&bytes).expect_err("identical pubkeys must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("record_invalid_wire_format")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_body_with_unknown_rotation_reason_byte_0xff() {
+            // rotation_reason at wire offset 1+73 = 74 (after prefix(1) +
+            // version(1) + old_pk(32) + new_pk(32) + ts(8) = 74). Valid tags
+            // are 0x01/0x02/0x03; 0xFF is unknown — `from_bytes` rejects via
+            // `RotationReason::from_tag` returning None.
+            let record = fresh_rotation_record();
+            let mut bytes = encode_kt_entry_identity_rotation(&record);
+            bytes[74] = 0xFF;
+            let err = decode_kt_entry_identity_rotation(&bytes).expect_err("reason 0xFF must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("record_invalid_wire_format")
+            ));
+        }
+
+        #[test]
+        fn decode_rejects_body_with_unknown_wire_version_byte() {
+            // version byte lives at wire offset 1 (immediately after prefix).
+            // Valid value is AUTHORIZATION_WIRE_VERSION = 0x01. `from_bytes`
+            // surfaces version mismatch as BackupError::WrappedKeyVersionMismatch
+            // which we map to record_unknown_wire_version.
+            let record = fresh_rotation_record();
+            let mut bytes = encode_kt_entry_identity_rotation(&record);
+            bytes[1] = 0xFF;
+            let err =
+                decode_kt_entry_identity_rotation(&bytes).expect_err("version 0xFF must fail");
+            assert!(matches!(
+                err,
+                KtError::InvalidAuthorizationEntryWire("record_unknown_wire_version")
+            ));
+        }
     }
 }

@@ -242,4 +242,23 @@ pub enum KtError {
     /// malformed input (postulate 14, ADR-009).
     #[error("invalid SignedEpochRoot wire format: {0}")]
     InvalidSignedEpochRootWire(&'static str),
+
+    /// KT authorization-entry wire-format (ADR-008 `EntryType` tags
+    /// `0x04`/`0x05`/`0x06` framed: 1 prefix byte + record payload) is
+    /// invalid. Содержит стабильный string tag для классификации причины
+    /// (e.g. `"too_short"`, `"wrong_prefix"`, `"wrong_length"`,
+    /// `"record_invalid_wire_format"`, `"record_unknown_wire_version"`).
+    /// Используется `umbrella_kt::codec::decode_kt_entry_identity_rotation`
+    /// (session 9a) и future siblings for `DeviceAuthorizationApproval` /
+    /// `DeviceAuthorizationRevocation` — fail-closed на любой malformed
+    /// input (постулат 14, ADR-008, SPEC-12 §A.13).
+    ///
+    /// KT authorization-entry wire format (ADR-008 EntryType tags
+    /// 0x04/0x05/0x06 framed: 1 prefix byte + record payload) is invalid.
+    /// Carries a stable string tag for cause classification. Used by
+    /// `umbrella_kt::codec::decode_kt_entry_identity_rotation` (session 9a)
+    /// and future siblings. Fail-closed on any malformed input
+    /// (postulate 14, ADR-008, SPEC-12 §A.13).
+    #[error("invalid KT authorization entry wire format: {0}")]
+    InvalidAuthorizationEntryWire(&'static str),
 }
