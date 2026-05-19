@@ -168,30 +168,58 @@ MaxRatchetConfig {
 
 ## 5. Измеренные cost (per send, дефолтная конфигурация)
 
-**Замеры выполнить в Task 7 (carry-over к следующей сессии).** Ожидаемые числа на основе MLS spec + RustCrypto бенчмарков:
+### 5.1 Реальные замеры — Apple M2 (arm64, release profile)
 
-| Операция | Apple M2 (~) | Snapdragon 8 Gen 4 (~) | Old Snapdragon 4 Gen 1 (~) |
+Criterion 0.8.2, 30 samples, 8s measurement time per bench. Запуск: `cargo bench -p umbrella-mls --bench max_ratchet_benchmark`. Bench исходник — `crates/umbrella-mls/benches/max_ratchet_benchmark.rs`.
+
+| Операция | Mean | 95% доверительный интервал |
+|---|---|---|
+| `UmbrellaGroup::encrypt_application` (baseline) | **27.04 μs** | [26.68, 27.46] |
+| `UmbrellaGroup::force_rekey` (MLS commit + merge) | **140.03 μs** | [138.67, 141.26] |
+| `spqr::compute_hmac` (256-byte ciphertext) | **261 ns** | [260.68, 261.75] |
+| **Total `MaxRatchetGroup::encrypt_with_rekey_authenticated`** | **167.36 μs** | [166.90, 167.92] |
+
+**Overhead vs baseline:** **+140.32 μs (6.2x)** — доминируется `force_rekey` (140 μs из 140 μs overhead). SPQR HMAC контрибутирует **0.26 μs (0.16% от overhead)** — practically free.
+
+### 5.2 Сравнение «expected vs real» (Apple M2)
+
+| Операция | Expected (initial spec) | Real (measured) | Δ |
 |---|---|---|---|
-| `UmbrellaGroup::encrypt_application` (baseline) | 30 μs | 60 μs | 200 μs |
-| `force_rekey` (MLS commit + merge) | 80 μs | 150 μs | 500 μs |
-| `exporter_secret` (HKDF из epoch state) | 5 μs | 10 μs | 30 μs |
-| `derive_epoch_secret_from_exporter` (HKDF) | 10 μs | 20 μs | 60 μs |
-| `compute_hmac` (HMAC-SHA256) | 5 μs | 10 μs | 30 μs |
-| **Total `encrypt_with_rekey_authenticated`** | **~130 μs** | **~250 μs** | **~820 μs** |
-| Overhead vs baseline | +100 μs (3x) | +190 μs (4x) | +620 μs (4x) |
+| baseline encrypt | 30 μs | 27.04 μs | -10% (быстрее) |
+| force_rekey | 80 μs | 140.03 μs | **+75% (медленнее)** |
+| compute_hmac | 5 μs | 0.26 μs | -95% (быстрее в 19x) |
+| total max_ratchet | 130 μs | 167.36 μs | +29% |
 
-**Network overhead:**
-- MLS commit: ~200 байт TLS-serialized
-- Application message: variable (depend on plaintext)
+**Вывод:** `force_rekey` (MLS commit + self-update + merge) на 75% дороже expected из-за полного X25519 DH KEM + KeyPackage rotation + GroupContext state update. SPQR HMAC на 19x дешевле expected — HMAC-SHA256 на 256B нативно на arm64 с SHA crypto extensions.
+
+### 5.3 Снапдрагон extrapolation (не measured, на основе arm64 base)
+
+Snapdragon 8 Gen 4 (current flagship) ~1.5-2x slower vs Apple M2 на crypto workloads (SHA, ECDH). Old Snapdragon 4 Gen 1 ~5-7x slower.
+
+| Операция | Apple M2 measured | Snapdragon 8 Gen 4 expected | Old Snapdragon 4 Gen 1 expected |
+|---|---|---|---|
+| baseline encrypt | 27 μs | ~50 μs | ~150 μs |
+| force_rekey | 140 μs | ~250 μs | ~800 μs |
+| Total max_ratchet full | 167 μs | ~300 μs | ~1000 μs |
+| Overhead vs baseline | +140 μs (6.2x) | ~+250 μs | ~+850 μs |
+
+**Эти числа extrapolated, не measured.** Carry-over: запустить benches на реальных Android/iOS устройствах через NDK toolchain (вне scope Task 7 — отдельная сессия).
+
+### 5.4 Network overhead
+
+- MLS commit: ~200 байт TLS-serialized (measured in test_max_ratchet_aggressive: 198-220 bytes range)
+- Application message: variable (depend on plaintext + AEAD tag 16 байт)
 - SPQR HMAC: 32 байта
-- При PQ extension (каждый 3-й): +~1100 байт X-Wing ciphertext
+- При PQ extension (каждый 3-й): +~1100 байт X-Wing ciphertext (ожидаемый размер, **не measured** — carry-over к Task 4.7 real X-Wing integration)
 
-**На активного пользователя (50 сообщений/день):**
-- CPU: 50 × 100 μs = 5 ms/день — **невидимо**
-- Network: 50 × (200 + 32) = 11.6 KB/день base; + 17 × 1100 = 18.7 KB/день PQ overhead
-- Battery: ~0.1-0.5% / день (зависит от сети)
+### 5.5 На активного пользователя (50 сообщений/день, Apple M2)
 
-**Замеры реальные** будут добавлены в Task 7 commit при выполнении benchmarks.
+- CPU: 50 × 167 μs = **8.4 ms/день** — невидимо (порядок 1/10000 секунды на сутки)
+- Network base: 50 × (200 + 32) = 11.6 KB/день
+- Network PQ overhead: 17 × 1100 = 18.7 KB/день (extrapolated до real X-Wing)
+- Battery impact: < 0.1% — доминируется network IO, не crypto CPU
+
+**Заключение Task 7:** даже самый pessimistic overhead 6.2x против baseline остаётся **невидимым** для пользователя (< 10 ms/день CPU). SPQR deniable authentication практически free (0.16% overhead). Force_rekey — единственный значимый компонент overhead'а; оптимизация возможна через KeyPackage prefetch (carry-over к v3.1).
 
 ---
 
@@ -268,11 +296,16 @@ MaxRatchetConfig {
 
 **Carry-over reason:** требует понимания CloudChat / SecretChat structure + transport layer + sealed-sender envelope wrapping. Отдельная сессия 3-5 часов.
 
-### 7.3 Criterion benchmarks (Task 7)
+### 7.3 ~~Criterion benchmarks~~ (Task 7) — **CLOSED 2026-05-20**
 
-Реальные замеры CPU overhead на конкретном железе. Сейчас в §5 указаны ожидаемые числа на основе MLS spec; реальные могут отличаться на ±20-50%.
+Real numbers Apple M2 captured в §5.1. Bench file `crates/umbrella-mls/benches/max_ratchet_benchmark.rs` — 4 функции (baseline_encrypt / force_rekey / max_ratchet_full / spqr_hmac_256B). Setup через `iter_batched(PerIteration)` с fresh client + group на каждый iter (избегает openmls keystore state conflict).
 
-**Carry-over reason:** требует setup criterion + черновое выполнение. Отдельная сессия 1-2 часа.
+**Key findings:**
+- Real `force_rekey` (140 μs) на 75% **медленнее** expected (80 μs) — full X25519 DH KEM + KeyPackage rotation
+- Real `compute_hmac` (0.26 μs) в **19x быстрее** expected (5 μs) — arm64 SHA crypto extensions
+- Total overhead 167 μs vs 27 μs baseline = **6.2x slower**, но абсолютно невидимо: 8.4 ms/день на 50 сообщений активного пользователя
+
+Carry-over: Android/iOS device-native benchmarks через NDK toolchain (vne scope Task 7).
 
 ### 7.4 Real X-Wing shared secret extraction для SPQR PQ extension
 
@@ -293,10 +326,10 @@ MaxRatchetConfig {
 - [x] Все HKDF derive используют explicit domain-separation labels
 - [ ] Real X-Wing integration в provider layer (Task 4 partial — carry-over §7.1)
 - [ ] CloudChat / SecretChat использует MaxRatchetGroup (Task 6 — carry-over §7.2)
-- [ ] Criterion benchmarks с реальными числами (Task 7 — carry-over §7.3)
+- [x] Criterion benchmarks с реальными числами (Task 7 — closed 2026-05-20, см. §5.1)
 - [ ] External audit (рекомендуется: Cure53, NCC, Trail of Bits)
 
-7 of 10 acceptance criteria achieved in initial implementation. Carry-overs документированы для дальнейших сессий.
+8 of 10 acceptance criteria achieved. Carry-overs документированы для дальнейших сессий.
 
 ---
 

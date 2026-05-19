@@ -75,3 +75,16 @@ test-utils = []
 proptest = { workspace = true }
 ed25519-dalek = { workspace = true }
 rand_core = { workspace = true }
+criterion = { workspace = true }
+
+# Criterion микро-бенчмарки для max_ratchet режима (Task 7 carry-over из
+# max-ratchet v3 spec 2026-05-20). Запуск: `cargo bench -p umbrella-mls
+# --bench max_ratchet_benchmark`. Replaces "expected" числа из §5 spec
+# реальными измерениями на конкретном железе.
+# Criterion micro-benchmarks for the max_ratchet mode (Task 7 carry-over from the
+# max-ratchet v3 spec 2026-05-20). Run with `cargo bench -p umbrella-mls
+# --bench max_ratchet_benchmark`. Replaces "expected" numbers in spec §5 with real
+# measurements on concrete hardware.
+[[bench]]
+name = "max_ratchet_benchmark"
+harness = false
