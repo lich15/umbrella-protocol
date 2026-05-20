@@ -9,8 +9,10 @@
 
 use std::time::{Duration, SystemTime};
 
-/// 32-byte sender-set TTL header attached to sealed envelope. Encoded as:
-/// `version_byte(1) || ttl_secs(8) || one_time_flag(1) || notify_flag(1) || reserved(21)`.
+/// 32-байтный TTL-заголовок, который sender прикрепляет к sealed envelope.
+/// Encoded as: `version_byte(1) || ttl_secs(8) || one_time_flag(1) || notify_flag(1) || reserved(21)`.
+///
+/// 32-byte sender-set TTL header attached to sealed envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SelfDestructHeader {
     /// Version (currently 1).
