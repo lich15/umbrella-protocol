@@ -11,6 +11,14 @@
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+// Round-6 distributed identity: production path uses
+// `umbrella_client::keystore::distributed_identity_client::bootstrap_account`;
+// `IdentitySeed::generate` deprecated в production. Test fixtures во всём крейте
+// используют `IdentitySeed::generate` — deprecated lint disabled только под test cfg.
+//
+// Round-6 distributed identity: test fixtures use `IdentitySeed::generate`;
+// deprecated lint disabled under test cfg.
+#![cfg_attr(test, allow(deprecated))]
 
 pub mod attestation;
 pub mod code_recovery;

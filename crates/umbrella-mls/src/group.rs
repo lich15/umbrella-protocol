@@ -875,6 +875,11 @@ mod tests {
 
     impl Client {
         /// Создаёт свежий client с выставленным device_index.
+        #[allow(
+            deprecated,
+            reason = "test-only seed gen для MLS group test fixtures; production identity uses \
+                      distributed_identity_client::bootstrap_account"
+        )]
         fn new(device_index: u32) -> Self {
             let mut rng = rand_core::OsRng;
             let seed = IdentitySeed::generate(&mut rng, MnemonicLanguage::English);

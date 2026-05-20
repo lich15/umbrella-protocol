@@ -1,3 +1,9 @@
+#![allow(
+    deprecated,
+    clippy::doc_lazy_continuation,
+    clippy::doc_overindented_list_items
+)]
+
 //! F-CLIENT-FACADE-1 closure session 4 (2026-05-19): contract tests proving
 //! that [`CloudChat::fetch_inbox`] and [`SecretChat::fetch_inbox`] drain
 //! `IncomingMessage` envelopes from the active [`GatewayConnection`] and

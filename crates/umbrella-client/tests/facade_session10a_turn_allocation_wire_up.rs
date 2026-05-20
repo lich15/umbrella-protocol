@@ -236,12 +236,11 @@ async fn start_with_enforcement_calls_call_relay_allocate_exactly_once_per_sessi
         "one CallSession construction = exactly one TURN allocation"
     );
 
-    let last = core
+    let last = *core
         .call_relay_transport()
         .last_request
         .lock()
-        .expect("last_request lock")
-        .clone();
+        .expect("last_request lock");
     assert!(last.is_some(), "last_request recorded after allocate");
     let (peer_id, _level) = last.unwrap();
     assert_eq!(
@@ -264,13 +263,12 @@ async fn secret_mode_passes_sensitive_security_level_even_if_policy_requests_p2p
     };
     start_with(core.clone(), ModeEnforcement::SecretMode, policy).await;
 
-    let (_peer, level) = core
+    let (_peer, level) = (*core
         .call_relay_transport()
         .last_request
         .lock()
-        .expect("last_request")
-        .clone()
-        .expect("recorded");
+        .expect("last_request"))
+    .expect("recorded");
     assert!(
         matches!(level, CallSecurityLevelWire::Sensitive),
         "SecretMode MUST propagate Sensitive to the server regardless of allow_p2p_global \
@@ -292,13 +290,12 @@ async fn cloud_mode_with_allow_p2p_global_passes_allow_p2p_global_security_level
     };
     start_with(core.clone(), ModeEnforcement::CloudMode, policy).await;
 
-    let (_peer, level) = core
+    let (_peer, level) = (*core
         .call_relay_transport()
         .last_request
         .lock()
-        .expect("last_request")
-        .clone()
-        .expect("recorded");
+        .expect("last_request"))
+    .expect("recorded");
     assert!(
         matches!(level, CallSecurityLevelWire::AllowP2pGlobal),
         "CloudMode + allow_p2p_global=true MUST propagate AllowP2pGlobal"
@@ -315,13 +312,12 @@ async fn cloud_mode_without_allow_p2p_global_passes_sensitive_security_level() {
     let policy = CallPolicy::default(); // allow_p2p_global = false by default
     start_with(core.clone(), ModeEnforcement::CloudMode, policy).await;
 
-    let (_peer, level) = core
+    let (_peer, level) = (*core
         .call_relay_transport()
         .last_request
         .lock()
-        .expect("last_request")
-        .clone()
-        .expect("recorded");
+        .expect("last_request"))
+    .expect("recorded");
     assert!(
         matches!(level, CallSecurityLevelWire::Sensitive),
         "CloudMode + allow_p2p_global=false (default) MUST propagate Sensitive — conservative path"

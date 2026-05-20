@@ -14,9 +14,10 @@
 use std::time::{Duration, SystemTime};
 
 /// Per-chat policy enum.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ScreenshotPolicy {
     /// No screenshot protection. Default for casual / public chats.
+    #[default]
     Allow,
     /// Block screenshots via OS flag. Mask messages on screen recording.
     Block,
@@ -24,14 +25,8 @@ pub enum ScreenshotPolicy {
     BlockAndNotify,
 }
 
-impl Default for ScreenshotPolicy {
-    fn default() -> Self {
-        Self::Allow
-    }
-}
-
 /// Single message metadata for TTL / self-destruct.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MessageRetention {
     /// Sender-set TTL after first view. `None` = no TTL.
     pub ttl_after_view: Option<Duration>,
@@ -41,17 +36,6 @@ pub struct MessageRetention {
     pub notify_on_screenshot: bool,
     /// Anonymous watermark to embed in media for leak tracing (32 bytes).
     pub anonymous_watermark: Option<[u8; 32]>,
-}
-
-impl Default for MessageRetention {
-    fn default() -> Self {
-        Self {
-            ttl_after_view: None,
-            one_time_view: false,
-            notify_on_screenshot: false,
-            anonymous_watermark: None,
-        }
-    }
 }
 
 /// State of a single message on the receiver side: «not viewed», «viewed

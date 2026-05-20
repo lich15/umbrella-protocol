@@ -24,7 +24,7 @@ pub fn should_trigger_pq(counter: u32, every_n: u32) -> bool {
     if every_n == 0 || counter == 0 {
         return false;
     }
-    counter % every_n == 0
+    counter.is_multiple_of(every_n)
 }
 
 #[cfg(test)]

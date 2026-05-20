@@ -1,3 +1,9 @@
+#![allow(
+    deprecated,
+    clippy::doc_lazy_continuation,
+    clippy::doc_overindented_list_items
+)]
+
 //! Compliance-gate тест SPEC-06 §3: SecretChat **никогда** не генерирует
 //! non-Relay ICE candidates, независимо от того что user положит в
 //! `CallPolicy`.

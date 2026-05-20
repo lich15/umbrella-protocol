@@ -1,5 +1,10 @@
 //! PhD-level retrospective active audit для umbrella-identity (block 10.7-active-retro session #66).
 //! PhD-level retrospective active audit for umbrella-identity (block 10.7-active-retro session #66).
+
+// Round-6 distributed identity: integration test fixtures используют `IdentitySeed::generate`
+// для seed gen — deprecated lint disabled для всего integration test файла.
+// Round-6 distributed identity: integration test fixtures use `IdentitySeed::generate`.
+#![allow(deprecated)]
 //!
 //! ## Назначение
 //!

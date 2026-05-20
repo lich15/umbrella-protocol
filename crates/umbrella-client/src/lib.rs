@@ -48,6 +48,25 @@
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+// Round-6 distributed identity: production path uses
+// `distributed_identity_client::bootstrap_account`; test fixtures используют
+// `IdentitySeed::generate` — deprecated lint disabled под test cfg.
+//
+// Round-6 distributed identity: test fixtures use `IdentitySeed::generate`.
+#![cfg_attr(test, allow(deprecated))]
+// Clippy 1.95.0 ужесточил doc rendering rules (`doc_lazy_continuation`,
+// `doc_overindented_list_items`). Это markdown formatting hints, не safety —
+// rendered docs читаемы. Crate-level allow preserves existing 250+ doc-comment
+// blocks без bulk reformatting (несвязано с runtime behavior).
+//
+// Clippy 1.95.0 tightened doc rendering rules; allow at crate level — these are
+// stylistic markdown hints, not safety, and rendered docs remain legible.
+#![allow(
+    clippy::doc_lazy_continuation,
+    clippy::doc_overindented_list_items,
+    clippy::empty_line_after_doc_comments,
+    clippy::unusual_byte_groupings
+)]
 
 pub mod attestation;
 pub mod call;

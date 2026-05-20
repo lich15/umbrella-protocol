@@ -1,3 +1,10 @@
+#![allow(
+    deprecated,
+    clippy::doc_lazy_continuation,
+    clippy::doc_overindented_list_items,
+    clippy::unusual_byte_groupings
+)]
+
 //! R21 — Real attack: duress PIN triggers UNRECOVERABLE_DELETE
 //!
 //! Per round-6 spec §«Stage 5» R21:

@@ -1,3 +1,12 @@
+#![allow(
+    deprecated,
+    clippy::doc_lazy_continuation,
+    clippy::doc_overindented_list_items,
+    clippy::unusual_byte_groupings,
+    dead_code,
+    clippy::too_many_arguments
+)]
+
 //! F-CLIENT-FACADE-1 closure session 6 (2026-05-19): contract tests for
 //! Welcome distribution через blind-postman-svc и `CloudChat::cloud_sync_history`
 //! end-to-end через Cloud-wrap 3-of-5 unwrap fan-out + outer ChaCha20-Poly1305

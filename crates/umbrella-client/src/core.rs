@@ -1838,6 +1838,12 @@ mod production_boundary_tests {
         }
     }
 
+    #[allow(
+        deprecated,
+        reason = "test-only seed generation для ClientCore test fixtures; \
+                  production identity path uses umbrella_client::keystore::\
+                  distributed_identity_client::bootstrap_account (Round-6 distributed identity)"
+    )]
     fn test_seed() -> IdentitySeed {
         IdentitySeed::generate(&mut OsRng, MnemonicLanguage::English)
     }

@@ -1,3 +1,9 @@
+#![allow(
+    deprecated,
+    clippy::doc_lazy_continuation,
+    clippy::doc_overindented_list_items
+)]
+
 //! F-CLIENT-FACADE-1 closure session 7 (2026-05-19): contract tests for
 //! `SecretChat` sealed-sender envelope wrap (на send) и unwrap (на fetch_inbox).
 //! Реализует Signal sealed-sender pattern (Lund et al. 2018) для UmbrellaX:
@@ -334,8 +340,8 @@ async fn helper_seal_wire_does_not_contain_raw_sender_identity_pk_bytes() {
     let mut found_at: Option<usize> = None;
     if envelope_bytes.len() >= alice_id_pk_bytes.len() {
         for window_start in 0..=(envelope_bytes.len() - alice_id_pk_bytes.len()) {
-            if &envelope_bytes[window_start..window_start + alice_id_pk_bytes.len()]
-                == &alice_id_pk_bytes[..]
+            if envelope_bytes[window_start..window_start + alice_id_pk_bytes.len()]
+                == alice_id_pk_bytes[..]
             {
                 found_at = Some(window_start);
                 break;

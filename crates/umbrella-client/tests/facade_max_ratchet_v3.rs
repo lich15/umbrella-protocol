@@ -213,7 +213,7 @@ async fn send_path_produces_v3_bundle_with_marker_commit_ciphertext_mac() {
 
     let outgoing = state
         .encrypt_with_rekey_authenticated(
-            &mut *group,
+            &mut group,
             client.core().mls_provider().as_ref(),
             client.core().mls_keystore().as_ref(),
             b"hello v3",
@@ -324,7 +324,7 @@ async fn end_to_end_alice_send_bob_decrypt_with_spqr_verify() {
     let mut alice_state = alice_state_arc.lock().await;
     let outgoing = alice_state
         .encrypt_with_rekey_authenticated(
-            &mut *alice_group,
+            &mut alice_group,
             client.core().mls_provider().as_ref(),
             client.core().mls_keystore().as_ref(),
             b"hello bob from alice v3",
@@ -430,7 +430,7 @@ async fn counter_increments_on_each_send_authentication_path() {
         let mut state = state_arc.lock().await;
         let _ = state
             .encrypt_with_rekey_authenticated(
-                &mut *group,
+                &mut group,
                 client.core().mls_provider().as_ref(),
                 client.core().mls_keystore().as_ref(),
                 format!("msg {}", i).as_bytes(),
@@ -656,7 +656,7 @@ async fn idle_window_attack_defence_timer_rekey_advances_epoch_after_pause() {
         let mut state = test_state.lock().await;
         let _ = state
             .encrypt_with_rekey_authenticated(
-                &mut *group,
+                &mut group,
                 client.core().mls_provider().as_ref(),
                 client.core().mls_keystore().as_ref(),
                 b"first message",
@@ -681,7 +681,7 @@ async fn idle_window_attack_defence_timer_rekey_advances_epoch_after_pause() {
         let mut state = test_state.lock().await;
         let timer_commit = state
             .check_timer_and_rekey(
-                &mut *group,
+                &mut group,
                 client.core().mls_provider().as_ref(),
                 client.core().mls_keystore().as_ref(),
                 T0 + 1 + 90, // 90 секунд после last rekey
@@ -714,7 +714,7 @@ async fn idle_window_attack_defence_timer_rekey_advances_epoch_after_pause() {
         let mut state = test_state.lock().await;
         let no_double_trigger = state
             .check_timer_and_rekey(
-                &mut *group,
+                &mut group,
                 client.core().mls_provider().as_ref(),
                 client.core().mls_keystore().as_ref(),
                 T0 + 1 + 90 + 5, // 5s after timer rekey
@@ -763,7 +763,7 @@ async fn forward_secrecy_aggressive_dh_each_send_in_new_epoch() {
         let mut state = state_arc.lock().await;
         let outgoing = state
             .encrypt_with_rekey_authenticated(
-                &mut *group,
+                &mut group,
                 client.core().mls_provider().as_ref(),
                 client.core().mls_keystore().as_ref(),
                 format!("message {}", i).as_bytes(),

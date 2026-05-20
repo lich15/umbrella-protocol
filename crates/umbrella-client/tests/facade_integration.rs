@@ -1,3 +1,9 @@
+#![allow(
+    deprecated,
+    clippy::doc_lazy_continuation,
+    clippy::doc_overindented_list_items
+)]
+
 //! Runtime smoke-тесты facade в Блоке 7.2. Проверяют что:
 //!
 //! 1. `UmbrellaClient::bootstrap_for_test` возвращает рабочий `ClientCore` с

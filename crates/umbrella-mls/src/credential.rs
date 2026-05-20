@@ -100,6 +100,11 @@ mod tests {
 
     use umbrella_identity::{Clock, IdentitySeed, InMemoryKeyStore, MnemonicLanguage, SystemClock};
 
+    #[allow(
+        deprecated,
+        reason = "test-only seed gen для MLS credential fixture; production identity uses \
+                  distributed_identity_client::bootstrap_account"
+    )]
     fn fresh_keystore() -> Arc<InMemoryKeyStore> {
         let mut rng = rand_core::OsRng;
         let seed = IdentitySeed::generate(&mut rng, MnemonicLanguage::English);

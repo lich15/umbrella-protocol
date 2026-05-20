@@ -3,8 +3,8 @@
 //! Закрывает Task 4.7 carry-over из max-ratchet v3 spec 2026-05-20 §7.1: до этого
 //! `pq_extension_used` был flag-only (paperwork finding); теперь под ciphersuite 0x004D
 //! + `UmbrellaXWingProvider` PQ-derived shared secret реально извлекается из exporter
-//! нового epoch'a и комбинируется с classical epoch secret через
-//! `spqr::pq_extend_epoch_secret` для SPQR HMAC keying material.
+//!   нового epoch'a и комбинируется с classical epoch secret через
+//!   `spqr::pq_extend_epoch_secret` для SPQR HMAC keying material.
 //!
 //! Тестируем что:
 //! 1. [`UmbrellaGroup::force_rekey_with_pq`] возвращает non-zero pq_shared под X-Wing

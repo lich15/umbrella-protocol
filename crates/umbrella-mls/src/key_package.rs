@@ -137,6 +137,11 @@ mod tests {
 
     use crate::provider::UmbrellaProvider;
 
+    #[allow(
+        deprecated,
+        reason = "test-only seed gen для MLS KeyPackage test fixtures; production identity uses \
+                  distributed_identity_client::bootstrap_account"
+    )]
     fn fresh_keystore() -> (Arc<InMemoryKeyStore>, FixedClock) {
         let mut rng = rand_core::OsRng;
         let seed = IdentitySeed::generate(&mut rng, MnemonicLanguage::English);

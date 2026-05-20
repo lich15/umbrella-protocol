@@ -318,7 +318,7 @@ impl CallSession {
     /// identity-bound fingerprint, for inclusion in the outgoing
     /// signalling offer.
     pub async fn local_dtls_fingerprint(&self) -> umbrella_calls::IdentityDtlsFingerprint {
-        self.dtls_runner.lock().await.local_fingerprint().clone()
+        *self.dtls_runner.lock().await.local_fingerprint()
     }
 
     /// **F-CLIENT-FACADE-1 session 10b (2026-05-19):** session nonce

@@ -334,7 +334,7 @@ pub(crate) async fn send_mls_text(
         if let Some(state_arc) = core.get_ratchet_state(chat_id).await {
             let mut state = state_arc.lock().await;
             let outgoing = state.encrypt_with_rekey_authenticated(
-                &mut *group,
+                &mut group,
                 core.mls_provider.as_ref(),
                 core.mls_keystore().as_ref(),
                 text.as_bytes(),
@@ -710,7 +710,7 @@ pub(crate) async fn mls_add_member(
     peer: PeerId,
     key_package_bytes: &[u8],
 ) -> Result<Vec<u8>> {
-    let group_arc = core.get_group(chat_id).await.ok_or_else(|| {
+    let group_arc = core.get_group(chat_id).await.ok_or({
         ClientError::Mls(MlsError::GroupOperation {
             kind: "add_member: no MLS group registered for chat_id",
         })
@@ -751,7 +751,7 @@ pub(crate) async fn mls_add_member(
         unix_now_secs(),
     )?;
 
-    let welcome_bytes = outcome.welcome.ok_or_else(|| {
+    let welcome_bytes = outcome.welcome.ok_or({
         ClientError::Mls(MlsError::GroupOperation {
             kind: "add_members returned no Welcome (Add proposal did not produce new member)",
         })
@@ -1293,7 +1293,7 @@ pub(crate) async fn send_secret_text(
     let mut first_msg_id: Option<MessageId> = None;
 
     for peer_ed25519 in &peers {
-        let peer_x25519 = core.lookup_peer_x25519(peer_ed25519).await.ok_or_else(|| {
+        let peer_x25519 = core.lookup_peer_x25519(peer_ed25519).await.ok_or({
             ClientError::SealedSender(SealedSenderError::Malformed {
                 reason: "no X25519 pubkey registered for group member \
                              (call ClientCore::register_peer_x25519 first; \

@@ -1,3 +1,9 @@
+#![allow(
+    deprecated,
+    clippy::doc_lazy_continuation,
+    clippy::doc_overindented_list_items
+)]
+
 //! Round-5 device-capture closure — `ClientCore` wiring через
 //! `PersistentKeyStoreCallback` доказывает что:
 //!

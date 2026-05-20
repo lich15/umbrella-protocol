@@ -1,3 +1,12 @@
+#![allow(
+    deprecated,
+    clippy::doc_lazy_continuation,
+    clippy::doc_overindented_list_items,
+    clippy::unusual_byte_groupings,
+    dead_code,
+    clippy::too_many_arguments
+)]
+
 //! R27 — Real attack: servers NOT involved in messages; local ops fast
 //!
 //! Per round-6 spec §«Stage 5» R27:

@@ -141,7 +141,7 @@ impl IdentitySeed {
     /// 5 серверов через FROST DKG (см. `umbrella-threshold-identity::dkg`).
     /// На устройстве идентичность теперь существует только как public key
     /// + 5 anonymous IDs + cached offline ticket; 24+12 слов **никогда**
-    /// не материализуются на одном устройстве.
+    ///   не материализуются на одном устройстве.
     ///
     /// Метод оставлен для тестов (`#[cfg(test)]`-style use) и legacy
     /// migration paths, но в production code use

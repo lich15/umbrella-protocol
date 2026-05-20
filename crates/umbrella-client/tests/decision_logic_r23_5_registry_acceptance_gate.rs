@@ -1,3 +1,12 @@
+#![allow(
+    deprecated,
+    clippy::doc_lazy_continuation,
+    clippy::doc_overindented_list_items,
+    clippy::unusual_byte_groupings,
+    dead_code,
+    clippy::too_many_arguments
+)]
+
 //! # R23 5-registry acceptance gate — decision-logic model (NOT a real attack regression)
 //!
 //! **F-3 closure (PhD-B Pass 1 CRITICAL → Pass 5 remediation 2026-05-18).**

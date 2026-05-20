@@ -1,3 +1,9 @@
+#![allow(
+    deprecated,
+    clippy::doc_lazy_continuation,
+    clippy::doc_overindented_list_items
+)]
+
 //! Adversarial concurrent tests для `CallSession` 7-state lifecycle machine
 //! (Этап 11 блок 11.6 — F-78 LOW closure carry-over от Stage 10 audit M-A4).
 //! Adversarial concurrent tests for the `CallSession` 7-state lifecycle

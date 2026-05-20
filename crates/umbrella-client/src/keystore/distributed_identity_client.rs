@@ -463,7 +463,7 @@ impl MockServerOprfCluster {
     #[cfg(test)]
     pub(crate) fn share_at(&self, server_id: u8) -> (WitnessIndex, [u8; 32]) {
         assert!(
-            server_id >= 1 && server_id <= 5,
+            (1..=5).contains(&server_id),
             "server_id must be 1..=5, got {server_id}"
         );
         self.shares[(server_id - 1) as usize]

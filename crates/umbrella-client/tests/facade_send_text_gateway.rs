@@ -1,3 +1,9 @@
+#![allow(
+    deprecated,
+    clippy::doc_lazy_continuation,
+    clippy::doc_overindented_list_items
+)]
+
 //! F-CLIENT-FACADE-1 closure session 3 (2026-05-19): contract tests proving
 //! that [`CloudChat::send_text`] and [`SecretChat::send_text`] route a real
 //! [`ClientPayload::SendMessage`] envelope through the active

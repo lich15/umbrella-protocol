@@ -117,6 +117,12 @@ mod tests {
     use ed25519_dalek::{Signature as DalekSig, Verifier, VerifyingKey};
     use umbrella_identity::{Clock, IdentitySeed, InMemoryKeyStore, MnemonicLanguage, SystemClock};
 
+    #[allow(
+        deprecated,
+        reason = "test-only seed generation для MLS device-keystore fixtures; \
+                  production identity path uses umbrella_client::keystore::\
+                  distributed_identity_client::bootstrap_account (Round-6 distributed identity)"
+    )]
     fn fresh_keystore() -> Arc<InMemoryKeyStore> {
         let mut rng = rand_core::OsRng;
         let seed = IdentitySeed::generate(&mut rng, MnemonicLanguage::English);
