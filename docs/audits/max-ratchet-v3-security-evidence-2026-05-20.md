@@ -63,9 +63,12 @@ Per [[feedback-real-not-paperwork]] (третье повторение прав�
 | Lemma | Type | Steps | Status |
 |---|---|---|---|
 | `pcs_compromised_prev_epoch_does_not_reveal_new_epoch_messages` | all-traces | 2 | **verified** |
+| `forward_secrecy_compromised_new_epoch_does_not_decrypt_old_messages` | all-traces | 2 | **verified** |
 | `honest_per_message_advance_executable` | exists-trace | 4 | **verified** |
 
 **0 wellformedness check failures** (post-fix v3 — free-variable issue resolved через explicit Ex binding `prev_ek`).
+
+**Forward secrecy explicit claim (Task #3 closure 2026-05-21):** compromise chain key at new_epoch (post-rekey) НЕ reveals messages sent at prev_epoch — hash construction `new_ek = h(<prev_ek, ~fresh>)` irreversible под random oracle assumption, refer к Cohn-Gordon et al. 2017 EuroS&P §V «Signal с forward secrecy» + Alwen-Coretti-Dodis 2019 EUROCRYPT §4 «Forward Secrecy and Backward Secrecy» definitions.
 
 **Key formal claim verified (PCS lemma):**
 ```

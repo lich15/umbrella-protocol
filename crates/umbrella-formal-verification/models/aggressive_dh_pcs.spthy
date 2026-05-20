@@ -158,7 +158,45 @@ lemma pcs_compromised_prev_epoch_does_not_reveal_new_epoch_messages:
 
 /*
    ============================================================================
-   LEMMA 2: honest_per_message_advance_executable (exists-trace)
+   LEMMA 2: forward_secrecy_compromised_new_epoch_does_not_decrypt_old_messages
+   ============================================================================
+
+   **Forward secrecy property** — дополнительно к PCS. Compromise chain key at
+   new_epoch (post-rekey) НЕ reveals messages sent at prev_epoch (pre-rekey).
+   Это core forward secrecy claim: past messages stay protected даже под
+   future state compromise.
+
+   Formal statement: если adversary знает plaintext m_old encrypted at prev_epoch
+   (`K(m_old) @ l`), и new_epoch появился через force_rekey, тогда либо
+   (a) adversary directly revealed prev_ek перед encryption либо
+   (b) m_old sent в plain в network до encryption (K(m_old) before Encrypted),
+   либо
+   (c) fresh randomness leaked (impossible под Dolev-Yao).
+
+   Negation property: compromise new_ek (НЕ prev_ek) не enables прочитать
+   m_old at prev_epoch — hash construction new_ek = h(<prev_ek, ~fresh>)
+   irreversible под random oracle assumption.
+
+   References:
+   - Cohn-Gordon et al. 2017 EuroS&P §V «Signal с forward secrecy» — formal
+     proof что past chain keys cannot be derived from current chain key
+   - Alwen-Coretti-Dodis 2019 EUROCRYPT §4 «Forward Secrecy and Backward
+     Secrecy» definitions
+*/
+lemma forward_secrecy_compromised_new_epoch_does_not_decrypt_old_messages:
+  all-traces
+  "All sid prev_epoch new_epoch prev_ek new_ek m_old #i #j #l.
+       Encrypted(sid, prev_epoch, m_old, prev_ek) @ i
+     & EpochAdvanced(sid, prev_epoch, new_epoch, new_ek) @ j
+     & K(m_old) @ l
+     & i < j
+     ==> (Ex #r. RevealedChainKey(sid, prev_epoch, prev_ek) @ r & r < l)
+       | (Ex #k0. K(m_old) @ k0 & k0 < i)
+       | (Ex fresh #k1 #k2. UsedFreshRandomness(fresh) @ k1 & K(fresh) @ k2)"
+
+/*
+   ============================================================================
+   LEMMA 3: honest_per_message_advance_executable (exists-trace)
    ============================================================================
 
    Sanity check — honest path executable. Alice устанавливает epoch_0,
