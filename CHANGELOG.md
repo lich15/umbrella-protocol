@@ -4,6 +4,34 @@
 
 ## English
 
+### 3.0.0 — 2026-05-20
+
+Release ceremony consolidating post-1.1.0 hardening:
+
+Added:
+- Max Ratchet v3 (default-on aggressive DH + 5-minute timer rekey + PQ extension every 3rd commit + SPQR HMAC deniable authentication); see `docs/audits/max-ratchet-deniability-spec-2026-05-20.md` + `docs/audits/max-ratchet-v3-security-evidence-2026-05-20.md`
+- `umbrella-discovery` crate (Round 7: OPRF-PSI + `@username` lookup with KT bind; 38 D-1..D-8 attack tests)
+- `umbrella-threshold-identity` crate (Round 6: FROST-Ed25519 DKG, PIN/Argon2id model, duress detection, time-lock recovery)
+- 2 fuzz targets: `max_ratchet_envelope_{decode,roundtrip}.rs`
+- 5 Tamarin models: `aggressive_dh_pcs`, `spqr_deniability`, `discovery`, `sealed_servers_threshold_3of5`, `sealed_servers_threshold_universal`
+- Public wire-contract `docs/spec/discovery-integration.md`
+- Backend integration contract `docs/integration/gateway-svc-contract.md`
+
+Changed:
+- Workspace package version: 1.1.0 → 3.0.0 (commit `1ee8dbb3`)
+- F-CLIENT-FACADE-1 MILESTONE 10/10 closed (12 sub-sessions; commit `9417096b`)
+- PhD-B Pass 5 remediation: 18 findings closed (20 commits `471e7928..23eda73a`)
+- `ClientCore.identity`: `Option<Arc<IdentityKey>>` and `None` on hw bootstrap path; M-FINAL-1 closed via Pass 5 commit `e7b034ff` (F-CLIENT-HW-1)
+- 6 Tamarin model tautologies replaced with substantive multi-rule correspondence lemmas
+- 3 dudect measurement-artefact findings closed via bounded-pool pattern at sub-100 ns sites; F-DUDECT-HKDF-BORDERLINE-1 methodology documented в `docs/audits/dudect-saturation-methodology-2026-05-19.md`
+
+Security:
+- 0 BLOCKER + 0 MAJOR (M-FINAL-1 closed) + 1 MINOR-5 carry-over (FFI `with_http_cluster`)
+- 14 Tamarin models verified under `tamarin-prover 1.12.0`; 4 ProVerif models (unchanged)
+- Workspace baseline 2179+ release-mode tests (post-Round 7 floor; post-1.1.0 series adds further)
+
+Verification: see `docs/security/release-notes-v3.0.0.md` § Verification.
+
 ### Post-1.1.0 Max Ratchet v3 — 2026-05-20
 
 Added a default-on aggressive DH + 5-minute timer rekey + post-quantum
@@ -272,6 +300,34 @@ Security:
 ---
 
 ## Русский
+
+### 3.0.0 — 2026-05-20
+
+Церемония выпуска, консолидирующая post-1.1.0 hardening:
+
+Добавлено:
+- Max Ratchet v3 (default-on агрессивный DH + 5-минутный таймер rekey + PQ-расширение каждый 3-й commit + SPQR HMAC отрицаемая аутентификация); см. `docs/audits/max-ratchet-deniability-spec-2026-05-20.md` + `docs/audits/max-ratchet-v3-security-evidence-2026-05-20.md`
+- Крейт `umbrella-discovery` (раунд 7: OPRF-PSI + поиск по `@username` с KT-bind; 38 атакующих тестов D-1..D-8)
+- Крейт `umbrella-threshold-identity` (раунд 6: FROST-Ed25519 DKG, PIN-модель Argon2id, обнаружение duress, time-lock восстановление)
+- 2 fuzz-цели: `max_ratchet_envelope_{decode,roundtrip}.rs`
+- 5 Tamarin-моделей: `aggressive_dh_pcs`, `spqr_deniability`, `discovery`, `sealed_servers_threshold_3of5`, `sealed_servers_threshold_universal`
+- Публичный wire-контракт `docs/spec/discovery-integration.md`
+- Контракт интеграции с бэкендом `docs/integration/gateway-svc-contract.md`
+
+Изменено:
+- Версия пакета workspace: 1.1.0 → 3.0.0 (commit `1ee8dbb3`)
+- Закрыт F-CLIENT-FACADE-1 MILESTONE 10/10 (12 sub-sessions; commit `9417096b`)
+- PhD-B Pass 5 remediation: закрыто 18 находок (20 коммитов `471e7928..23eda73a`)
+- `ClientCore.identity`: `Option<Arc<IdentityKey>>` и `None` на hw bootstrap пути; M-FINAL-1 закрыт через Pass 5 коммит `e7b034ff` (F-CLIENT-HW-1)
+- 6 тавтологий в Tamarin-моделях заменены на содержательные multi-rule correspondence lemmas
+- Закрыты 3 dudect measurement-artefact находки через bounded-pool паттерн на sub-100 ns сайтах; методология F-DUDECT-HKDF-BORDERLINE-1 задокументирована в `docs/audits/dudect-saturation-methodology-2026-05-19.md`
+
+Безопасность:
+- 0 BLOCKER + 0 MAJOR (M-FINAL-1 закрыт) + 1 MINOR-5 carry-over (FFI `with_http_cluster`)
+- 14 Tamarin-моделей проверены под `tamarin-prover 1.12.0`; 4 ProVerif-модели (без изменений)
+- Базовая линия workspace 2179+ release-mode тестов (пол после раунда 7; пост-1.1.0 серия добавляет ещё)
+
+Проверка: см. `docs/security/release-notes-v3.0.0.md` § Verification.
 
 ### Max Ratchet v3 после 1.1.0 — 2026-05-20
 

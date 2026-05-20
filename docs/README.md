@@ -5,10 +5,11 @@
 ## English
 
 This `docs/` tree contains the public production documentation for Umbrella
-Protocol — release tag `v1.1.0` plus a post-1.1.0 hardening series on `main`
-(Pass 5 remediation, F-CLIENT-FACADE-1 milestone 10/10, Round 7 discovery,
-Max Ratchet v3). It is focused on materials that help a reader understand,
-build, verify, and test the protocol without exposing private working material.
+Protocol 3.0.0 (release tag `v3.0.0` ceremony 2026-05-20 commit `1ee8dbb3`;
+consolidates post-v1.1.0 hardening series: Pass 5 remediation,
+F-CLIENT-FACADE-1 milestone 10/10, Round 7 discovery, Max Ratchet v3). It is
+focused on materials that help a reader understand, build, verify, and test
+the protocol without exposing private working material.
 
 ## Contents
 
@@ -23,6 +24,7 @@ build, verify, and test the protocol without exposing private working material.
 - Current release notes:
   `security/release-notes-v1.1.0.md` (1.1.0 baseline; post-1.1.0
   additions are tracked in the repository-root `CHANGELOG.md`).
+- `security/release-notes-v3.0.0.md` (v3.0.0 release ceremony 2026-05-20).
 - Live dependency monitoring:
   `security/dependency-monitoring.md`.
 - 2026-05-15 security-hardening audit:
@@ -70,10 +72,11 @@ public documentation set.
 
 ## Current Status
 
-Umbrella Protocol 1.1.0 is a source-available package under security
-hardening. The repository is published for transparency,
-non-commercial security testing, cryptographic testing, reproducible builds,
-and responsible vulnerability disclosure.
+Umbrella Protocol 3.0.0 (release tag `v3.0.0` ceremony 2026-05-20 commit
+`1ee8dbb3`; consolidates post-v1.1.0 hardening series) is a source-available
+package under security hardening. The repository is published for
+transparency, non-commercial security testing, cryptographic testing,
+reproducible builds, and responsible vulnerability disclosure.
 
 A seven-round PhD-B level security audit (rounds 1-6 merged 2026-05-18
 via commit `84b4d576`, PR #6; round 7 discovery merged subsequently) was
@@ -89,7 +92,7 @@ returned 0 BLOCKER + 1 MAJOR (M-FINAL-1, since closed via Pass 5
 commit `e7b034ff`) + 3 MINOR. The consolidated summary lives in
 [`audits/ROUND-1-TO-7-SUMMARY.md`](audits/ROUND-1-TO-7-SUMMARY.md).
 The post-round-7 workspace baseline is 2179+ release-mode tests; the
-post-1.1.0 series on `main` (F-CLIENT-FACADE-1 10/10, Pass 5
+post-v1.1.0 series consolidated в v3.0.0 (F-CLIENT-FACADE-1 10/10, Pass 5
 remediation, Max Ratchet v3, Tasks 1-5 PhD-B closures) adds further
 tests to that floor.
 
@@ -163,10 +166,11 @@ relay transports. See
 [`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md).
 Core protocol attack gates are recorded in
 [`security/protocol-core-attack-gates.md`](security/protocol-core-attack-gates.md).
-Version 1.1.0 adds local KT split-view hardening: public epoch observations,
-verifiable equivocation evidence, strict observation history, witness
-non-equivocation memory, and privacy-safe observation encoding. Live observation
-exchange and production witness channels remain production boundaries.
+Version 1.1.0 added local KT split-view hardening (carried into v3.0.0):
+public epoch observations, verifiable equivocation evidence, strict
+observation history, witness non-equivocation memory, and privacy-safe
+observation encoding. Live observation exchange and production witness
+channels remain production boundaries.
 It also removes the unused optional `hpke-rs` libcrux HPKE backend from the
 root and fuzz lockfiles so `RUSTSEC-2026-0124` is closed in the checked
 supply-chain graph, not ignored.
@@ -208,15 +212,19 @@ exit code 0 for the exact command.
 ## Русский
 
 Папка `docs/` содержит публичную production-документацию Umbrella Protocol
-1.1.0. Здесь оставлены материалы, которые помогают понять, собрать, проверить и
-протестировать протокол без раскрытия приватных рабочих материалов.
+3.0.0 (release tag `v3.0.0` церемония 2026-05-20 commit `1ee8dbb3`;
+консолидирует post-v1.1.0 hardening серию). Здесь оставлены материалы,
+которые помогают понять, собрать, проверить и протестировать протокол без
+раскрытия приватных рабочих материалов.
 
 ## Содержимое
 
 - `audits/` - сохранённые заметки по проверкам и политики инструментов.
 - `security/` - манифест выпуска, SBOM и заметки по безопасности.
 - Заметки текущего выпуска:
-  `security/release-notes-v1.1.0.md`.
+  `security/release-notes-v1.1.0.md` (базовая линия 1.1.0; пост-1.1.0
+  дополнения отражены в корневом `CHANGELOG.md`).
+- `security/release-notes-v3.0.0.md` (церемония выпуска v3.0.0 2026-05-20).
 - Живой мониторинг зависимостей:
   `security/dependency-monitoring.md`.
 - Аудит усиления безопасности от 2026-05-15:
@@ -244,10 +252,12 @@ exit code 0 for the exact command.
 
 ## Текущий статус
 
-Umbrella Protocol 1.1.0 — пакет с доступным для чтения исходным кодом, который
-сейчас проходит усиление безопасности. Репозиторий опубликован для
-прозрачности, некоммерческой проверки безопасности, криптографических
-испытаний, воспроизводимых сборок и ответственного раскрытия уязвимостей.
+Umbrella Protocol 3.0.0 (release tag `v3.0.0` церемония 2026-05-20 commit
+`1ee8dbb3`; консолидирует post-v1.1.0 hardening серию) — пакет с доступным
+для чтения исходным кодом, который сейчас проходит усиление безопасности.
+Репозиторий опубликован для прозрачности, некоммерческой проверки
+безопасности, криптографических испытаний, воспроизводимых сборок и
+ответственного раскрытия уязвимостей.
 
 На кодовой базе 1.1.0 проведён PhD-B аудит из семи раундов (раунды 1-6
 влиты в `main` 2026-05-18 коммитом `84b4d576`, PR #6; раунд 7 «discovery»
@@ -262,8 +272,8 @@ D-1..D-8. Заключение независимого ревьюера по р
 `e7b034ff`) + 3 MINOR. Сводный отчёт по раундам:
 [`audits/ROUND-1-TO-7-SUMMARY.md`](audits/ROUND-1-TO-7-SUMMARY.md).
 Базовая линия рабочей области после раунда 7 — 2179+ release-mode
-тестов; пост-1.1.0 серия в `main` (F-CLIENT-FACADE-1 10/10, Pass 5
-remediation, Max Ratchet v3, Tasks 1-5 PhD-B) добавляет ещё.
+тестов; пост-v1.1.0 серия, сведённая в v3.0.0 (F-CLIENT-FACADE-1 10/10,
+Pass 5 remediation, Max Ratchet v3, Tasks 1-5 PhD-B), добавляет ещё.
 
 Публичный боевой запуск клиента через внешний интерфейс для мобильных привязок
 закрыт до полной связки транспортов и боевых проверок. Криптографические крейты
@@ -289,10 +299,11 @@ SPKI-ключами. Публичный FFI-запуск остаётся зак
 [`security/production-readiness-boundaries.md`](security/production-readiness-boundaries.md).
 Боевые атакующие ворота ядра протокола записаны в
 [`security/protocol-core-attack-gates.md`](security/protocol-core-attack-gates.md).
-Версия 1.1.0 добавляет локальное усиление KT против split-view: публичные
-наблюдения эпох, проверяемое доказательство раздвоения, строгую историю
-наблюдений, память свидетеля и безопасный для приватности формат наблюдения.
-Живой обмен наблюдениями и боевые каналы свидетелей остаются границами выпуска.
+Версия 1.1.0 добавила локальное усиление KT против split-view (перенесено
+в v3.0.0): публичные наблюдения эпох, проверяемое доказательство
+раздвоения, строгую историю наблюдений, память свидетеля и безопасный для
+приватности формат наблюдения. Живой обмен наблюдениями и боевые каналы
+свидетелей остаются границами выпуска.
 Также из корневого и fuzz lockfile убран неиспользуемый optional libcrux-бэкенд
 HPKE из `hpke-rs`, поэтому `RUSTSEC-2026-0124` закрыт в проверяемом графе
 зависимостей, а не проигнорирован.

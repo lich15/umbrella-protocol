@@ -36,17 +36,19 @@ observations, witness non-equivocation memory, strict observation history, and
 privacy-safe observation encoding are available for client-side detection. Live
 client observation exchange and public witness deployment remain production
 boundaries.
-Supply-chain hardening for 1.1.0 removes the unused optional `hpke-rs` libcrux
-HPKE backend from the root and fuzz lockfiles, so `RUSTSEC-2026-0124` is closed
-in the checked dependency graph instead of being ignored.
+Supply-chain hardening (initially in 1.1.0, carried into 3.0.0) removes the
+unused optional `hpke-rs` libcrux HPKE backend from the root and fuzz
+lockfiles, so `RUSTSEC-2026-0124` is closed in the checked dependency graph
+instead of being ignored.
 The 2026-05-16 memory-hygiene pass zeroizes key-derivation, recovery-code,
 backup unwrap, and SQLite row temporaries, returns Sealed Sender opened
 plaintext through a zeroizing wrapper, and uses the system RNG for retry jitter.
 External crypto release audit:
 [`docs/audits/external-crypto-release-audit-status-2026-05-14.md`](docs/audits/external-crypto-release-audit-status-2026-05-14.md).
-PhD-B seven-round audit chain (rounds 1-6 merged 2026-05-18 in commit
-`84b4d576` PR #6; round 7 discovery merged subsequently) on the 1.1.0
-codebase. The consolidated summary lives at
+PhD-B seven-round audit chain (rounds 1-6 merged 2026-05-18 commit
+`84b4d576` PR #6; round 7 merged subsequently) on the 1.1.0 codebase;
+further v3.0.0 hardening (F-CLIENT-FACADE-1 10/10 + Pass 5 + Max
+Ratchet v3) consolidated post-merge. The consolidated summary lives at
 [`docs/audits/ROUND-1-TO-7-SUMMARY.md`](docs/audits/ROUND-1-TO-7-SUMMARY.md);
 the independent reviewer verdict on rounds 1-6 is in
 [`docs/audits/phd-b-final-independent-review-2026-05-19.md`](docs/audits/phd-b-final-independent-review-2026-05-19.md);
@@ -57,7 +59,7 @@ scope-of-closure caveat was closed via Pass 5 commit `e7b034ff`
 (F-CLIENT-HW-1) and `core.identity` is now `Option<Arc<IdentityKey>>` with
 no ephemeral seed on the hw bootstrap path.
 
-The post-1.1.0 release branch additionally carries Max Ratchet v3 — a
+The v3.0.0 release additionally consolidates Max Ratchet v3 — a
 default-on aggressive DH ratchet + 5-minute timer rekey + post-quantum
 extension on every 3rd commit + SPQR HMAC deniable authentication layer
 over the MLS group. Implementation acceptance is 10/10 (`docs/audits/max-ratchet-deniability-spec-2026-05-20.md`)
@@ -74,10 +76,10 @@ embedding in a business product, service, SDK, messenger, or infrastructure
 platform require written permission. Read the access rules before using the
 code: [`PUBLIC_ACCESS.md`](PUBLIC_ACCESS.md) and [`LICENSE`](LICENSE).
 
-Version: **1.1.0** (last release tag) plus a post-1.1.0 hardening series on
-`main` carrying F-CLIENT-FACADE-1 milestone closure, Pass 5 remediation,
-Round 7 discovery merge, and Max Ratchet v3. The next release ceremony is
-an administrative step recorded separately.
+Version: **3.0.0** (last release tag, ceremony 2026-05-20 commit
+`1ee8dbb3`). Earlier release: v1.1.0 (2026-05-15). The post-v1.1.0
+hardening series consolidated в v3.0.0: F-CLIENT-FACADE-1 milestone
+closure, Pass 5 remediation, Round 7 discovery merge, и Max Ratchet v3.
 
 ### Quick Start
 
@@ -143,6 +145,10 @@ Important crates:
 - `crates/umbrella-formal-verification`: 14 Tamarin + 4 ProVerif models.
 - `crates/umbrella-vectors`: deterministic test vectors.
 - `crates/umbrella-lints`: local dylint rules.
+
+Note: `crates/umbrella-lints` is a separate sub-workspace outside the main
+Cargo workspace; the main workspace has 24 members (23 umbrella-* + xtask),
+with `umbrella-lints` as a sub-workspace (25 directories total in `crates/`).
 
 ### Install Tools
 
@@ -444,8 +450,10 @@ Start here:
   current public protocol paper in English.
 - [`UmbrellaX_protocol_public_ru.pdf`](UmbrellaX_protocol_public_ru.pdf):
   current public protocol paper in Russian.
+- [`docs/security/release-notes-v3.0.0.md`](docs/security/release-notes-v3.0.0.md):
+  public notes for the current v3.0.0 release (ceremony 2026-05-20).
 - [`docs/security/release-notes-v1.1.0.md`](docs/security/release-notes-v1.1.0.md):
-  public notes for the current release.
+  public notes for the prior v1.1.0 release (historical).
 - [`docs/security/release-manifest-v1.1.0.txt`](docs/security/release-manifest-v1.1.0.txt):
   release verification notes.
 - [`docs/audits/ROUND-1-TO-7-SUMMARY.md`](docs/audits/ROUND-1-TO-7-SUMMARY.md):
@@ -499,17 +507,19 @@ Play Integrity всё ещё закрыто отказывают, пока не 
 приватности формат наблюдения доступны для обнаружения раздвоения клиентами.
 Живой обмен наблюдениями клиентов и публичное развёртывание свидетелей остаются
 границами боевого выпуска.
-Усиление цепочки зависимостей в 1.1.0 убирает неиспользуемый optional
-libcrux-бэкенд HPKE из `hpke-rs` в корневом и fuzz lockfile, поэтому
-`RUSTSEC-2026-0124` закрыт в проверяемом графе зависимостей, а не игнорируется.
+Усиление цепочки зависимостей (изначально в 1.1.0, перенесено в 3.0.0)
+убирает неиспользуемый optional libcrux-бэкенд HPKE из `hpke-rs` в
+корневом и fuzz lockfile, поэтому `RUSTSEC-2026-0124` закрыт в
+проверяемом графе зависимостей, а не игнорируется.
 Проход гигиены памяти от 2026-05-16 затирает временные значения вывода ключей,
 возвращает раскрытый plaintext Sealed Sender через очищаемую обёртку и
 использует системный генератор для задержки повторов.
 Внешний крипто-аудит выпуска:
 [`docs/audits/external-crypto-release-audit-status-2026-05-14.md`](docs/audits/external-crypto-release-audit-status-2026-05-14.md).
 PhD-B аудит из семи раундов (раунды 1-6 влиты в `main` 2026-05-18 коммитом
-`84b4d576` PR #6; раунд 7 «discovery» влит после) на кодовой базе 1.1.0.
-Сводный отчёт:
+`84b4d576` PR #6; раунд 7 «discovery» влит после) на кодовой базе 1.1.0;
+дальнейшее усиление v3.0.0 (F-CLIENT-FACADE-1 10/10 + Pass 5 + Max
+Ratchet v3) сведено пост-merge. Сводный отчёт:
 [`docs/audits/ROUND-1-TO-7-SUMMARY.md`](docs/audits/ROUND-1-TO-7-SUMMARY.md);
 заключение независимого ревьюера по раундам 1-6 —
 [`docs/audits/phd-b-final-independent-review-2026-05-19.md`](docs/audits/phd-b-final-independent-review-2026-05-19.md);
@@ -520,7 +530,7 @@ M-FINAL-1 закрыта в Pass 5 коммитом `e7b034ff` (F-CLIENT-HW-1):
 `core.identity` теперь `Option<Arc<IdentityKey>>`, эфемерный seed на
 hw bootstrap пути устранён.
 
-Пост-1.1.0 ветка дополнительно несёт Max Ratchet v3 — default-on
+Релиз v3.0.0 дополнительно консолидирует Max Ratchet v3 — default-on
 агрессивный DH-храповик + 5-минутный таймер rekey + post-quantum
 расширение каждые 3 commit'а + SPQR HMAC отрицаемая аутентификация
 поверх MLS-группы. Реализация 10/10 acceptance закрыта 2026-05-20
@@ -540,10 +550,10 @@ hw bootstrap пути устранён.
 разрешения. Перед использованием прочитайте правила доступа:
 [`PUBLIC_ACCESS.md`](PUBLIC_ACCESS.md) и [`LICENSE`](LICENSE).
 
-Версия: **1.1.0** (последний тег) плюс серия post-1.1.0 hardening коммитов
-на `main`: закрытие F-CLIENT-FACADE-1 milestone, remediation Pass 5,
-влив Round 7 discovery и Max Ratchet v3. Очередной release-ceremony
-вынесен в отдельный административный шаг.
+Версия: **3.0.0** (последний тег, церемония 2026-05-20 commit
+`1ee8dbb3`). Предыдущий релиз: v1.1.0 (2026-05-15). Серия post-v1.1.0
+hardening сведена в v3.0.0: закрытие F-CLIENT-FACADE-1, Pass 5
+remediation, влитие Round 7 discovery и Max Ratchet v3.
 
 ### Быстрый старт
 
@@ -608,6 +618,11 @@ cargo test -p umbrella-core --locked
 - `crates/umbrella-formal-verification`: 14 Tamarin + 4 ProVerif моделей.
 - `crates/umbrella-vectors`: повторяемые проверочные наборы.
 - `crates/umbrella-lints`: местные dylint правила.
+
+Примечание: `crates/umbrella-lints` — отдельный sub-workspace вне
+основного Cargo workspace; основной workspace содержит 24 члена
+(23 umbrella-* + xtask), вместе с `umbrella-lints` как sub-workspace
+получается 25 директорий в `crates/` всего.
 
 ### Что поставить
 
@@ -912,8 +927,10 @@ umbrella-client = { path = "crates/umbrella-client" }
   актуальный публичный документ протокола на английском.
 - [`UmbrellaX_protocol_public_ru.pdf`](UmbrellaX_protocol_public_ru.pdf):
   актуальный публичный документ протокола на русском.
+- [`docs/security/release-notes-v3.0.0.md`](docs/security/release-notes-v3.0.0.md):
+  публичные заметки текущего выпуска v3.0.0 (церемония 2026-05-20).
 - [`docs/security/release-notes-v1.1.0.md`](docs/security/release-notes-v1.1.0.md):
-  публичные заметки текущего выпуска.
+  публичные заметки предыдущего выпуска v1.1.0 (исторический).
 - [`docs/security/release-manifest-v1.1.0.txt`](docs/security/release-manifest-v1.1.0.txt):
   заметки для проверки выпуска.
 - [`docs/audits/ROUND-1-TO-7-SUMMARY.md`](docs/audits/ROUND-1-TO-7-SUMMARY.md):

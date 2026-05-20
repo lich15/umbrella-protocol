@@ -55,6 +55,8 @@ method at `crates/umbrella-client/src/facade/` returns a Block
 7.2 stub (`Ok(MessageId([0u8; 16]))`). Closure of this finding
 requires implementing the facade methods against real transports.
 
+> **Note (2026-05-20 reconciliation):** Some `facade/secret_chat.rs` и `facade/cloud_chat.rs` rustdoc fragments still reference «Block 7.2 stub» wording; that wording predates session 10f closure and is now historical. F-CLIENT-FACADE-1 MILESTONE 10/10 (commit `9417096b`) wired all listed methods. A separate session may refresh rustdoc to remove stale Block 7.2 stub mentions; the rustdoc text is not load-bearing for the wiring contract.
+
 After the Pass 5 remediation series (2026-05-19), F-CLIENT-FACADE-1
 was reclassified as a Block 7.4 engineering milestone (not a security
 finding) and **closed across 12 sub-sessions** (commits on `main`

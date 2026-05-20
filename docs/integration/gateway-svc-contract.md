@@ -147,7 +147,7 @@ Message shapes (selected):
 - `ClientAuth { string token; bytes device_id }` — JWT
   authentication; `token` is the Ed25519-issued access token
   from `AuthService.Login`; `device_id` identifies the device
-  family slot per SPEC-11 §4.
+  family slot per private spec (working notes; see `docs/security/protocol-core-attack-gates.md` для public surface).
 - `SendMessageRequest { bytes to_user_id; bytes ciphertext }` —
   client-encrypted MLS/sealed-sender envelope; the gateway
   routes it to the recipient's inbox without decrypting.
@@ -241,7 +241,7 @@ crate SHOULD treat the endpoint set as a configuration input
 (static list of edge gateway addresses with SPKI pins,
 populated via native app bootstrap).
 
-Future closure of F-CLIENT-FACADE-1 may include an explicit
+F-CLIENT-FACADE-1 closure session 10f (commit `9417096b`) added an explicit
 `crates/umbrella-client/src/transport/endpoint_registry.rs`
 module that consumes the registry payload; this is out of
 scope for the initial transport implementation.

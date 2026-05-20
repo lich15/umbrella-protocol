@@ -1,0 +1,186 @@
+Umbrella Protocol - Public Access Manifest v3.0.0
+=================================================
+
+English
+-------
+
+Package version: 3.0.0 release ceremony (post-v1.1.0 hardening series)
+Package date: 2026-05-20
+Release tag: v3.0.0
+Release commit: 1ee8dbb3 (chore(release): bump workspace version 1.1.0 -> 3.0.0)
+Workspace version: 3.0.0
+Manifest updated: 2026-05-20
+License: Umbrella Public Access License
+Rust toolchain: stable 1.95.0
+Status: source-available package for non-commercial security and cryptographic
+testing. Public FFI/client production bootstrap remains gated until production
+platform attestation verifiers, mobile bridges, and server integration are
+wired end to end.
+
+Current hardening status: v3.0.0 consolidates F-CLIENT-FACADE-1 MILESTONE 10/10
+closure (commit 9417096b session 10f), PhD-B Pass 5 remediation (18 findings
+closed across commits 471e7928..23eda73a), Round 7 private contact discovery
+merge (umbrella-discovery crate, PSI + @username with KT bind), Max Ratchet v3
+(default-on aggressive DH + 5-minute timer rekey + PQ extension + SPQR HMAC
+deniable authentication), and 6 formal-model tautology closures. Workspace
+baseline: 2179+ release-mode tests post-Round 7 floor; 18 formal models (14
+.spthy + 4 .pv); 29 fuzz targets; 182 MlockedSecret usages; 12 lemmas in
+multi_device_authorization.spthy; 24 main-workspace members (23 umbrella-* +
+xtask) + 1 sub-workspace umbrella-lints (25 total directories in crates/). M-FINAL-1 closed (legacy ephemeral
+seed surface eliminated via HW Keystore wire-up). Real servers, real
+Android/iOS devices, live KT observation exchange, and production witness
+channels remain release boundaries.
+
+Verification commands:
+  cargo fmt --all -- --check
+  cargo test --workspace --all-features --locked
+  cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+  RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace --all-features --locked
+  bash scripts/audit-public-access-notices.sh
+  bash scripts/audit-protocol-core-attack-gates.sh
+  bash scripts/audit-local-release-hardening.sh
+  bash scripts/audit-pq-backend-policy.sh
+  bash scripts/audit-dependency-policy.sh target/audit-evidence
+  bash scripts/verify-tamarin-models.sh
+  bash scripts/verify-proverif-models.sh
+
+Primary public materials:
+  README.md
+  PUBLIC_ACCESS.md
+  SECURITY.md
+  CONTRIBUTING.md
+  CHANGELOG.md
+  docs/README.md
+  docs/security/release-notes-v3.0.0.md
+  docs/security/release-notes-v1.1.0.md
+  UmbrellaX_protocol_public_en.pdf
+  UmbrellaX_protocol_public_ru.pdf
+
+Verification artifacts:
+  docs/security/sbom-v3.0.0.json
+  docs/security/release-manifest-v3.0.0.txt
+  docs/security/current-status.md
+  docs/security/protocol-core-attack-gates.md
+  docs/security/production-readiness-boundaries.md
+  docs/security/external-crypto-attack-ledger-2026-05-14.md
+  docs/security/external-crypto-attack-ledger-2026-05-15.md
+  docs/audits/ROUND-1-TO-7-SUMMARY.md
+  docs/audits/phd-b-pass5-remediation-2026-05-19.md
+  docs/audits/max-ratchet-deniability-spec-2026-05-20.md
+  docs/audits/max-ratchet-v3-security-evidence-2026-05-20.md
+  docs/audits/formal-lint-status-2026-05-13.md
+  docs/audits/local-release-hardening-status-2026-05-14.md
+  docs/audits/external-crypto-release-audit-status-2026-05-14.md
+  docs/audits/dudect-saturation-methodology-2026-05-19.md
+  docs/integration/gateway-svc-contract.md
+  docs/spec/discovery-integration.md
+  Cargo.lock
+
+Source-of-truth references:
+  README.md, CHANGELOG.md, docs/security/release-notes-v3.0.0.md,
+  docs/security/current-status.md,
+  docs/security/protocol-core-attack-gates.md,
+  docs/audits/ROUND-1-TO-7-SUMMARY.md,
+  docs/audits/phd-b-pass5-remediation-2026-05-19.md,
+  docs/audits/max-ratchet-deniability-spec-2026-05-20.md.
+
+Current hardening status: docs/security/current-status.md
+Tekushii status privedeniya k dokumentam: docs/security/current-status.md
+
+Production note:
+  Unfinished public paths must fail fast instead of using test-only
+  constructors. Operators must keep dependencies current, monitor
+  deployments, protect release keys, deploy independent witnesses, and run
+  recurring verification before production use.
+
+Public Access note:
+  This package is public for inspection, reproducible builds, non-commercial
+  security testing, cryptographic testing, and responsible disclosure. It does
+  not grant commercial use or redistribution rights beyond LICENSE.
+
+Russkiy
+-------
+
+Versiya paketa: 3.0.0, tseremoniya releasa (post-v1.1.0 seriya usileniya)
+Data paketa: 2026-05-20
+Release tag: v3.0.0
+Release commit: 1ee8dbb3 (chore(release): bump workspace version 1.1.0 -> 3.0.0)
+Workspace version: 3.0.0
+Manifest obnovlyon: 2026-05-20
+Litsenziya: Umbrella Public Access License
+Rust toolchain: stable 1.95.0
+Status: paket s dostupnym dlya chteniya iskhodnym kodom dlya nekommercheskoy
+proverki bezopasnosti i kriptograficheskogo testirovaniya. Publichnyy boyevoy
+zapusk klienta cherez vneshniy interfeys dlya mobilnykh privyazok ostayetsya
+zakryt, poka ne svyazany nastoyaschie platformennye proveryayuschie, mobilnye
+mosty i servernaya integratsiya.
+
+Tekushchiy status privedeniya k dokumentam: v3.0.0 svodit zakrytie
+F-CLIENT-FACADE-1 MILESTONE 10/10 (kommit 9417096b session 10f), PhD-B
+Pass 5 remediation (18 findings zakryty po kommitam 471e7928..23eda73a),
+vlivanie Round 7 private contact discovery (krayt umbrella-discovery,
+PSI + @username s KT bind), Max Ratchet v3 (default-on aggressive DH +
+taymer rekey kazhdye 5 minut + PQ extension + SPQR HMAC deniable
+authentication) i 6 formalno-modelnykh tautology closures. Baseline
+workspace: 2179+ release-mode testov post-Round 7 floor; 18 formalnykh
+modeley (14 .spthy + 4 .pv); 29 fuzz-tseley; 182 ispolzovaniya
+MlockedSecret; 12 lemma v multi_device_authorization.spthy; 25 chlenov
+osnovnogo workspace (24 umbrella-* + xtask) + 1 sub-workspace
+umbrella-lints. M-FINAL-1 zakryt (poverkhnost legasnykh efemernykh seed
+ustranena cherez HW Keystore wire-up). Nastoyashchie servery,
+nastoyashchie Android/iOS ustroystva, zhivoy obmen KT-nablyudeniyami i
+boyevye kanaly svideteley ostayutsya granitsami vypuska.
+
+Komandy proverki:
+  cargo fmt --all -- --check
+  cargo test --workspace --all-features --locked
+  cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+  RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace --all-features --locked
+  bash scripts/audit-public-access-notices.sh
+  bash scripts/audit-protocol-core-attack-gates.sh
+  bash scripts/audit-local-release-hardening.sh
+  bash scripts/audit-pq-backend-policy.sh
+  bash scripts/audit-dependency-policy.sh target/audit-evidence
+  bash scripts/verify-tamarin-models.sh
+  bash scripts/verify-proverif-models.sh
+
+Osnovnye publichnye materialy:
+  README.md
+  PUBLIC_ACCESS.md
+  SECURITY.md
+  CONTRIBUTING.md
+  CHANGELOG.md
+  docs/README.md
+  docs/security/release-notes-v3.0.0.md
+  docs/security/release-notes-v1.1.0.md
+  UmbrellaX_protocol_public_en.pdf
+  UmbrellaX_protocol_public_ru.pdf
+
+Proverochnye artefakty:
+  docs/security/sbom-v3.0.0.json
+  docs/security/release-manifest-v3.0.0.txt
+  docs/security/current-status.md
+  docs/security/protocol-core-attack-gates.md
+  docs/security/production-readiness-boundaries.md
+  docs/audits/ROUND-1-TO-7-SUMMARY.md
+  docs/audits/phd-b-pass5-remediation-2026-05-19.md
+  docs/audits/max-ratchet-deniability-spec-2026-05-20.md
+  docs/audits/max-ratchet-v3-security-evidence-2026-05-20.md
+  docs/integration/gateway-svc-contract.md
+  docs/spec/discovery-integration.md
+  Cargo.lock
+
+Zametka o boyevom primenenii:
+  Nezavershyonnye publichnye puti dolzhny otkazyvat yavno, a ne polzovatsya
+  testovymi konstruktorami. Operatory dolzhny obnovlyat zavisimosti, sledit
+  za razvyortyvaniyami, zaschischat klyuchi vypuska, razvorachivat
+  nezavisimykh svideteley i regulyarno zapuskat proverki do boyevogo
+  primeneniya.
+
+Public Access note:
+  Paket opublikovan dlya proverki, vosproizvodimykh sborok, nekommercheskogo
+  poiska uyazvimostey, kriptograficheskikh ispytaniy i otvetstvennogo
+  raskrytiya. On ne dayot prav na kommercheskoe ispolzovanie ili
+  rasprostranenie sverkh LICENSE.
+
+End of manifest.

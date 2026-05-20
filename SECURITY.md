@@ -14,7 +14,7 @@ coordinate the disclosure date.
 
 Email: `security@umbrellax.io`
 
-PGP key fingerprint: to be published at `docs/security/pgp-key.asc`.
+PGP key not available for this release; please submit reports via `security@umbrellax.io` and the team will reply with a key for follow-up encrypted exchange.
 
 If PGP is unavailable, send a short message without sensitive details and we
 will agree on a protected channel.
@@ -73,7 +73,7 @@ Advisories and the UmbrellaX security page.
 
 Email: `security@umbrellax.io`
 
-PGP fingerprint будет опубликован в `docs/security/pgp-key.asc`.
+PGP-ключ для этого релиза не опубликован; присылайте сообщения на `security@umbrellax.io`, команда ответит с ключом для последующего зашифрованного обмена.
 
 Если PGP недоступен, отправьте короткое письмо без чувствительных деталей, и мы
 согласуем защищённый канал.

@@ -15,7 +15,7 @@
 
 | Колонка | Umbrella | Обоснование |
 |---------|----------|-------------|
-| Active | Yes | Активная разработка, 2024-2026, baseline 2080+ тестов |
+| Active | Yes | Активная разработка, 2024-2026, baseline 2179+ release-mode тестов (post-Round 7 floor; post-v1.1.0 серия добавляет ещё) |
 | TLS | Yes | TLS 1.3 only, HTTP/2 prior knowledge, rustls (не OpenSSL), SPKI pinning |
 | Open Client | Yes | Rust крейты опубликованы (24 крейта + spec docs) |
 | Open Server | Partial | umbrella-server-blind-postman open; полный Sealed-Servers backend код в отдельном репозитории |
@@ -24,7 +24,7 @@
 | E2E Private | Yes | MLS RFC 9420 + PQ ciphersuite 0x004D + Sealed Sender V2 |
 | E2E Group | Yes | MLS group operations + PQ key encapsulation X-Wing hybrid |
 | E2E Default | Yes | PQ-first default switch (ADR-013), classical fallback through hybrid signature |
-| E2E Audit | Yes | 16 формальных моделей Tamarin/ProVerif + 5 кругов PhD-уровня аудита |
+| E2E Audit | Yes | 18 формальных моделей (14 Tamarin + 4 ProVerif) + 7 раундов PhD-B аудита (rounds 1-7 closed 2026-05-18; Pass 1-5 закрыты 2026-05-19) |
 | FIDO1 / U2F | Yes | WebAuthn fully implemented (umbrella-platform-verifier/web.rs) |
 | Desktop Web | Planned | Block 7.4 milestone; FFI surface готов |
 | Mobile Web | Yes | WebAuthn для browser-based auth |
@@ -197,7 +197,7 @@
 **Описание:** Identity private key хранится в hardware-protected enclave (Apple Secure Enclave / Android StrongBox / TPM). Операционная система не может извлечь ключ даже при root-доступе; signing операции делаются внутри enclave.
 
 **Кто имеет:**
-- **Umbrella:** Designed (PersistentKeyStoreCallback interface, M-FINAL-1 production wire-up для v1.2.x; сейчас demo wire-up)
+- **Umbrella:** Yes (PersistentKeyStoreCallback wired; HwBackedKeyStore eliminates in-heap seed + identity_sk; M-FINAL-1 closed Pass 5 commit `e7b034ff` F-CLIENT-HW-1; F-IDENT-1 + F-IDENT-2 closed commit `46784d1a`)
 - **iMessage:** Yes (Secure Enclave native)
 - **Signal:** No (process memory, не TEE)
 - **WhatsApp:** No
@@ -210,7 +210,7 @@
 **Описание:** Добавление нового устройства требует криптографической авторизации со существующего устройства; одна утечка 24 слов **не** позволяет злоумышленнику создать новое устройство и читать сообщения (защита от 24-words leak).
 
 **Кто имеет:**
-- **Umbrella:** Yes (ADR-008 + formal Tamarin-verified multi_device_authorization.spthy — 13 substantive lemmas)
+- **Umbrella:** Yes (ADR-008 + formal Tamarin-verified `multi_device_authorization.spthy` — 12 substantive lemmas)
 - **Signal:** Yes (Sesame protocol)
 - **WhatsApp:** Yes (multi-device с 2021)
 - **iMessage:** Yes
@@ -233,7 +233,7 @@
 **Описание:** Криптографические свойства протокола формально доказаны в Tamarin Prover либо ProVerif (символический model checker для криптопротоколов).
 
 **Кто имеет:**
-- **Umbrella:** Yes (16 моделей в umbrella-formal-verification — MLS Ed25519 + multi-device + downgrade + SFrame + KT v1/v2 + 9 других)
+- **Umbrella:** Yes (18 моделей (14 .spthy + 4 .pv) в umbrella-formal-verification — MLS Ed25519 + multi-device + downgrade + SFrame + KT v1/v2 + 9 других)
 - **Signal:** Partial (X3DH + Double Ratchet формально верифицированы внешне — Cohn-Gordon et al. 2017)
 - **WhatsApp:** Same as Signal (Double Ratchet)
 - **iMessage:** No (PQ3 paper описывает, но без machine-checkable proof)
@@ -258,7 +258,7 @@
 **Описание:** Защита от подмены бинарника при поставке (App Store mirror, фальшивая копия). Cosign signed releases + multi-source attestation (Sigstore Rekor + Certificate Transparency + cosign).
 
 **Кто имеет:**
-- **Umbrella:** Partial (cosign signed v1.0.0 + design 5-registry detection — F-3 ship-decision pending)
+- **Umbrella:** Yes (cosign signed releases + design 5-registry detection; F-3 closed Pass 5 commit `f68c6fa6` via honest-naming refactor `decision_logic_r23_5_registry_acceptance_gate`)
 - **Signal:** Partial (signed APK + reproducible builds для desktop)
 - **Все остальные:** No либо partial
 

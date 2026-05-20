@@ -1,6 +1,8 @@
 # Production Readiness Boundaries
 
-Дата: 2026-05-18 (обновлено после PR #6 — PhD-B шесть раундов)
+[English](#english) | [Русский](#русский)
+
+**Date / Дата:** 2026-05-20 (Umbrella Protocol v3.0.0 release; ceremony 2026-05-20 commit `1ee8dbb3`)
 
 Summary status: [`current-status.md`](current-status.md).
 
@@ -13,8 +15,9 @@ summary:
 Independent reviewer verdict on rounds 1-6: 0 BLOCKER + 1 MAJOR
 (M-FINAL-1 — since closed via Pass 5 commit `e7b034ff`) + 3 MINOR.
 Workspace baseline post-round-7: 2179+ release-mode tests; the
-post-1.1.0 series on `main` (F-CLIENT-FACADE-1 10/10 + Pass 5
-remediation + Max Ratchet v3 + Tasks 1-5 PhD-B closures) adds further
+Umbrella Protocol v3.0.0 release series on `main` (F-CLIENT-FACADE-1
+10/10 + Pass 5 remediation + Max Ratchet v3 + Tasks 1-5 PhD-B
+closures, sealed by v3.0.0 ceremony commit `1ee8dbb3`) adds further
 tests to that floor.
 
 ## English
@@ -74,6 +77,8 @@ Local Rust code checks parser safety, vectors and mode enforcement, but this is
 not a real production calling proof. Real media transport, network behaviour,
 device audio/video stacks and server relay deployment remain release
 boundaries.
+
+---
 
 ## Русский
 

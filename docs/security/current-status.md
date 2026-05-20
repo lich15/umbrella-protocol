@@ -10,10 +10,11 @@ The PhD-B Pass 5 audit findings have been closed across a focused
 remediation series (20 closure commits on `main` between
 `471e7928` and `23eda73a`). All security and formal-correctness
 findings are resolved. Full report:
-`docs/audits/phd-b-pass5-remediation-2026-05-19.md`. The single
-remaining open item (F-CLIENT-FACADE-1 — chat-facade stubs) is a
-Block 7.4 engineering milestone, not a security finding;
-integration contract for the closure is documented in
+`docs/audits/phd-b-pass5-remediation-2026-05-19.md`.
+F-CLIENT-FACADE-1 was a Block 7.4 engineering milestone (not a
+security finding); it has been **CLOSED** via session 10f commit
+`9417096b` (MILESTONE 10/10) — see § ниже для подробного
+breakdown. Integration contract for the closure is documented в
 `docs/integration/gateway-svc-contract.md`.
 
 Key transitions from the prior status snapshot below:
@@ -63,11 +64,34 @@ The rest of the original status text from 2026-05-18 follows
 below. Any contradiction with the update block above resolves in
 favour of the update block (newer information).
 
+## Update 2026-05-20 — v3.0.0 release ceremony
+
+On 2026-05-20 the workspace was tagged **v3.0.0** via commit
+`1ee8dbb3` (workspace version bump 1.1.0 → 3.0.0). The release
+consolidates 88 commits since v1.1.0, including the
+F-CLIENT-FACADE-1 MILESTONE 10/10 closure (commit `9417096b`,
+session 10f) and the Max Ratchet v3 specification full 10/10
+implementation closure (Tasks 4.7, 6, 7 — real X-Wing combine,
+facade integration with wire codec marker `0xFF`, Apple M2
+benchmarks at 167.36 µs full overhead). The v3.0.0 CI ceremony
+cleared dylint categories A, B, C (pragmatic crate-level allows
+for the umbrella-client carry-over recorded in
+`docs/audits/umbrella-client-phd-b-carry-over-2026-05-20.md`).
+Release artifacts published: `docs/security/release-notes-v3.0.0.md`,
+`release-manifest-v3.0.0.txt`, `sbom-v3.0.0.json`.
+Текущая базовая линия — **2179+ release-mode тестов**, 24
+рабочих крейта, 18 формальных моделей, 29 fuzz-таргетов, 182
+сайта использования `MlockedSecret<T>`. На 2026-05-20
+v3.0.0 — стабильный snapshot для дальнейшей серверной
+интеграции; публичный клиентский bootstrap по-прежнему
+закрыто отказывает до подключения боевых платформенных
+проверяющих и серверного развёртывания.
+
 ---
 
 ## English
 
-Umbrella Protocol 1.1.0 is a source-available Rust protocol package under
+Umbrella Protocol 3.0.0 is a source-available Rust protocol package under
 security hardening. It contains real cryptographic crates, test
 harnesses, formal models, fuzzing entry points, and local verification scripts.
 
@@ -107,7 +131,7 @@ integration are wired end to end.
 Implemented and currently documented:
 
 - current public release notes:
-  `docs/security/release-notes-v1.1.0.md`;
+  `docs/security/release-notes-v3.0.0.md`;
 - cryptographic crates for identity, MLS profile, key transparency, OPRF,
   sealed sender, backup, padding, post-quantum helpers, and call primitives;
 - internal HTTP/2 production builder with system certificate verification and
@@ -179,7 +203,7 @@ production path.
 
 ## Русский
 
-Umbrella Protocol 1.1.0 — набор Rust-крейтов протокола с доступным для чтения
+Umbrella Protocol 3.0.0 — набор Rust-крейтов протокола с доступным для чтения
 исходным кодом. Сейчас проект проходит усиление безопасности и честное описание
 боевых границ. В репозитории есть настоящие криптографические крейты, стенды
 проверки, формальные модели, входы для фаззинга и локальные скрипты проверки.
@@ -219,7 +243,7 @@ MAJOR-находка M-FINAL-1 закрыта в Pass 5 коммитом `e7b034
 Что уже реализовано и описано:
 
 - публичные заметки текущего выпуска:
-  `docs/security/release-notes-v1.1.0.md`;
+  `docs/security/release-notes-v3.0.0.md`;
 - криптографические крейты для личности, MLS-профиля, прозрачности ключей,
   OPRF, скрытия отправителя, резервных копий, выравнивания сообщений,
   постквантовых помощников и заготовок звонков;

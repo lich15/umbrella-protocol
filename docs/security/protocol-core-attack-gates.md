@@ -2,6 +2,15 @@
 
 Дата: 2026-05-18 (обновлено после PR #6 — добавлены строки R20-R27 + MlockedSecret); reconciliation refresh 2026-05-20 добавил Max Ratchet v3 строки (aggressive DH PCS, idle window, deniability, codec robustness, PQ resistance)
 
+## English
+
+This file records local attack gates for the Umbrella Protocol core. “Covered by
+test” means a Rust test rejects tampering, replay, rollback, or wrong-version
+input. “Release boundary” means the public production path remains closed until
+the external part is wired.
+
+---
+
 ## Русский
 
 Этот файл фиксирует, какие атаки ядро Umbrella Protocol проверяет локально.
@@ -61,7 +70,7 @@
 | Изъятие устройства | stack-spill BIP-39 entropy после drop(IdentitySeed) | закрыто тестом | `r7_closure_entropy_and_seed_are_heap_resident`; R7 lldb scan AFTER_DROP stack hits = 0 |
 | Идентичность | jurisdiction subpoena → принудительное раскрытие PIN | закрыто тестом | `attack_r21_duress_pin_deletes_account`: reverse-PIN запускает `UNRECOVERABLE_DELETE` параллельно на 5 серверах |
 | Идентичность | новое устройство принимается без задержки и push-отмены | закрыто тестом | `attack_r22_time_lock_recovery`: 24h time-lock, primary-push cancel |
-| Идентичность | подделанный установочный пакет проходит обновление | закрыто тестом | `attack_r23_5_registry_detects_fake_version`: ≥4-of-5 registries должны совпасть |
+| Идентичность | подделанный установочный пакет проходит обновление | закрыто тестом (decision-logic уровень) | `decision_logic_r23_5_registry_acceptance_gate`: ≥4-of-5 registries должны совпасть. Honest-naming closure per Pass 5 commit `f68c6fa6` (F-3); real Sigstore + CT pipeline integration остаётся operational milestone, не code carry-over. |
 | Чаты | secret-чат не маскируется при захвате экрана | закрыто тестом | `attack_r24_screen_recording_detected`: 100/100 сообщений замаскированы под Block policy |
 | Чаты | PIN-экран не блокирует системные сервисы (Siri, AutoFill, ...) | закрыто тестом | `attack_r25_system_services_disabled`: 7/7 ограничений применены |
 | Транспорт | DPI-блокировка единственного канала делает unlock невозможным | закрыто тестом | `attack_r26_dos_fallback_channels`: TLS → AltIP → Tor → Mixnet fallback chain |
@@ -79,6 +88,9 @@
 | Discovery (Round 7) | сервер возвращает поддельный device_pubkey для запрошенного handle (silent swap) | закрыто тестом | RFC 6962 KT inclusion proof + pinned epoch root + Tamarin `kt_bind_prevents_silent_swap`; `attack_d3_kt_bind_silent_swap`: 4 sub-cases |
 | Discovery (Round 7) | 4-of-5 server cluster collusion восстанавливает address book | закрыто тестом | threshold 3-of-5 + OPRF SUF + 3 attack regression tests `attack_d4_cluster_collusion` |
 | Discovery (Round 7) | OPRF response replay | закрыто тестом | server nonce + `NonceReplayGuard` (1000 rolling) + Tamarin `replay_protection_enforced`; `attack_d5_oprf_replay`: 5 sub-tests |
+| Discovery | reuse anon-ID между queries → linkability | закрыто тестом | `attack_d6_anon_id_reuse`: 10 000-iteration CSPRNG regression test; per-query `fresh_query_salt` CSPRNG by-construction |
+| Discovery | rate-limit bypass via parallel sibling devices | закрыто тестом (client-side) + carry-over (server coordination) | `attack_d7_rate_limit_bypass`: `ClientBudgetState` 100/h + 5000/day enforced; server-coordination obligation в backend spec `rust_1mlrd` (out of repo) |
+| Discovery | cardinality-timing side-channel | закрыто тестом (с измеренным residual) | `attack_d8_cardinality_timing`: HashSet lookup constant-time; padding policy advisory; measured ratio ≤2× per discovery cycle |
 
 ## Внешний реестр
 
@@ -99,10 +111,3 @@ split-view и честная `граница выпуска` для мест, к
   цепочку, но не может сам доказать, что живая сеть всегда обменялась
   наблюдениями;
 - интеграция с настоящими серверами ещё не считается готовой.
-
-## English
-
-This file records local attack gates for the Umbrella Protocol core. “Covered by
-test” means a Rust test rejects tampering, replay, rollback, or wrong-version
-input. “Release boundary” means the public production path remains closed until
-the external part is wired.
