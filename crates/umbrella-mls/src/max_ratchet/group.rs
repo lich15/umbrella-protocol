@@ -262,18 +262,15 @@ impl MaxRatchetGroup {
 
         let mut spqr_mac = None;
         if self.config.spqr_deniable_auth {
-            let exporter = self.inner.exporter_secret(
-                pq_provider,
-                "umbrellax-spqr-deniable-auth",
-                b"",
-                32,
-            )?;
-            let classical_secret =
-                super::spqr::derive_epoch_secret_from_exporter(&exporter.expose()[..32]).map_err(
-                    |_| MlsError::GroupOperation {
-                        kind: "SPQR epoch secret HKDF derivation failed",
-                    },
-                )?;
+            let exporter =
+                self.inner
+                    .exporter_secret(pq_provider, "umbrellax-spqr-deniable-auth", b"", 32)?;
+            let classical_secret = super::spqr::derive_epoch_secret_from_exporter(
+                &exporter.expose()[..32],
+            )
+            .map_err(|_| MlsError::GroupOperation {
+                kind: "SPQR epoch secret HKDF derivation failed",
+            })?;
 
             let epoch_secret = if let Some(pq) = pq_shared.as_ref() {
                 super::spqr::pq_extend_epoch_secret(&classical_secret, pq).map_err(|_| {

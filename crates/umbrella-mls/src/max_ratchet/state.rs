@@ -77,7 +77,10 @@ impl MaxRatchetState {
     /// True если следующий commit должен включать PQ X-Wing combine.
     /// True iff the next commit should include a PQ X-Wing combine.
     pub fn should_trigger_pq_ratchet(&self) -> bool {
-        super::counter::should_trigger_pq(self.commit_counter, self.config.pq_ratchet_every_n_commits)
+        super::counter::should_trigger_pq(
+            self.commit_counter,
+            self.config.pq_ratchet_every_n_commits,
+        )
     }
 
     /// Шифрует application-сообщение с агрессивным DH-храповиком на borrow'нутой группе.
@@ -135,7 +138,8 @@ impl MaxRatchetState {
         plaintext: &[u8],
         now_unix: u64,
     ) -> Result<MaxRatchetOutgoing> {
-        let mut outgoing = self.encrypt_with_rekey(group, provider, keystore, plaintext, now_unix)?;
+        let mut outgoing =
+            self.encrypt_with_rekey(group, provider, keystore, plaintext, now_unix)?;
 
         if !self.config.spqr_deniable_auth {
             return Ok(outgoing);
@@ -150,6 +154,95 @@ impl MaxRatchetState {
         outgoing.spqr_mac = Some(mac.to_vec());
 
         Ok(outgoing)
+    }
+
+    /// Borrowed-mode parallel `MaxRatchetGroup::encrypt_with_rekey_pq_authenticated`: шифрует
+    /// с aggressive DH rekey + добавляет SPQR HMAC с **реальной X-Wing PQ-extension** epoch
+    /// secret когда `pq_ratchet_every_n_commits` триггерит (default = каждый 3-й commit).
+    ///
+    /// Используется facade-слоем (CloudChat / SecretChat) когда `pq_provider` доступен в
+    /// `ClientCore` и группа создана на ciphersuite 0x004D — см. также
+    /// [`MaxRatchetGroup::encrypt_with_rekey_pq_authenticated`](super::MaxRatchetGroup::encrypt_with_rekey_pq_authenticated)
+    /// для owned-mode варианта.
+    ///
+    /// **Требование к группе:** ciphersuite 0x004D (`MLS_256_XWING_CHACHA20POLY1305_SHA256_Ed25519`).
+    /// Под non-PQ ciphersuite (например default 0x0003) `force_rekey_with_pq` всё равно работает
+    /// но pq_shared_secret будет X25519-derived только — нет реального PQ benefit'а.
+    /// Caller responsibility — выбрать ciphersuite при `UmbrellaGroup::create_private`.
+    ///
+    /// Borrowed-mode parallel to
+    /// [`MaxRatchetGroup::encrypt_with_rekey_pq_authenticated`](super::MaxRatchetGroup::encrypt_with_rekey_pq_authenticated).
+    /// Encrypts with rekey and attaches a SPQR HMAC keyed with the **real X-Wing PQ-extension**
+    /// of the epoch secret when `pq_ratchet_every_n_commits` fires (default = every 3rd commit).
+    /// Used by the facade layer (`CloudChat` / `SecretChat`) once `pq_provider` becomes
+    /// available in `ClientCore` and the group is created with ciphersuite 0x004D. See the
+    /// owned-mode method for the full flow description and ciphersuite requirements.
+    #[cfg(feature = "pq")]
+    pub fn encrypt_with_rekey_pq_authenticated(
+        &mut self,
+        group: &mut UmbrellaGroup,
+        pq_provider: &impl OpenMlsProvider,
+        keystore: &dyn KeyStore,
+        plaintext: &[u8],
+        now_unix: u64,
+    ) -> Result<MaxRatchetOutgoing> {
+        let mut commit_bytes_opt = None;
+        let mut pq_extension_used = false;
+        let mut pq_shared: Option<[u8; 32]> = None;
+
+        if self.config.aggressive_dh_per_message {
+            let (commit, pq_secret) = group.force_rekey_with_pq(pq_provider, keystore, now_unix)?;
+            self.commit_counter = self.commit_counter.saturating_add(1);
+
+            if super::counter::should_trigger_pq(
+                self.commit_counter,
+                self.config.pq_ratchet_every_n_commits,
+            ) {
+                pq_extension_used = true;
+                pq_shared = Some(pq_secret);
+            }
+            // Non-trigger cycle: pq_secret extracted но не используется в SPQR HMAC. Под
+            // ciphersuite 0x004D `force_rekey` уже выполнил X-Wing combine в HPKE encaps,
+            // так что MLS-protocol-level PQ защита есть на каждом commit'e regardless of flag.
+            // Non-trigger cycle: pq_secret extracted but not used in the SPQR HMAC.
+
+            commit_bytes_opt = Some(commit);
+        }
+
+        let ciphertext = group.encrypt_application(pq_provider, keystore, plaintext)?;
+
+        let mut spqr_mac = None;
+        if self.config.spqr_deniable_auth {
+            let exporter =
+                group.exporter_secret(pq_provider, "umbrellax-spqr-deniable-auth", b"", 32)?;
+            let classical_secret = super::spqr::derive_epoch_secret_from_exporter(
+                &exporter.expose()[..32],
+            )
+            .map_err(|_| MlsError::GroupOperation {
+                kind: "SPQR epoch secret HKDF derivation failed",
+            })?;
+
+            let epoch_secret = if let Some(pq) = pq_shared.as_ref() {
+                super::spqr::pq_extend_epoch_secret(&classical_secret, pq).map_err(|_| {
+                    MlsError::GroupOperation {
+                        kind: "SPQR PQ-extension HKDF derivation failed",
+                    }
+                })?
+            } else {
+                classical_secret
+            };
+
+            let mac = super::spqr::compute_hmac(&epoch_secret, &ciphertext);
+            spqr_mac = Some(mac.to_vec());
+        }
+
+        Ok(MaxRatchetOutgoing {
+            commit_bytes: commit_bytes_opt,
+            ciphertext_bytes: ciphertext,
+            epoch_after_send: group.epoch(),
+            pq_extension_used,
+            spqr_mac,
+        })
     }
 
     /// Проверяет таймер на borrow'нутой группе и принудительно делает rekey если elapsed.

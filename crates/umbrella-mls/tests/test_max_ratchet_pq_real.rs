@@ -168,14 +168,26 @@ fn encrypt_with_rekey_pq_authenticated_triggers_pq_extension_on_3rd_send() {
     }
 
     // Sends 1, 2, 4, 5 — no PQ extension; sends 3, 6 — PQ extension.
-    assert!(!outgoings[0].pq_extension_used, "send #1 must not trigger PQ");
-    assert!(!outgoings[1].pq_extension_used, "send #2 must not trigger PQ");
+    assert!(
+        !outgoings[0].pq_extension_used,
+        "send #1 must not trigger PQ"
+    );
+    assert!(
+        !outgoings[1].pq_extension_used,
+        "send #2 must not trigger PQ"
+    );
     assert!(
         outgoings[2].pq_extension_used,
         "send #3 must trigger PQ (counter % 3 == 0)"
     );
-    assert!(!outgoings[3].pq_extension_used, "send #4 must not trigger PQ");
-    assert!(!outgoings[4].pq_extension_used, "send #5 must not trigger PQ");
+    assert!(
+        !outgoings[3].pq_extension_used,
+        "send #4 must not trigger PQ"
+    );
+    assert!(
+        !outgoings[4].pq_extension_used,
+        "send #5 must not trigger PQ"
+    );
     assert!(
         outgoings[5].pq_extension_used,
         "send #6 must trigger PQ (counter % 3 == 0)"
@@ -262,9 +274,8 @@ fn pq_triggered_mac_differs_from_classical_only_mac_on_same_ciphertext() {
         .inner()
         .exporter_secret(&alice2.provider, "umbrellax-spqr-deniable-auth", b"", 32)
         .expect("exporter_secret");
-    let classical_only_secret =
-        spqr::derive_epoch_secret_from_exporter(&exporter.expose()[..32])
-            .expect("classical epoch secret");
+    let classical_only_secret = spqr::derive_epoch_secret_from_exporter(&exporter.expose()[..32])
+        .expect("classical epoch secret");
     let classical_only_mac = spqr::compute_hmac(&classical_only_secret, &outgoing.ciphertext_bytes);
 
     let pq_extended_mac = outgoing

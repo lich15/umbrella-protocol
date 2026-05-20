@@ -38,7 +38,8 @@ use umbrella_mls::{
 
 const CS: UmbrellaCiphersuite = UMBRELLA_DEFAULT_CIPHERSUITE;
 const T0: u64 = 1_700_000_000;
-const PAYLOAD: &[u8] = b"benchmark payload representative of a typical chat message: ~64 bytes here";
+const PAYLOAD: &[u8] =
+    b"benchmark payload representative of a typical chat message: ~64 bytes here";
 
 /// Bench-клиент: keystore + провайдер. Создаётся заново на каждый iter setup чтобы не
 /// конфликтовать с openmls KeyPackage storage state между итерациями.
