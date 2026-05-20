@@ -560,6 +560,21 @@ pub struct ClientCore {
     /// one storage area (KeyPackage privates, group state, signing keys).
     pub(crate) mls_provider: Arc<UmbrellaProvider>,
 
+    /// Task #1 closure 2026-05-21 — PQ-capable MLS provider для ciphersuite
+    /// `0x004D` X-Wing (`UmbrellaXWingProvider`). `Some(...)` после bootstrap
+    /// через [`UmbrellaClient::bootstrap_pq_for_test`] под feature `pq`;
+    /// `None` для всех classical bootstrap paths. Facade методы dispatch'ат
+    /// между mls_provider и pq_provider based на group ciphersuite — см.
+    /// `Self::provider_handle_for_ciphersuite`.
+    ///
+    /// Task #1 closure 2026-05-21 — PQ-capable MLS provider for ciphersuite
+    /// 0x004D X-Wing (`UmbrellaXWingProvider`). `Some(...)` после bootstrap
+    /// через [`UmbrellaClient::bootstrap_pq_for_test`] under feature `pq`;
+    /// `None` для classical bootstrap paths. Facade methods dispatch между
+    /// providers based on group ciphersuite via `Self::provider_handle_for_ciphersuite`.
+    #[cfg(feature = "pq")]
+    pub(crate) pq_provider: Option<Arc<umbrella_mls::provider::UmbrellaXWingProvider>>,
+
     /// Каноничный MLS [`KeyStore`] этого `ClientCore`. Содержит identity-key и
     /// `device_index = 0` (Block 7.2 single-device); используется
     /// [`UmbrellaGroup::create_private`] / `encrypt_application` /
@@ -772,6 +787,8 @@ impl ClientCore {
             cloud_msg_seq_counters: RwLock::new(HashMap::new()),
             peer_x25519_directory: RwLock::new(HashMap::new()),
             ratchet_states: RwLock::new(HashMap::new()),
+            #[cfg(feature = "pq")]
+            pq_provider: None,
         }))
     }
 
@@ -914,6 +931,8 @@ impl ClientCore {
             cloud_msg_seq_counters: RwLock::new(HashMap::new()),
             peer_x25519_directory: RwLock::new(HashMap::new()),
             ratchet_states: RwLock::new(HashMap::new()),
+            #[cfg(feature = "pq")]
+            pq_provider: None,
         }))
     }
 
@@ -1219,6 +1238,19 @@ impl ClientCore {
     #[must_use]
     pub fn mls_provider(&self) -> Arc<UmbrellaProvider> {
         self.mls_provider.clone()
+    }
+
+    /// Task #1 closure 2026-05-21 — PQ-capable MLS provider (X-Wing) shared between
+    /// PQ ciphersuite groups. `Some(...)` после [`UmbrellaClient::bootstrap_pq_for_test`]
+    /// под feature `pq`; `None` для classical bootstrap. Facade methods consult это
+    /// для choose правильного provider'а для X-Wing ciphersuite groups.
+    ///
+    /// Task #1 closure 2026-05-21 — PQ-capable MLS provider (X-Wing) shared между
+    /// PQ ciphersuite groups; `None` если не PQ-bootstrapped.
+    #[cfg(feature = "pq")]
+    #[must_use]
+    pub fn pq_provider(&self) -> Option<Arc<umbrella_mls::provider::UmbrellaXWingProvider>> {
+        self.pq_provider.clone()
     }
 
     /// MLS keystore (Block 7.2 device 0 single-device). Используется фасадами
@@ -1738,14 +1770,23 @@ impl UmbrellaClient {
     ///
     /// Same as [`Self::bootstrap_for_test`] — `ClientError::Identity` on
     /// invalid mnemonic entropy.
-    #[cfg(feature = "pq")]
+    #[cfg(all(feature = "pq", feature = "pq-test"))]
     pub async fn bootstrap_pq_for_test(
         mut config: ClientConfig,
         seed: IdentitySeed,
     ) -> Result<Arc<Self>> {
         config.default_ciphersuite = UMBRELLA_CIPHERSUITE_PQ_HYBRID;
-        let core = ClientCore::new_for_test(config, seed).await?;
-        Ok(Arc::new(Self { core }))
+        let mut core_arc = ClientCore::new_for_test(config, seed).await?;
+        // Task #1 closure 2026-05-21: wire PQ-capable provider (UmbrellaXWingProvider)
+        // в свежий ClientCore. `Arc::get_mut` safe здесь — `new_for_test` только что
+        // returned exclusive `Arc` без других clones.
+        // Task #1 closure 2026-05-21: wire UmbrellaXWingProvider into fresh ClientCore.
+        let core_mut = Arc::get_mut(&mut core_arc)
+            .expect("fresh ClientCore Arc должен быть exclusive после new_for_test");
+        core_mut.pq_provider = Some(Arc::new(
+            umbrella_mls::provider::UmbrellaXWingProvider::new_for_kat_tests_only(),
+        ));
+        Ok(Arc::new(Self { core: core_arc }))
     }
 
     /// Bootstrap клиента в **classical-режиме** для тестов и интеграционных

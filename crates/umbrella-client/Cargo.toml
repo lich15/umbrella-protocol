@@ -52,6 +52,17 @@ pq = [
     "dep:umbrella-pq",
 ]
 
+# Task #1 closure 2026-05-21: bootstrap_pq_for_test wiring через
+# `UmbrellaXWingProvider::new_for_kat_tests_only()` требует
+# `umbrella-mls/test-utils` для access к KAT-test constructor.
+# Отдельная feature чтобы НЕ expose zeroed-witness constructor в
+# production pq builds (F-MLS-1 hedged-encryption defense preservation).
+#
+# Task #1 (2026-05-21): pq-test bootstrap feature — adds test-utils для
+# `UmbrellaXWingProvider::new_for_kat_tests_only()`. NOT activated by
+# production `pq` — preserves F-MLS-1 zeroed-witness защита.
+pq-test = ["pq", "umbrella-mls/test-utils"]
+
 [dependencies]
 umbrella-identity = { workspace = true }
 umbrella-mls = { workspace = true }

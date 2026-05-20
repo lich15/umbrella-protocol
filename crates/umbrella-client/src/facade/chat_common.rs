@@ -333,6 +333,44 @@ pub(crate) async fn send_mls_text(
         let mut group = group_arc.lock().await;
         if let Some(state_arc) = core.get_ratchet_state(chat_id).await {
             let mut state = state_arc.lock().await;
+
+            // Task #1 closure 2026-05-21 — PQ dispatch: если group's ciphersuite
+            // post-quantum hybrid (0x004D) AND pq_provider initialized в ClientCore
+            // (через bootstrap_pq_for_test) → routing к encrypt_with_rekey_pq_authenticated
+            // которая использует real X-Wing combine integration. Иначе classical path.
+            //
+            // Task #1 (2026-05-21): PQ dispatch — route к XWing provider если PQ
+            // ciphersuite group + pq_provider available; classical fallback otherwise.
+            #[cfg(feature = "pq")]
+            let outgoing = if group.ciphersuite().is_post_quantum_hybrid() {
+                if let Some(pq_provider) = core.pq_provider() {
+                    state.encrypt_with_rekey_pq_authenticated(
+                        &mut group,
+                        pq_provider.as_ref(),
+                        core.mls_keystore().as_ref(),
+                        text.as_bytes(),
+                        now_unix,
+                    )?
+                } else {
+                    state.encrypt_with_rekey_authenticated(
+                        &mut group,
+                        core.mls_provider.as_ref(),
+                        core.mls_keystore().as_ref(),
+                        text.as_bytes(),
+                        now_unix,
+                    )?
+                }
+            } else {
+                state.encrypt_with_rekey_authenticated(
+                    &mut group,
+                    core.mls_provider.as_ref(),
+                    core.mls_keystore().as_ref(),
+                    text.as_bytes(),
+                    now_unix,
+                )?
+            };
+
+            #[cfg(not(feature = "pq"))]
             let outgoing = state.encrypt_with_rekey_authenticated(
                 &mut group,
                 core.mls_provider.as_ref(),
@@ -340,6 +378,7 @@ pub(crate) async fn send_mls_text(
                 text.as_bytes(),
                 now_unix,
             )?;
+
             let spqr_mac_arr: Option<[u8; max_ratchet_envelope::SPQR_MAC_LEN]> =
                 outgoing.spqr_mac.as_ref().map(|v| {
                     let mut arr = [0u8; max_ratchet_envelope::SPQR_MAC_LEN];
@@ -552,9 +591,31 @@ async fn decrypt_text_with_fallback(
     if let Some(v3) = max_ratchet_envelope::try_decode_v3(ciphertext) {
         let mut g = group_arc.lock().await;
 
+        // Task #1 closure 2026-05-21 — PQ dispatch для process_incoming + exporter_secret:
+        // если group's ciphersuite post-quantum hybrid + pq_provider initialized,
+        // используем XWing provider; иначе classical mls_provider. Pre-compute once
+        // чтобы избежать repeating ciphersuite check на каждом call site.
+        // Task #1 (2026-05-21): pre-compute PQ-provider option once для decrypt path.
+        #[cfg(feature = "pq")]
+        let pq_dispatch: Option<Arc<umbrella_mls::provider::UmbrellaXWingProvider>> =
+            if g.ciphersuite().is_post_quantum_hybrid() {
+                core.pq_provider()
+            } else {
+                None
+            };
+
         // 1. Process commit first (if present) — merges epoch advance on receiver side.
         if let Some(commit) = v3.commit_bytes {
-            match g.process_incoming(core.mls_provider.as_ref(), commit) {
+            #[cfg(feature = "pq")]
+            let commit_result = if let Some(pq) = pq_dispatch.as_ref() {
+                g.process_incoming(pq.as_ref(), commit)
+            } else {
+                g.process_incoming(core.mls_provider.as_ref(), commit)
+            };
+            #[cfg(not(feature = "pq"))]
+            let commit_result = g.process_incoming(core.mls_provider.as_ref(), commit);
+
+            match commit_result {
                 Ok(IncomingMessage::CommitApplied { .. })
                 | Ok(IncomingMessage::Application { .. }) => {
                     // CommitApplied — expected. Application would be unusual (commit slot
@@ -576,7 +637,16 @@ async fn decrypt_text_with_fallback(
         }
 
         // 2. Process application ciphertext — decrypt.
-        let payload = match g.process_incoming(core.mls_provider.as_ref(), v3.ciphertext_bytes) {
+        #[cfg(feature = "pq")]
+        let app_result = if let Some(pq) = pq_dispatch.as_ref() {
+            g.process_incoming(pq.as_ref(), v3.ciphertext_bytes)
+        } else {
+            g.process_incoming(core.mls_provider.as_ref(), v3.ciphertext_bytes)
+        };
+        #[cfg(not(feature = "pq"))]
+        let app_result = g.process_incoming(core.mls_provider.as_ref(), v3.ciphertext_bytes);
+
+        let payload = match app_result {
             Ok(IncomingMessage::Application { payload, .. }) => payload,
             Ok(_other) => {
                 tracing::warn!(
@@ -591,6 +661,18 @@ async fn decrypt_text_with_fallback(
         };
 
         // 3. Verify SPQR HMAC over the ciphertext_bytes via current epoch exporter.
+        #[cfg(feature = "pq")]
+        let exporter_result = if let Some(pq) = pq_dispatch.as_ref() {
+            g.exporter_secret(pq.as_ref(), "umbrellax-spqr-deniable-auth", b"", 32)
+        } else {
+            g.exporter_secret(
+                core.mls_provider.as_ref(),
+                "umbrellax-spqr-deniable-auth",
+                b"",
+                32,
+            )
+        };
+        #[cfg(not(feature = "pq"))]
         let exporter_result = g.exporter_secret(
             core.mls_provider.as_ref(),
             "umbrellax-spqr-deniable-auth",
@@ -675,6 +757,50 @@ pub(crate) async fn create_mls_group(
     let chat_id = ChatId(chat_id_bytes);
 
     let group_id = openmls::group::GroupId::from_slice(&chat_id_bytes);
+
+    // Task #1 closure 2026-05-21 — PQ dispatch для create_private:
+    // под PQ ciphersuite (0x004D X-Wing) и если pq_provider initialized в ClientCore
+    // (через bootstrap_pq_for_test) — pass UmbrellaXWingProvider; иначе classical.
+    // Без correct provider для X-Wing ciphersuite classical OpenMlsRustCrypto panics
+    // в HpkeKemType::XWingKemDraft6 unimplemented!() — постулат 14 защищается через
+    // `create_private` pre-check `provider.crypto().supports(ciphersuite)` returning
+    // `MlsError::GroupOperation { kind: "provider does not support requested ciphersuite" }`.
+    //
+    // Task #1 (2026-05-21): dispatch к UmbrellaXWingProvider для PQ ciphersuite groups;
+    // otherwise classical mls_provider. Required для bootstrap_pq_for_test work end-to-end.
+    #[cfg(feature = "pq")]
+    let group = if cs.is_post_quantum_hybrid() {
+        if let Some(pq_provider) = core.pq_provider() {
+            UmbrellaGroup::create_private(
+                pq_provider.as_ref(),
+                core.mls_keystore().as_ref(),
+                0,
+                cs,
+                group_id,
+                unix_now_secs(),
+            )?
+        } else {
+            UmbrellaGroup::create_private(
+                core.mls_provider.as_ref(),
+                core.mls_keystore().as_ref(),
+                0,
+                cs,
+                group_id,
+                unix_now_secs(),
+            )?
+        }
+    } else {
+        UmbrellaGroup::create_private(
+            core.mls_provider.as_ref(),
+            core.mls_keystore().as_ref(),
+            0,
+            cs,
+            group_id,
+            unix_now_secs(),
+        )?
+    };
+
+    #[cfg(not(feature = "pq"))]
     let group = UmbrellaGroup::create_private(
         core.mls_provider.as_ref(),
         core.mls_keystore().as_ref(),
