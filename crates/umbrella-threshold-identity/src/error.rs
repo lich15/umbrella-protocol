@@ -94,6 +94,7 @@ impl core::fmt::Display for PolicyRejection {
     }
 }
 
+/// Алиас для `Result` с `ThresholdIdentityError` в качестве типа ошибки.
 /// Result alias.
 pub type ThresholdIdentityResult<T> = core::result::Result<T, ThresholdIdentityError>;
 

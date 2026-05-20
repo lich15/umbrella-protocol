@@ -24,6 +24,7 @@ use crate::pin_kdf;
 use crate::time_lock::RecoveryRequest;
 
 /// Опции, заданные пользователем при регистрации.
+/// Account options set by the user at registration time.
 #[derive(Debug, Clone, Default)]
 pub struct AccountOptions {
     /// OTP TOTP shared-secret (если пользователь включил 2FA).

@@ -22,6 +22,10 @@ use zeroize::Zeroizing;
 /// Returns true iff `candidate == reverse(genuine_pin)`.
 ///
 /// **Constant-time** w.r.t. PIN length (Aldo: PIN length is public anyway).
+/// Constant-time проверка является ли `candidate` reverse от `genuine_pin`.
+/// Используется для detection «duress PIN» (когда пользователь вводит PIN
+/// задом наперёд под принуждением — это триггерит UNRECOVERABLE_DELETE).
+///
 /// The byte-by-byte compare is `ConstantTimeEq`, so an attacker watching
 /// timing cannot distinguish «duress detected» from «duress not detected»
 /// after the reverse step (which is constant-time per PIN length).
@@ -47,6 +51,10 @@ pub fn is_duress_reverse(candidate: &[u8], genuine_pin: &[u8]) -> bool {
     candidate.ct_eq(reversed.as_slice()).into()
 }
 
+/// Триггер на серверной стороне: вызывается когда клиент signal'ит duress.
+/// Помечает аккаунт как Deleted и эмитирует параллельный UNRECOVERABLE_DELETE
+/// на все 5 серверов.
+///
 /// Server-side: invoked when client signals duress. Marks account as Deleted
 /// and emits a parallel UNRECOVERABLE_DELETE to all 5 servers.
 ///
@@ -62,6 +70,7 @@ pub enum DuressTrigger {
     ExplicitCode,
 }
 
+/// Маркер запроса с серверной стороны — wipe всех shares аккаунта.
 /// Convenience marker — server-side request to wipe all shares.
 #[derive(Debug, Clone)]
 pub struct UnrecoverableDelete {

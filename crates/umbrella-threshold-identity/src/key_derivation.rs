@@ -34,24 +34,39 @@ use crate::error::{ThresholdIdentityError, ThresholdIdentityResult};
 /// Output length для device_key + master_key — 32 bytes (X25519/ChaCha20 root).
 pub const KEY_LEN: usize = 32;
 
+/// Domain separator для derivation device_key.
 /// Domain separator: device_key derivation.
 pub const DEVICE_KEY_LABEL: &[u8] = b"umbrella-r6/device-key/v1";
 
+/// Domain separator для derivation master_key.
 /// Domain separator: master_key derivation.
 pub const MASTER_KEY_LABEL: &[u8] = b"umbrella-r6/master-key/v1";
 
+/// Per-account локальная соль — 16 байт, хранится рядом с encrypted device-state.
+/// Без неё master_key восстановить невозможно.
+///
 /// Per-account local salt — 16 bytes stored alongside encrypted device-state.
 /// Cannot derive master_key without it.
 pub type AccountLocalSalt = [u8; 16];
 
+/// Per-device random — 32 байта внутри Secure Enclave / StrongBox.
+/// Никогда не покидает hardware-backed keystore в cleartext.
+///
 /// Per-device random — 32 bytes stored inside Secure Enclave / StrongBox.
 /// Never leaves hardware-backed keystore in cleartext.
 pub type DeviceRandom = [u8; 32];
 
+/// Server share — 32 байта, возвращаемые threshold-3 серверами после
+/// успешной верификации PIN. Шифруются в transit через HPKE
+/// (X25519 + ChaCha20-Poly1305).
+///
 /// Server share — 32 bytes returned by threshold-3 servers after successful
 /// PIN verification. Encrypted in transit via HPKE (X25519 + ChaCha20-Poly1305).
 pub type ServerShare = [u8; 32];
 
+/// Transcript: связывает derivation с (account_id, epoch). Защищает от
+/// downgrade-атак где злоумышленник replays старый server_share с новым PIN.
+///
 /// Transcript: binds derivation to (account_id, epoch). Prevents downgrade
 /// attacks where an attacker replays old server_share with newer PIN.
 #[derive(Debug, Clone)]

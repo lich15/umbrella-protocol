@@ -33,21 +33,34 @@ use umbrella_crypto_primitives::mlocked::MlockedSecret;
 
 use crate::error::{ThresholdIdentityError, ThresholdIdentityResult};
 
+/// Argon2id memory cost — 64 MiB, mobile-friendly per RFC 9106 §4.
 /// Argon2id memory cost — 64 MiB. Mobile-friendly per RFC 9106 §4.
 pub const MEMORY_COST_KIB: u32 = 64 * 1024;
 
+/// Количество итераций Argon2id — 3 прохода по памяти.
 /// Argon2id iterations — 3 passes over memory.
 pub const ITERATIONS: u32 = 3;
 
+/// Параллелизм Argon2id — 4 lane.
 /// Argon2id parallelism — 4 lanes.
 pub const PARALLELISM: u32 = 4;
 
+/// Длина output — 32 байта, downstream HKDF root.
 /// Output length — 32 bytes, downstream HKDF root.
 pub const OUTPUT_LEN: usize = 32;
 
+/// Длина соли — 16 байт per RFC 9106 §4.
 /// Salt length — 16 bytes per RFC 9106 §4.
 pub const SALT_LEN: usize = 16;
 
+/// Выводит 32-байтный PIN-KDF root из `pin` + `salt`. Output обёрнут в
+/// `MlockedSecret` чтобы kernel не мог page out, и `Zeroize` очищает
+/// его при drop'е.
+///
+/// `pin` — numeric код введённый пользователем как UTF-8 bytes. `salt` —
+/// 16-байтное per-account значение, хранится рядом с encrypted server share
+/// (НЕ секрет, но уникальная — чтобы предотвратить rainbow-таблицы).
+///
 /// Derives a 32-byte PIN-KDF root from `pin` + `salt`. Output wrapped in
 /// `MlockedSecret` so the kernel cannot page it out and `Zeroize` clears it
 /// on drop.
@@ -55,9 +68,6 @@ pub const SALT_LEN: usize = 16;
 /// `pin` is the user-entered numeric code as UTF-8 bytes. `salt` is a 16-byte
 /// per-account value stored alongside the encrypted server share (NOT a
 /// secret, but unique to thwart rainbow tables).
-///
-/// Derives a 32-byte PIN-KDF root from `pin` + `salt`. Output is `MlockedSecret`
-/// so kernel cannot page it out.
 pub fn derive_pin_root(
     pin: &[u8],
     salt: &[u8; SALT_LEN],
@@ -82,14 +92,19 @@ pub fn derive_pin_root(
     Ok(secret_out)
 }
 
+/// Constant-time проверка PIN: re-derive Argon2id root из `candidate`+`salt`,
+/// сравнение с stored 32-байтным хешем. Используется сервером во время
+/// верификации PIN-derived envelope.
+///
+/// Возвращает true если `candidate` derive'ится в `stored_hash`, иначе false.
+/// Стоимость: одна полная Argon2id evaluation (~600-800мс на mobile).
+///
 /// Constant-time PIN comparison: re-derive Argon2id root from `candidate`
 /// and `salt`, compare against stored 32-byte hash. Used by server during
 /// verification of a PIN-derived envelope.
 ///
 /// Returns true if `candidate` derives to `stored_hash`, false otherwise.
 /// Cost: one full Argon2id evaluation (~600-800ms on mobile).
-///
-/// Constant-time PIN comparison via Argon2id re-derive.
 pub fn verify_pin(
     candidate: &[u8],
     salt: &[u8; SALT_LEN],

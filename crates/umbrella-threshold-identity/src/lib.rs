@@ -130,33 +130,42 @@ pub mod transport;
 
 pub use error::{ThresholdIdentityError, ThresholdIdentityResult};
 
-/// Cluster topology — fixed at 5 servers, threshold 3-of-5 per design.
+/// Топология кластера — 5 серверов, threshold 3-of-5 по архитектуре раунда 6.
 ///
+/// Cluster topology — fixed at 5 servers, threshold 3-of-5 per design.
 /// Selected per Pedersen 1991 §4 (3-of-5 minimises both safety and liveness
 /// failure probability for nation-state adversary model with up to 2
 /// compromised servers).
 pub const TOTAL_SERVERS: u16 = 5;
 
+/// Порог — 3 из 5 серверов требуется для восстановления share либо threshold-sign.
 /// Threshold — 3 of 5 required to reconstruct any secret share or sign.
 pub const THRESHOLD: u16 = 3;
 
+/// Срок жизни offline-тикета — 24 часа.
 /// 24-hour offline-ticket validity.
 pub const OFFLINE_TICKET_VALIDITY_SECS: u64 = 24 * 60 * 60;
 
+/// Дефолтный time-lock на восстановление нового устройства — 24 часа.
 /// Default time-lock for new device recovery (24h).
 pub const RECOVERY_TIME_LOCK_SECS: u64 = 24 * 60 * 60;
 
+/// Ускоренный time-lock при наличии старого PIN — 1 час.
 /// Accelerated time-lock when old PIN is provided (1h).
 pub const RECOVERY_TIME_LOCK_ACCELERATED_SECS: u64 = 60 * 60;
 
+/// Лимит ошибок PIN до эскалации к 24-словной recovery.
 /// Wrong-PIN threshold before escalation to 24-word recovery.
 pub const WRONG_PIN_LIMIT: u8 = 3;
 
+/// Лимит ошибок 24-словной recovery до эскалации к 12-словной emergency.
 /// Wrong-24-word-recovery threshold before escalation to 12-word emergency.
 pub const WRONG_24WORD_LIMIT: u8 = 3;
 
+/// Лимит ошибок 12-словной emergency до permanent delete (UNRECOVERABLE).
 /// Wrong-12-word-emergency threshold before permanent delete.
 pub const WRONG_12WORD_LIMIT: u8 = 5;
 
+/// Интервал heartbeat — устройство пингует серверы каждые 30 сек пока активно.
 /// Heartbeat interval — device pings servers every 30 sec while active.
 pub const HEARTBEAT_INTERVAL_SECS: u64 = 30;

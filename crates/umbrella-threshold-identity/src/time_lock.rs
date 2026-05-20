@@ -35,6 +35,7 @@ pub enum RecoveryState {
     Completed,
 }
 
+/// Tracker recovery-запроса. Серверное персистентное состояние.
 /// Recovery request tracker. Server-side persistent state.
 #[derive(Debug, Clone)]
 pub struct RecoveryRequest {

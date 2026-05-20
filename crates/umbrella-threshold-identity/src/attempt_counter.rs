@@ -1,4 +1,9 @@
-//! # Attempt counter state machine
+//! # Счётчик попыток — конечный автомат / Attempt counter state machine
+//!
+//! Конечный автомат эскалации после неудачных попыток входа: PIN → 24-слова →
+//! 12-слов emergency → permanent delete. Счётчики персистятся на сервере
+//! атомарно (один SQL UPDATE на Postgres либо запись в mlock'd файл на простых
+//! deployments).
 //!
 //! ```text
 //! PIN_state ─wrong×3─► Recovery24_state ─wrong×3─► Emergency12_state ─wrong×5─► Deleted
@@ -20,6 +25,7 @@
 use crate::error::{PolicyRejection, ThresholdIdentityError, ThresholdIdentityResult};
 use crate::{WRONG_12WORD_LIMIT, WRONG_24WORD_LIMIT, WRONG_PIN_LIMIT};
 
+/// Текущий уровень эскалации для аккаунта.
 /// Current escalation level for an account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EscalationLevel {
@@ -33,6 +39,9 @@ pub enum EscalationLevel {
     Deleted,
 }
 
+/// In-memory счётчик попыток. Production сервер персистит каждый переход в
+/// durable storage (одна строка per `(server_id, account_id)`).
+///
 /// In-memory attempt counter. Production server persists each transition to
 /// durable storage (one row per `(server_id, account_id)`).
 #[derive(Debug, Clone)]

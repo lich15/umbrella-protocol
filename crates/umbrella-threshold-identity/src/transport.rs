@@ -35,6 +35,9 @@ impl TransportChannel {
     }
 }
 
+/// Selector, обходящий fallback-цепочку по порядку. Возвращает первый канал
+/// который успешно прошёл `probe()`.
+///
 /// Selector that walks the fallback chain in order. Returns the first channel
 /// that successfully passed `probe()`.
 pub struct TransportSelector {
@@ -58,6 +61,10 @@ impl Default for TransportSelector {
     }
 }
 
+/// Результат пробинга одного канала. Production-код использует реальную
+/// `Probe` impl (например, TCP connect к `umbrellax.io:443`). Тесты injects
+/// детерминированный mock.
+///
 /// Result of probing one channel. Production code uses a real `Probe` impl
 /// (e.g. TCP connect to `umbrellax.io:443`). Tests inject a deterministic
 /// mock.

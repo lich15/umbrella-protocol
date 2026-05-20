@@ -24,9 +24,14 @@ use crate::error::{ThresholdIdentityError, ThresholdIdentityResult};
 /// Domain separator для anonymous-id derivation.
 pub const ANON_ID_LABEL: &[u8] = b"umbrella-r6/anon-id/v1";
 
+/// Длина анонимного account ID в байтах.
 /// Number of bytes in an anonymous account ID.
 pub const ANON_ID_LEN: usize = 32;
 
+/// Выводит анонимный account ID для сервера `server_id` (1..=5) при известном
+/// `master_key`. Output — 32 байта, криптографически уникальные для каждой
+/// пары `(master_key, server_id)`.
+///
 /// Derives the anonymous account ID for server `server_id` (1..=5) given the
 /// account's `master_key`. Output is 32 bytes — cryptographically unique per
 /// (master_key, server_id) pair.
@@ -53,6 +58,9 @@ pub fn derive_anonymous_id(
     Ok(out)
 }
 
+/// Выводит все 5 per-server anonymous IDs из одного master_key. Используется
+/// на клиенте для подготовки запросов (один master_key → 5 IDs на 5 серверов).
+///
 /// Derives all 5 per-server anonymous IDs from a single master_key. Useful
 /// for client-side preparation (one master_key → 5 IDs to send to 5 servers).
 pub fn derive_all_anonymous_ids(

@@ -15,6 +15,7 @@ use std::time::SystemTime;
 use crate::error::{ThresholdIdentityError, ThresholdIdentityResult};
 use crate::OFFLINE_TICKET_VALIDITY_SECS;
 
+/// Plaintext (до подписания) offline-тикет.
 /// Plaintext (pre-signing) offline ticket.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OfflineTicket {

@@ -12,6 +12,7 @@
 
 use std::time::{Duration, SystemTime};
 
+/// Per-account состояние dead-man-switch.
 /// Per-account dead-man switch state.
 #[derive(Debug, Clone)]
 pub struct DeadManState {
