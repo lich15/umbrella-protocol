@@ -1,3 +1,7 @@
+// QUIC mock gateway test fixture. Carry-over к отдельной audit session.
+// QUIC mock gateway test fixture. Carry-over to a dedicated audit session.
+#![allow(unknown_lints)]
+#![allow(require_dual_doc)]
 //! quinn-based mock QUIC gateway, mirroring the shape of `mod.rs` (the
 //! tokio-tungstenite WebSocket mock) for session 2 contract tests. Accepts
 //! one QUIC connection at a time on a kernel-assigned loopback UDP port,

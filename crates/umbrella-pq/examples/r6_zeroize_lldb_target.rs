@@ -39,6 +39,7 @@ impl RngCore for AARng {
 
 impl CryptoRng for AARng {}
 
+/// Точка останова `lldb`: ДО keygen.
 /// `lldb` breakpoint target: BEFORE keygen.
 #[inline(never)]
 pub fn r6_phase_before_keygen() {
@@ -47,6 +48,10 @@ pub fn r6_phase_before_keygen() {
     std::hint::black_box(0u8);
 }
 
+/// Фаза **положительного контроля**: держим `Vec<u8>` из [0xAA; 32] живым и
+/// в scope, чтобы lldb-сканер мог его найти. Если scan показывает 0 hits —
+/// методология сломана (мы бы тестили zeroize против false negative).
+///
 /// **Positive control** phase: hold a `Vec<u8>` of [0xAA; 32] alive AND in
 /// scope so lldb scan can find it. If the scan reports 0 matches here, the
 /// methodology is broken (we'd be testing zeroize against a false negative).
@@ -61,12 +66,14 @@ pub fn r6_phase_positive_control_filled() {
     drop(needle);
 }
 
+/// Маркер-функция для lldb breakpoint ПОСЛЕ заполнения needle Vec.
 /// Marker function for lldb breakpoint AFTER needle Vec is filled.
 #[inline(never)]
 pub fn r6_break_after_fill() {
     std::hint::black_box(0xAAu8);
 }
 
+/// Точка останова `lldb`: ПОСЛЕ keygen (post-zeroize).
 /// `lldb` breakpoint target: AFTER keygen (post-zeroize).
 #[inline(never)]
 pub fn r6_phase_after_keygen() {
@@ -74,6 +81,7 @@ pub fn r6_phase_after_keygen() {
     std::hint::black_box(0u8);
 }
 
+/// Точка останова `lldb`: ПОСЛЕ drop секрета.
 /// `lldb` breakpoint target: AFTER drop of secret.
 #[inline(never)]
 pub fn r6_phase_after_drop() {

@@ -131,9 +131,11 @@ pub fn prepare_psi_query<R: CryptoRng + RngCore>(
     }
     // Превышение MAX_BATCH_SIZE OPRF выше нашего MAX_PSI_BATCH невозможно
     // (1024 == 1024), но проверим explicitly чтобы invariant не сдвинулся.
-    // Const-time check — fail compile если константы разойдутся (не runtime).
-    // Compile-time guard — fails the build if the constants drift apart.
-    const _: () = assert!(MAX_PSI_BATCH <= MAX_BATCH_SIZE);
+    // Const-bounded array length panics на compile если константы разойдутся
+    // — не runtime assert (постулат no_assert_in_lib).
+    // Const-bounded array length panics at compile time if the constants
+    // drift apart — not a runtime assert (postulate `no_assert_in_lib`).
+    const _: [u8; 1] = [0u8; (MAX_PSI_BATCH <= MAX_BATCH_SIZE) as usize];
 
     let salt = fresh_query_salt(rng);
     let mut entries = Vec::with_capacity(contacts.len());

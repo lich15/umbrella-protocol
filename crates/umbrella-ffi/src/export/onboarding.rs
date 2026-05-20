@@ -364,7 +364,7 @@ impl OnboardingHandle {
         let session_handle = Self::generate_session_handle();
         self.sessions
             .lock()
-            .expect("OnboardingHandle::sessions mutex poisoned — panic invariant violation")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(session_handle.clone(), session);
         Ok(UnlockResultFfi {
             identity_pk_hex,
@@ -385,7 +385,7 @@ impl OnboardingHandle {
         let _ = self
             .sessions
             .lock()
-            .expect("OnboardingHandle::sessions mutex poisoned")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(&session_handle);
     }
 
@@ -395,7 +395,7 @@ impl OnboardingHandle {
         u32::try_from(
             self.sessions
                 .lock()
-                .expect("OnboardingHandle::sessions mutex poisoned")
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .len(),
         )
         .unwrap_or(u32::MAX)
@@ -427,6 +427,11 @@ impl OnboardingHandle {
     }
 }
 
+/// **Production-safe** FFI-проекция результата unlock. Несёт только
+/// публичный `identity_pk_hex` и непрозрачный `session_handle`. Session
+/// ключи (`device_key`, `master_key`) живут только в Rust-side `sessions`
+/// map как `MlockedSecret` и никогда не пересекают FFI boundary в plaintext.
+///
 /// **Production-safe** FFI projection of unlock result. Carries only the
 /// public `identity_pk_hex` and the opaque `session_handle`. Session keys
 /// (`device_key`, `master_key`) live exclusively in the Rust-side
@@ -468,6 +473,11 @@ pub struct UnlockResultFfi {
 // bytes (the `#[uniffi::export] impl` block is removed from scaffolding
 // when the feature is off).
 
+/// **Только для test-rig:** FFI-проекция результата unlock, expose'ит
+/// session ключи как hex для R20 lldb-измерений / FFI-boundary leak
+/// validation. Существует только под feature `test-utils`. См. module-level
+/// F-FFI-2 closure note для rationale.
+///
 /// **Test-rig only:** FFI projection of unlock result that exposes session
 /// keys as hex strings for R20 lldb measurement / FFI-boundary leak
 /// validation. Exists ONLY when the `test-utils` feature is enabled. See

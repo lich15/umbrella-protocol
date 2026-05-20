@@ -1,3 +1,7 @@
+// R25 attack-test. Carry-over к отдельной audit session per crate-level note.
+// R25 attack-test. Carry-over to a dedicated audit session per the crate-level note.
+#![allow(unknown_lints)]
+#![allow(require_dual_doc)]
 //! R25 — Real attack: system services on PIN screen are disabled
 //!
 //! Per round-6 spec §«Stage 5» R25:

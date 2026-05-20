@@ -287,7 +287,7 @@ impl PsiResponse {
     }
 }
 
-/// Username lookup wire request: blinded handle + anon_id.
+/// Wire-запрос username lookup: blinded handle + anon_id.
 /// Username lookup wire request: blinded handle + anon_id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UsernameRequest {
@@ -388,7 +388,7 @@ impl KtInclusionProof {
     }
 }
 
-/// Username lookup wire response.
+/// Wire-ответ username lookup.
 /// Username lookup wire response.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsernameResponse {

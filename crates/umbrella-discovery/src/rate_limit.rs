@@ -195,7 +195,7 @@ impl Default for ClientBudgetState {
     }
 }
 
-/// Replay detector: keeps a rolling window of recently-seen server nonces.
+/// Replay-детектор: держит rolling window недавно-увиденных server nonces.
 /// Replay detector: keeps a rolling window of recently-seen server nonces.
 pub struct NonceReplayGuard {
     seen: HashSet<[u8; SERVER_NONCE_LEN]>,

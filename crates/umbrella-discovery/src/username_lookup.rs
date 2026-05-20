@@ -62,7 +62,7 @@ pub const AEAD_KEY_LEN: usize = 32;
 /// AEAD nonce size (12 bytes for ChaCha20-Poly1305).
 pub const AEAD_NONCE_LEN: usize = 12;
 
-/// Client-side state for one username lookup query.
+/// Клиентское состояние для одного username-lookup запроса.
 /// Client-side state for one username lookup query.
 #[derive(Debug)]
 pub struct UsernameQueryState {

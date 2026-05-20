@@ -1,3 +1,7 @@
+// R7+R8 LLDB attack-test example. Carry-over к отдельной audit session per crate-level note.
+// R7+R8 LLDB attack-test example. Carry-over to a dedicated audit session per the crate-level note.
+#![allow(unknown_lints)]
+#![allow(require_dual_doc)]
 //! R7+R8 — REAL lldb memory inspection target for identity_sk + SQLite master_key.
 //!
 //! PhD-B Device-Capture Defense audit (round 4, 2026-05-19 — initial).

@@ -1,3 +1,7 @@
+// LLDB attack-test example. Carry-over к отдельной audit session per crate-level note в lib.rs.
+// LLDB attack-test example. Carry-over to a dedicated audit session per the crate-level note in lib.rs.
+#![allow(unknown_lints)]
+#![allow(require_dual_doc)]
 //! R20 — REAL lldb memory inspection target for round-6 distributed identity.
 //!
 //! Per spec §«Stage 5 — Real attack regression tests» R20:

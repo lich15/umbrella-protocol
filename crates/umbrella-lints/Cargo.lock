@@ -1228,7 +1228,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella_lints"
-version = "1.0.0"
+version = "3.0.0"
 dependencies = [
  "clippy_utils",
  "dylint_linting",

@@ -1,3 +1,7 @@
+// Mock gateway test fixture. Carry-over к отдельной audit session per crate-level note.
+// Mock gateway test fixture. Carry-over to a dedicated audit session per the crate-level note.
+#![allow(unknown_lints)]
+#![allow(require_dual_doc)]
 //! F-CLIENT-FACADE-1 closure session 1 (2026-05-19): mock gateway harness for
 //! the consumer-driven contract tests in
 //! `tests/transport_websocket_contract.rs`. This is **client-side test

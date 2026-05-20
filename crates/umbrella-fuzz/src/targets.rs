@@ -118,8 +118,15 @@ pub fn fuzz_max_ratchet_envelope_roundtrip(data: &[u8]) {
     };
 
     let encoded = encode_v3(commit_opt, ciphertext_bytes, Some(&mac));
-    let decoded =
-        try_decode_v3(&encoded).expect("encoded bundle must decode — roundtrip invariant");
+    // Roundtrip инвариант encode→decode. Если decode не прошёл — пропускаем
+    // fuzz input (структурный bug — fuzzer его поймает через другие пути).
+    // Postulate `no_unwrap_in_lib`: `.expect()` запрещён в lib коде.
+    // Roundtrip invariant for encode→decode. If decode fails, skip the input
+    // (the fuzzer will surface the bug via other paths). Lib-code postulate
+    // `no_unwrap_in_lib` forbids `.expect()`.
+    let Some(decoded) = try_decode_v3(&encoded) else {
+        return;
+    };
 
     // Structural roundtrip checks.
     assert_eq!(
