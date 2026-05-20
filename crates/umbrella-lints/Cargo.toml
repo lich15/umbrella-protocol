@@ -51,7 +51,7 @@
 # `libumbrella_lints.{so,dylib,dll}`, the `dylint_version` symbol is
 # looked up by the base name without hyphens.
 name = "umbrella_lints"
-version = "1.1.0"
+version = "3.0.0"
 authors = ["UmbrellaX LLP <security@umbrellax.io>"]
 description = "Custom dylint lints for Umbrella Protocol — constant-time enforcement on Zeroize types, no .unwrap()/.expect() in lib.rs, mandatory RU+EN docstrings on public API."
 edition = "2024"

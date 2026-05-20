@@ -4541,7 +4541,7 @@ checksum = "40ce102ab67701b8526c123c1bab5cbe42d7040ccfd0f64af1a385808d2f43de"
 
 [[package]]
 name = "umbrella-backup"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "chacha20poly1305",
  "curve25519-dalek",
@@ -4564,7 +4564,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-calls"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "aes-gcm",
  "hkdf 0.13.0",
@@ -4580,7 +4580,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-client"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "async-trait",
  "bip39",
@@ -4639,14 +4639,14 @@ dependencies = [
 
 [[package]]
 name = "umbrella-core"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "umbrella-crypto-primitives"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "chacha20poly1305",
  "ed25519-dalek",
@@ -4662,7 +4662,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-discovery"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "chacha20poly1305",
  "curve25519-dalek",
@@ -4683,7 +4683,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-ffi"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "hex",
  "rand_chacha 0.3.1",
@@ -4699,7 +4699,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-ffi-kotlin"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "umbrella-ffi",
  "uniffi",
@@ -4707,7 +4707,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-ffi-swift"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "umbrella-ffi",
  "uniffi",
@@ -4715,14 +4715,14 @@ dependencies = [
 
 [[package]]
 name = "umbrella-formal-verification"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "umbrella-fuzz"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "curve25519-dalek",
  "ed25519-dalek",
@@ -4745,7 +4745,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-identity"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "bip39",
  "ed25519-dalek",
@@ -4766,7 +4766,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-kt"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "proptest",
  "rand_core 0.6.4",
@@ -4781,7 +4781,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-mls"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "chacha20poly1305",
  "criterion",
@@ -4805,7 +4805,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-oprf"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "curve25519-dalek",
  "ed25519-dalek",
@@ -4823,7 +4823,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-padding"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "proptest",
  "subtle",
@@ -4833,7 +4833,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-platform-verifier"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "base64ct",
  "ed25519-dalek",
@@ -4846,7 +4846,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-pq"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "ed25519-dalek",
  "fips205",
@@ -4868,7 +4868,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-sealed-sender"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "proptest",
  "rand_core 0.6.4",
@@ -4883,7 +4883,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-server-blind-postman"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "openmls",
  "sha2 0.11.0",
@@ -4892,7 +4892,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-tests"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "curve25519-dalek",
  "ed25519-dalek",
@@ -4930,7 +4930,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-threshold-identity"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "argon2",
  "ed25519-dalek",
@@ -4953,7 +4953,7 @@ dependencies = [
 
 [[package]]
 name = "umbrella-vectors"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "hex",
  "serde",
@@ -5853,7 +5853,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "1.1.0"
+version = "3.0.0"
 dependencies = [
  "anyhow",
 ]
