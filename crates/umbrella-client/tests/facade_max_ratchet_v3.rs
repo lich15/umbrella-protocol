@@ -58,7 +58,10 @@ fn test_config() -> ClientConfig {
     }
 }
 
-#[allow(deprecated, reason = "test seed gen — same pattern as facade_integration.rs")]
+#[allow(
+    deprecated,
+    reason = "test seed gen — same pattern as facade_integration.rs"
+)]
 fn test_seed() -> IdentitySeed {
     IdentitySeed::generate(&mut OsRng, MnemonicLanguage::English)
 }
@@ -161,7 +164,11 @@ async fn unregister_group_also_removes_max_ratchet_state() {
     // Sanity: both present before.
     assert!(client.core().get_group(chat.chat_id()).await.is_some());
     assert!(
-        client.core().get_ratchet_state(chat.chat_id()).await.is_some(),
+        client
+            .core()
+            .get_ratchet_state(chat.chat_id())
+            .await
+            .is_some(),
         "Task 6: ratchet_state MUST be present after create"
     );
 
@@ -172,7 +179,11 @@ async fn unregister_group_also_removes_max_ratchet_state() {
         "group removed by unregister"
     );
     assert!(
-        client.core().get_ratchet_state(chat.chat_id()).await.is_none(),
+        client
+            .core()
+            .get_ratchet_state(chat.chat_id())
+            .await
+            .is_none(),
         "Task 6: unregister_group MUST also drop MaxRatchetState (consistency)"
     );
 }
@@ -189,7 +200,11 @@ async fn send_path_produces_v3_bundle_with_marker_commit_ciphertext_mac() {
         .expect("create");
 
     let group_arc = client.core().get_group(chat.chat_id()).await.unwrap();
-    let state_arc = client.core().get_ratchet_state(chat.chat_id()).await.unwrap();
+    let state_arc = client
+        .core()
+        .get_ratchet_state(chat.chat_id())
+        .await
+        .unwrap();
 
     let mut group = group_arc.lock().await;
     let mut state = state_arc.lock().await;
@@ -219,7 +234,10 @@ async fn send_path_produces_v3_bundle_with_marker_commit_ciphertext_mac() {
     );
     assert_eq!(outgoing.epoch_after_send, initial_epoch + 1);
     assert!(outgoing.commit_bytes.is_some(), "commit must be present");
-    assert!(outgoing.spqr_mac.is_some(), "SPQR mac must be present (default-on)");
+    assert!(
+        outgoing.spqr_mac.is_some(),
+        "SPQR mac must be present (default-on)"
+    );
 
     // Bundle in v3 format.
     let spqr_mac_arr: [u8; 32] = {
@@ -401,7 +419,11 @@ async fn counter_increments_on_each_send_authentication_path() {
         .expect("create");
 
     let group_arc = client.core().get_group(chat.chat_id()).await.unwrap();
-    let state_arc = client.core().get_ratchet_state(chat.chat_id()).await.unwrap();
+    let state_arc = client
+        .core()
+        .get_ratchet_state(chat.chat_id())
+        .await
+        .unwrap();
 
     for i in 1..=4u64 {
         let mut group = group_arc.lock().await;
@@ -647,7 +669,11 @@ async fn idle_window_attack_defence_timer_rekey_advances_epoch_after_pause() {
         let group = group_arc.lock().await;
         group.epoch()
     };
-    assert_eq!(epoch_after_first, initial_epoch + 1, "force_rekey advances epoch");
+    assert_eq!(
+        epoch_after_first,
+        initial_epoch + 1,
+        "force_rekey advances epoch"
+    );
 
     // Phase 2: idle period 90s. Timer (60s) должен trigger при check.
     {
@@ -719,7 +745,11 @@ async fn forward_secrecy_aggressive_dh_each_send_in_new_epoch() {
         .expect("create");
 
     let group_arc = client.core().get_group(chat.chat_id()).await.unwrap();
-    let state_arc = client.core().get_ratchet_state(chat.chat_id()).await.unwrap();
+    let state_arc = client
+        .core()
+        .get_ratchet_state(chat.chat_id())
+        .await
+        .unwrap();
 
     let initial_epoch = {
         let group = group_arc.lock().await;
@@ -748,7 +778,8 @@ async fn forward_secrecy_aggressive_dh_each_send_in_new_epoch() {
     for (i, epoch) in epochs_seen.iter().enumerate() {
         let expected = initial_epoch + (i as u64) + 1;
         assert_eq!(
-            *epoch, expected,
+            *epoch,
+            expected,
             "Aggressive DH defence: send #{} must be in epoch {} (initial + {}), got {}",
             i + 1,
             expected,
@@ -758,7 +789,10 @@ async fn forward_secrecy_aggressive_dh_each_send_in_new_epoch() {
     }
 
     // Все epochs distinct (no replay window).
-    let unique_count = epochs_seen.iter().collect::<std::collections::HashSet<_>>().len();
+    let unique_count = epochs_seen
+        .iter()
+        .collect::<std::collections::HashSet<_>>()
+        .len();
     assert_eq!(
         unique_count,
         epochs_seen.len(),

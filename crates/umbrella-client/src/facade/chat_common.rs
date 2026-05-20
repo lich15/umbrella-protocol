@@ -38,11 +38,11 @@ use umbrella_backup::cloud_wrap::{
 };
 use umbrella_backup::BackupError;
 use umbrella_identity::IdentityX25519KeyPublic;
+use umbrella_mls::max_ratchet::spqr;
 use umbrella_mls::{
     parse_key_package_safe, GroupPolicy, IncomingMessage, MlsError, UmbrellaCiphersuite,
     UmbrellaGroup,
 };
-use umbrella_mls::max_ratchet::spqr;
 
 use crate::facade::max_ratchet_envelope;
 use umbrella_sealed_sender::{
@@ -340,10 +340,8 @@ pub(crate) async fn send_mls_text(
                 text.as_bytes(),
                 now_unix,
             )?;
-            let spqr_mac_arr: Option<[u8; max_ratchet_envelope::SPQR_MAC_LEN]> = outgoing
-                .spqr_mac
-                .as_ref()
-                .map(|v| {
+            let spqr_mac_arr: Option<[u8; max_ratchet_envelope::SPQR_MAC_LEN]> =
+                outgoing.spqr_mac.as_ref().map(|v| {
                     let mut arr = [0u8; max_ratchet_envelope::SPQR_MAC_LEN];
                     arr.copy_from_slice(v);
                     arr
@@ -455,15 +453,36 @@ pub(crate) async fn fetch_mls_inbox(
                 } => {
                     let message_id = decode_server_msg_id(&msg_id)?;
                     let sender = parse_peer_id_from_bytes(&from_user_id)?;
-                    let text =
-                        decrypt_text_with_fallback(core, group_opt.as_ref(), &ciphertext).await;
-                    out.push(DecryptedMessage {
-                        message_id,
-                        chat_id,
-                        sender,
-                        timestamp: sent_ts_ms,
-                        text,
-                    });
+                    // Task 2 strict-error migration (2026-05-21): SPQR HMAC
+                    // verification failure → fail-closed silent drop с warn
+                    // log; production user не видит garbage marker text в UI.
+                    // Other errors propagate (gateway / network / etc.).
+                    // Task 2: fail-closed silent drop on SPQR auth failure
+                    // (warn-logged). Other errors propagate.
+                    match decrypt_text_with_fallback(core, group_opt.as_ref(), &ciphertext).await {
+                        Ok(Some(text)) => {
+                            out.push(DecryptedMessage {
+                                message_id,
+                                chat_id,
+                                sender,
+                                timestamp: sent_ts_ms,
+                                text,
+                            });
+                        }
+                        Ok(None) => {
+                            tracing::debug!(
+                                "fetch_mls_inbox: decrypt returned Ok(None) — skipping (reserved \
+                                 для future strict modes)"
+                            );
+                        }
+                        Err(ClientError::SpqrAuthFailed) => {
+                            tracing::warn!(
+                                "fetch_mls_inbox: SPQR auth failed for msg_id {message_id:?}; \
+                                 dropping fail-closed (no UI pollution)"
+                            );
+                        }
+                        Err(other) => return Err(other),
+                    }
                 }
                 // Non-inbox envelopes can arrive on shared recv side when
                 // concurrent send/auth is in flight. Session-4 strict
@@ -489,41 +508,44 @@ pub(crate) async fn fetch_mls_inbox(
 }
 
 /// F-CLIENT-FACADE-1 session 5 helper: попытка MLS-decrypt `ciphertext` если
-/// `group` is `Some`, иначе UTF-8 lossy. Honest fallback на decrypt failure:
-/// логирует в tracing::debug и возвращает UTF-8 lossy. Это **transitional**
-/// поведение session 5 — будущий session 7+ tightens до strict-MLS-only
-/// (CommitApplied + ProposalQueued также handle).
+/// `group` is `Some`, иначе UTF-8 lossy. Это **transitional** поведение
+/// session 5 — будущий session 7+ tightens до strict-MLS-only (CommitApplied +
+/// ProposalQueued также handle).
 ///
-/// Возвращает plaintext String. MLS payload UTF-8 lossy-decoded аналогично
-/// legacy fallback path — application-level encoding выбор лежит на стороне
-/// chat protocol (Block 8.6 will introduce MIME-typed payload framing).
+/// **Task 2 strict-error migration 2026-05-21:** v3 path теперь возвращает
+/// `Err(ClientError::SpqrAuthFailed)` на любую failure (commit process /
+/// ciphertext decrypt / exporter extract / SPQR HMAC verify) вместо
+/// in-band marker string `<SPQR-AUTH-FAILED>`. Это устраняет возможность
+/// что user видит garbage text в production UI на tampered/desync wire
+/// messages — fail-closed silent drop теперь explicit на error type level.
 ///
-/// F-CLIENT-FACADE-1 session 5 + Task 6 max_ratchet v3 facade integration (2026-05-20):
-/// dispatch decrypt по wire format:
-/// - v3 bundle (marker `0xFF`) → process commit (if present) + decrypt ciphertext +
-///   **verify SPQR HMAC** over ciphertext. На SPQR auth failure возвращает
-///   marker `<SPQR-AUTH-FAILED>` и log warning (fail-closed: показывает что
-///   что-то пошло не так, но не silent drop чтобы test видел; production layer
-///   может filter эти).
-/// - legacy v2 (raw MLS message) → process_incoming напрямую, UTF-8 lossy.
-/// - non-MLS ciphertext или group отсутствует → UTF-8 lossy fallback (legacy
-///   stub path).
+/// Возвращаемые значения:
+/// - `Ok(Some(text))` — successful decrypt + (для v3) SPQR HMAC verify pass.
+/// - `Ok(None)` — currently unused (reserved для будущих strict modes —
+///   например drop incoming non-Application MLS variants без UTF-8 lossy
+///   fallback). Текущая реализация всегда возвращает `Some(...)` либо `Err`.
+/// - `Err(ClientError::SpqrAuthFailed)` — explicit auth failure для v3 path
+///   (caller fail-closed skip'ит message + warn log).
 ///
-/// Возвращает plaintext String. Sender identity KT verification (session 8) +
-/// strict-MLS-only без UTF-8 lossy (session 7+) — отдельные carry-overs.
+/// Dispatch:
+/// - v3 bundle (marker `0xFF`) → process commit + decrypt ciphertext +
+///   verify SPQR HMAC; любая failure → `Err(SpqrAuthFailed)`.
+/// - legacy v2 (raw MLS message) → process_incoming, UTF-8 lossy на decrypt
+///   failure (backwards compat для test fixtures без real MLS state).
+/// - no group registered → UTF-8 lossy fallback (legacy stub path).
 ///
-/// Task 6 dispatch: v3 bundle (marker 0xFF) → process commit + decrypt + verify SPQR
-/// (returns "<SPQR-AUTH-FAILED>" marker on auth failure, fail-loud). Legacy v2 path →
-/// raw MLS decrypt with UTF-8 lossy fallback.
-const SPQR_AUTH_FAILED_MARKER: &str = "<SPQR-AUTH-FAILED>";
-
+/// F-CLIENT-FACADE-1 session 5 + Task 2 strict-error migration: v3 path
+/// returns `Err(ClientError::SpqrAuthFailed)` on any verification failure
+/// (commit / decrypt / exporter / SPQR HMAC); legacy v2 path retains
+/// UTF-8-lossy fallback for test fixtures. Caller (fetch_*_inbox) fail-closed
+/// skips messages on `Err(SpqrAuthFailed)`.
 async fn decrypt_text_with_fallback(
     core: &Arc<ClientCore>,
     group: Option<&Arc<TokioMutex<UmbrellaGroup>>>,
     ciphertext: &[u8],
-) -> String {
+) -> Result<Option<String>> {
     let Some(group_arc) = group else {
-        return String::from_utf8_lossy(ciphertext).into_owned();
+        return Ok(Some(String::from_utf8_lossy(ciphertext).into_owned()));
     };
 
     // Task 6: detect v3 bundle (marker 0xFF) — fast path before legacy MLS decode.
@@ -533,7 +555,8 @@ async fn decrypt_text_with_fallback(
         // 1. Process commit first (if present) — merges epoch advance on receiver side.
         if let Some(commit) = v3.commit_bytes {
             match g.process_incoming(core.mls_provider.as_ref(), commit) {
-                Ok(IncomingMessage::CommitApplied { .. }) | Ok(IncomingMessage::Application { .. }) => {
+                Ok(IncomingMessage::CommitApplied { .. })
+                | Ok(IncomingMessage::Application { .. }) => {
                     // CommitApplied — expected. Application would be unusual (commit slot
                     // contains application message?) — accept defensively.
                 }
@@ -547,7 +570,7 @@ async fn decrypt_text_with_fallback(
                         "fetch_mls_inbox v3: commit process_incoming failed: {e:?}; \
                          dropping message"
                     );
-                    return SPQR_AUTH_FAILED_MARKER.to_string();
+                    return Err(ClientError::SpqrAuthFailed);
                 }
             }
         }
@@ -559,13 +582,11 @@ async fn decrypt_text_with_fallback(
                 tracing::warn!(
                     "fetch_mls_inbox v3: ciphertext slot не Application variant; dropping"
                 );
-                return SPQR_AUTH_FAILED_MARKER.to_string();
+                return Err(ClientError::SpqrAuthFailed);
             }
             Err(e) => {
-                tracing::warn!(
-                    "fetch_mls_inbox v3: application decrypt failed: {e:?}; dropping"
-                );
-                return SPQR_AUTH_FAILED_MARKER.to_string();
+                tracing::warn!("fetch_mls_inbox v3: application decrypt failed: {e:?}; dropping");
+                return Err(ClientError::SpqrAuthFailed);
             }
         };
 
@@ -583,16 +604,14 @@ async fn decrypt_text_with_fallback(
                     "fetch_mls_inbox v3: exporter_secret extraction failed: {e:?}; \
                      dropping (cannot verify SPQR)"
                 );
-                return SPQR_AUTH_FAILED_MARKER.to_string();
+                return Err(ClientError::SpqrAuthFailed);
             }
         };
         let epoch_secret = match spqr::derive_epoch_secret_from_exporter(&exporter.expose()[..32]) {
             Ok(s) => s,
             Err(_) => {
-                tracing::warn!(
-                    "fetch_mls_inbox v3: SPQR epoch_secret derivation failed; dropping"
-                );
-                return SPQR_AUTH_FAILED_MARKER.to_string();
+                tracing::warn!("fetch_mls_inbox v3: SPQR epoch_secret derivation failed; dropping");
+                return Err(ClientError::SpqrAuthFailed);
             }
         };
         if !spqr::verify_hmac(&epoch_secret, v3.ciphertext_bytes, &v3.spqr_mac) {
@@ -600,29 +619,29 @@ async fn decrypt_text_with_fallback(
                 "fetch_mls_inbox v3: SPQR HMAC verification REJECTED — possible fabrication \
                  либо epoch desync; dropping message fail-closed"
             );
-            return SPQR_AUTH_FAILED_MARKER.to_string();
+            return Err(ClientError::SpqrAuthFailed);
         }
 
-        return String::from_utf8_lossy(&payload).into_owned();
+        return Ok(Some(String::from_utf8_lossy(&payload).into_owned()));
     }
 
     // Legacy v2 path: raw MLS message without v3 marker.
     let mut g = group_arc.lock().await;
     match g.process_incoming(core.mls_provider.as_ref(), ciphertext) {
         Ok(IncomingMessage::Application { payload, .. }) => {
-            String::from_utf8_lossy(&payload).into_owned()
+            Ok(Some(String::from_utf8_lossy(&payload).into_owned()))
         }
         Ok(_other) => {
             tracing::debug!(
                 "fetch_mls_inbox: non-Application MLS message variant, falling back to UTF-8 lossy"
             );
-            String::from_utf8_lossy(ciphertext).into_owned()
+            Ok(Some(String::from_utf8_lossy(ciphertext).into_owned()))
         }
         Err(_) => {
             tracing::debug!(
                 "fetch_mls_inbox: MLS decrypt failed on payload, falling back to UTF-8 lossy (legacy/test fixture path)"
             );
-            String::from_utf8_lossy(ciphertext).into_owned()
+            Ok(Some(String::from_utf8_lossy(ciphertext).into_owned()))
         }
     }
 }
@@ -1392,16 +1411,34 @@ pub(crate) async fn fetch_secret_inbox(
                     // MLS decrypt the recovered ciphertext under the
                     // registered group. Falls back to UTF-8 lossy when no
                     // group registered (test fixture without real MLS state).
-                    let text =
-                        decrypt_text_with_fallback(core, group_opt.as_ref(), &mls_ciphertext).await;
-
-                    out.push(DecryptedMessage {
-                        message_id,
-                        chat_id,
-                        sender,
-                        timestamp: sent_ts_ms,
-                        text,
-                    });
+                    // Task 2 strict-error migration: SPQR auth failure → fail-
+                    // closed silent drop с warn log (production: user не видит
+                    // garbage marker text); other errors propagate.
+                    match decrypt_text_with_fallback(core, group_opt.as_ref(), &mls_ciphertext)
+                        .await
+                    {
+                        Ok(Some(text)) => {
+                            out.push(DecryptedMessage {
+                                message_id,
+                                chat_id,
+                                sender,
+                                timestamp: sent_ts_ms,
+                                text,
+                            });
+                        }
+                        Ok(None) => {
+                            tracing::debug!(
+                                "fetch_secret_inbox: decrypt returned Ok(None) — skipping"
+                            );
+                        }
+                        Err(ClientError::SpqrAuthFailed) => {
+                            tracing::warn!(
+                                "fetch_secret_inbox: SPQR auth failed for msg_id {message_id:?}; \
+                                 dropping fail-closed"
+                            );
+                        }
+                        Err(other) => return Err(other),
+                    }
                 }
                 _other => {
                     tracing::debug!(
@@ -1483,6 +1520,138 @@ mod tests {
         assert!(
             debug.contains("text_len"),
             "Debug output should keep text length metadata for diagnostics: {debug}"
+        );
+    }
+
+    // =============================================================================
+    // Task 2 strict-error migration (2026-05-21) — decrypt_text_with_fallback unit tests
+    // proving Result<Option<String>, ClientError> contract на 3 path'ах:
+    // (1) no group → Ok(Some(utf8-lossy)) legacy stub path
+    // (2) legacy v2 garbage → Ok(Some(utf8-lossy)) backwards-compat path
+    // (3) v3 garbage commit → Err(ClientError::SpqrAuthFailed) fail-closed
+    // =============================================================================
+
+    use crate::ClientConfig;
+    use openmls::group::GroupId;
+    use rand_core::OsRng;
+    use umbrella_backup::cloud_wrap::{ThresholdConfig, WrappingParams};
+    use umbrella_identity::{
+        Clock, InMemoryKeyStore, KeyStore as KeyStoreTrait, MnemonicLanguage, SystemClock,
+    };
+    use umbrella_mls::{UmbrellaCiphersuite, UmbrellaProvider};
+
+    fn task2_test_config() -> ClientConfig {
+        ClientConfig {
+            sealed_server_urls: (1..=5).map(|i| format!("http://stub-{i}:8080")).collect(),
+            postman_url: "http://stub-postman:8080".into(),
+            kt_url: "http://stub-kt:8080".into(),
+            call_relay_url: "http://stub-call-relay:8080".into(),
+            kt_monitor_interval_secs: 3600,
+            wrapping_params: WrappingParams {
+                version: 0x01,
+                main_pubkey: [0u8; 32],
+                server_pubkeys: [[0u8; 32]; 5],
+                config: ThresholdConfig::new(3, 5).expect("3-of-5 ThresholdConfig"),
+            },
+            default_ciphersuite: UMBRELLA_CIPHERSUITE_CLASSICAL_DEFAULT,
+        }
+    }
+
+    #[allow(
+        deprecated,
+        reason = "Task 2 unit test seed gen — same pattern as existing tests"
+    )]
+    fn task2_test_seed() -> umbrella_identity::IdentitySeed {
+        umbrella_identity::IdentitySeed::generate(&mut OsRng, MnemonicLanguage::English)
+    }
+
+    async fn task2_make_core() -> Arc<ClientCore> {
+        ClientCore::new_for_test(task2_test_config(), task2_test_seed())
+            .await
+            .expect("ClientCore::new_for_test succeeds for unit test")
+    }
+
+    fn task2_make_group() -> Arc<TokioMutex<UmbrellaGroup>> {
+        let provider = UmbrellaProvider::default();
+        let seed = task2_test_seed();
+        let ks = InMemoryKeyStore::open(seed, 0, Arc::new(SystemClock) as Arc<dyn Clock>)
+            .expect("InMemoryKeyStore::open");
+        ks.add_device(0, None).expect("add_device");
+        let group = UmbrellaGroup::create_private(
+            &provider,
+            &ks,
+            0,
+            UmbrellaCiphersuite::Mls128X25519ChaChaSha256Ed25519,
+            GroupId::from_slice(&[0xAAu8; 16]),
+            1_700_000_000,
+        )
+        .expect("UmbrellaGroup::create_private");
+        Arc::new(TokioMutex::new(group))
+    }
+
+    #[tokio::test]
+    async fn decrypt_text_with_fallback_no_group_returns_some_utf8_lossy() {
+        let core = task2_make_core().await;
+        let plaintext_bytes = b"legacy stub plaintext";
+        let result = decrypt_text_with_fallback(&core, None, plaintext_bytes).await;
+        assert_eq!(
+            result.expect("no-group path must not Err"),
+            Some("legacy stub plaintext".to_string()),
+            "no-group path должен return Ok(Some(utf8-lossy)) for backwards compat"
+        );
+    }
+
+    #[tokio::test]
+    async fn decrypt_text_with_fallback_legacy_non_v3_non_mls_returns_some_utf8_lossy() {
+        let core = task2_make_core().await;
+        let group_arc = task2_make_group();
+        // Bytes first byte != V3_MARKER (0xFF) — legacy v2 path. Bytes also not valid
+        // MLS message → process_incoming Err → UTF-8 lossy fallback (legacy backwards-compat).
+        let garbage = b"random-non-v3-non-mls-bytes";
+        let result = decrypt_text_with_fallback(&core, Some(&group_arc), garbage).await;
+        assert_eq!(
+            result.expect("legacy v2 garbage path must not Err"),
+            Some("random-non-v3-non-mls-bytes".to_string()),
+            "legacy v2 path должен return Ok(Some(utf8-lossy)) на decrypt failure (backwards compat)"
+        );
+    }
+
+    #[tokio::test]
+    async fn decrypt_text_with_fallback_v3_with_garbage_commit_returns_spqr_auth_failed() {
+        let core = task2_make_core().await;
+        let group_arc = task2_make_group();
+        // Construct v3 envelope с GARBAGE commit bytes (will fail process_incoming как MLS
+        // message). v3 path: commit processing failure → Err(SpqrAuthFailed) fail-closed.
+        let garbage_commit = vec![0xDEu8; 200];
+        let some_ciphertext = vec![0xABu8; 32];
+        let zero_mac = [0u8; max_ratchet_envelope::SPQR_MAC_LEN];
+        let bundle = max_ratchet_envelope::encode_v3(
+            Some(&garbage_commit),
+            &some_ciphertext,
+            Some(&zero_mac),
+        );
+        let result = decrypt_text_with_fallback(&core, Some(&group_arc), &bundle).await;
+        assert!(
+            matches!(result, Err(ClientError::SpqrAuthFailed)),
+            "v3 bundle с garbage commit должен return Err(SpqrAuthFailed) — fail-closed, не \
+             marker string. Got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn decrypt_text_with_fallback_v3_no_commit_garbage_ciphertext_returns_spqr_auth_failed() {
+        let core = task2_make_core().await;
+        let group_arc = task2_make_group();
+        // v3 envelope without commit + garbage ciphertext (will fail process_incoming as MLS
+        // application message). v3 path: ciphertext processing failure → Err(SpqrAuthFailed).
+        let garbage_ct = vec![0xDEu8; 100];
+        let zero_mac = [0u8; max_ratchet_envelope::SPQR_MAC_LEN];
+        let bundle = max_ratchet_envelope::encode_v3(None, &garbage_ct, Some(&zero_mac));
+        let result = decrypt_text_with_fallback(&core, Some(&group_arc), &bundle).await;
+        assert!(
+            matches!(result, Err(ClientError::SpqrAuthFailed)),
+            "v3 bundle с garbage ciphertext должен return Err(SpqrAuthFailed) — fail-closed. \
+             Got: {result:?}"
         );
     }
 }
