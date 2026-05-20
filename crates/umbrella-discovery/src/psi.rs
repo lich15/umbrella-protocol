@@ -86,6 +86,12 @@ impl PsiQueryState {
         self.inputs.len()
     }
 
+    /// True если query пустая (нет контактов для запроса).
+    /// True if the query is empty (no contacts to query).
+    pub fn is_empty(&self) -> bool {
+        self.inputs.is_empty()
+    }
+
     /// Test: salt visible для unit tests / debug.
     /// Test-only: salt visible for unit tests.
     #[cfg(test)]
@@ -125,7 +131,9 @@ pub fn prepare_psi_query<R: CryptoRng + RngCore>(
     }
     // Превышение MAX_BATCH_SIZE OPRF выше нашего MAX_PSI_BATCH невозможно
     // (1024 == 1024), но проверим explicitly чтобы invariant не сдвинулся.
-    debug_assert!(MAX_PSI_BATCH <= MAX_BATCH_SIZE);
+    // Const-time check — fail compile если константы разойдутся (не runtime).
+    // Compile-time guard — fails the build if the constants drift apart.
+    const _: () = assert!(MAX_PSI_BATCH <= MAX_BATCH_SIZE);
 
     let salt = fresh_query_salt(rng);
     let mut entries = Vec::with_capacity(contacts.len());

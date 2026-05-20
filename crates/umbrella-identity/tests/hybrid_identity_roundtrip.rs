@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: legacy hybrid-identity roundtrip exercises IdentitySeed::generate
 //! Integration tests для hybrid identity layer (Этап 8 ADR-011 Решение 5).
 //! Integration tests for the hybrid identity layer (Stage 8 ADR-011 Decision 5).
 //!

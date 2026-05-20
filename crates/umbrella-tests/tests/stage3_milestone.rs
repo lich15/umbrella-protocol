@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: test exercises legacy IdentitySeed::generate; production uses bootstrap_account
 //! Milestone Этапа 3: полный стек приватности метаданных end-to-end.
 //! Stage 3 milestone: full metadata-privacy stack end-to-end.
 //!

@@ -1301,7 +1301,7 @@ fn discovery_block_reference_is_round_7() {
 /// Discovery model exposes all 5 D-series lemmas + 1 sanity.
 #[test]
 fn discovery_has_all_five_d_series_lemmas_plus_sanity() {
-    let names: Vec<&str> = DISCOVERY.properties.iter().copied().collect();
+    let names: Vec<&str> = DISCOVERY.properties.to_vec();
     let expected = [
         "server_never_learns_plaintext_phone",
         "intersection_cardinality_only_disclosed",

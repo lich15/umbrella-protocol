@@ -81,6 +81,7 @@ pub fn r20_phase_before_bootstrap() {
 /// - account_local_salt (16 bytes public)
 /// - device_random_handle (32 bytes; in real binary stored in SE/StrongBox)
 /// - 5 × 32-byte anonymous IDs
+///
 /// **No identity_sk anywhere.**
 #[inline(never)]
 pub fn r20_phase_after_bootstrap() {
@@ -90,6 +91,7 @@ pub fn r20_phase_after_bootstrap() {
 
 /// `lldb` breakpoint target — after daily unlock with PIN. Device holds:
 /// - device_key, master_key in MlockedSecret (per session, wiped on background)
+///
 /// **Still no identity_sk.**
 #[inline(never)]
 pub fn r20_phase_after_unlock() {
@@ -117,7 +119,7 @@ fn main() {
     // target we wire a `MockServerOprfCluster` with a fresh random
     // master OPRF key; production deploys an HTTP/2 client to the
     // Sealed Server OPRF endpoint.
-    let mut oprf_rng = ChaCha20Rng::seed_from_u64(0x_2020_F2_BEEF_DEAD_u64);
+    let mut oprf_rng = ChaCha20Rng::seed_from_u64(0x0020_20F2_BEEF_DEAD_u64);
     let oprf_cluster: Arc<dyn ServerOprfClient> =
         Arc::new(MockServerOprfCluster::new(&mut oprf_rng));
     let boot = bootstrap_account(&input, IDENTITY_PK_NEEDLE, &oprf_cluster, &mut rng)

@@ -345,7 +345,7 @@ pub fn finalize_username_query(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kt_bind::{canonical_leaf_payload, DISCOVERY_LEAF_DOMAIN};
+    use crate::kt_bind::canonical_leaf_payload;
     use crate::wire::DEVICE_PUBKEY_LEN;
     use curve25519_dalek::scalar::Scalar;
     use rand_core::OsRng;
@@ -404,8 +404,7 @@ mod tests {
 
         // Сервер отвечает 3 раз (по одному per witness, шары 0, 1, 2).
         let mut responses = Vec::new();
-        for idx in 0..3 {
-            let (wi, sk_share) = shares[idx];
+        for &(wi, sk_share) in shares.iter().take(3) {
             // В реальности каждый сервер генерирует свой response с тем же
             // encrypted_record и kt_proof. Здесь делаем simulation: тот же
             // request шлётся 3 серверам (как в production: один client →

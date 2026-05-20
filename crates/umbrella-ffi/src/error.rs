@@ -165,9 +165,7 @@ impl From<ClientError> for UmbrellaError {
             // Mapped to Internal — on the FFI surface this is an
             // authentication error with a descriptive message, fail-closed
             // without silent drop in the UI.
-            ClientError::SpqrAuthFailed => {
-                UmbrellaError::Internal("spqr_auth_failed".to_string())
-            }
+            ClientError::SpqrAuthFailed => UmbrellaError::Internal("spqr_auth_failed".to_string()),
         }
     }
 }

@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: PhD-level cryptanalysis exercises legacy IdentitySeed::generate
 //! Block 10.9-active-retro PhD-level real cryptanalysis pass для umbrella-kt
 //! (session #68 на дату 2026-05-08). Strategy B PhD level mandatory per memory
 //! public high-assurance audit policy (session #65c) + formal-model review policy

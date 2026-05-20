@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: test exercises legacy IdentitySeed::generate; production uses bootstrap_account
 //! Stage 7 integration milestone — end-to-end scenarios, не требующие
 //! реального hardware / live Umbrella server implementation services.
 //!

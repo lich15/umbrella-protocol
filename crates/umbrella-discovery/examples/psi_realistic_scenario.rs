@@ -76,8 +76,7 @@ fn main() {
     println!("[psi-realistic] 3 of 5 sealed servers evaluate each blinded request...");
     let mut responses = Vec::new();
     let t2 = Instant::now();
-    for idx in 0..3 {
-        let (wi, sk) = shares[idx];
+    for &(wi, sk) in shares.iter().take(3) {
         let resp = psi_server_respond(&req, &sk, &mut OsRng).unwrap();
         let wire = resp.encode();
         println!(

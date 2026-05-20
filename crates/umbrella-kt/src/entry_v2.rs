@@ -396,6 +396,7 @@ mod tests {
 
     fn fresh_hybrid_identity(account: u32) -> HybridIdentityKey {
         let mut rng = OsRng;
+        #[allow(deprecated)]
         let seed = IdentitySeed::generate(&mut rng, MnemonicLanguage::English);
         HybridIdentityKey::derive(&seed, account).unwrap()
     }
@@ -653,6 +654,7 @@ mod tests {
     fn account_id_matches_v1_kt_entry() {
         use crate::entry::KtEntry;
         let mut rng = OsRng;
+        #[allow(deprecated)]
         let seed = IdentitySeed::generate(&mut rng, MnemonicLanguage::English);
         let hybrid = HybridIdentityKey::derive(&seed, 0).unwrap();
         let classical_pubkey = hybrid.public().ed25519_bytes();

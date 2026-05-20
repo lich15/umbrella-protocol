@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: test exercises legacy IdentitySeed::generate; production uses bootstrap_account
 //! Integration milestone Этапа 5 — полный цикл восстановления в Cloud и
 //! Secret режимах плюс шесть adversarial сценариев.
 //!

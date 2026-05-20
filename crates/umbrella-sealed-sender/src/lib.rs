@@ -479,6 +479,7 @@ mod tests {
 
     fn fresh_keystore() -> Arc<InMemoryKeyStore> {
         let mut rng = OsRng;
+        #[allow(deprecated)]
         let seed = IdentitySeed::generate(&mut rng, MnemonicLanguage::English);
         Arc::new(InMemoryKeyStore::open(seed, 0, Arc::new(SystemClock) as Arc<dyn Clock>).unwrap())
     }

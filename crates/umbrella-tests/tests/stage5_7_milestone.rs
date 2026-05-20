@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: test exercises legacy IdentitySeed::generate; production uses bootstrap_account
 //! Integration milestone Этапа 5.7 — сквозные сценарии ADR-008:
 //! полный lifecycle нового устройства (pending → approval → active → unwrap),
 //! catastrophic recovery через 24 + 12 слов, отказ revoked устройства,

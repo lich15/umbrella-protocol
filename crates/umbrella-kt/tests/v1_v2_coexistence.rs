@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: legacy KT coexistence test exercises IdentitySeed::generate
 //! Integration tests блока 8.5: V1 ↔ V2 wire-format coexistence в KT log mirror.
 //! Integration tests for block 8.5: V1 ↔ V2 wire-format coexistence in the KT log mirror.
 //!

@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: test exercises legacy IdentitySeed::generate; production uses bootstrap_account
 //! Milestone Этапа 2: 2 `UmbrellaGroup` клиента + mock server-blind-postman + 1000 сообщений.
 //! Stage 2 milestone: 2 `UmbrellaGroup` clients + mock server-blind-postman + 1000 messages.
 //!

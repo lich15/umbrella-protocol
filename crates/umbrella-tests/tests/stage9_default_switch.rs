@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: test exercises legacy IdentitySeed::generate; production uses bootstrap_account
 //! Block 9.12 PQ-first default switch — migration tests + cfg-conditional
 //! [`umbrella_client::DEFAULT_CIPHERSUITE`] gate behaviour + ABI invariant
 //! verification.

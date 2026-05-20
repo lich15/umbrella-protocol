@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: PhD-level attack test exercises legacy IdentitySeed::generate
 //! REAL PhD-level хакерские атаки на umbrella-sealed-sender (session #69).
 //!
 //! REAL PhD-level adversarial attacks for umbrella-sealed-sender (session #69).

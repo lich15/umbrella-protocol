@@ -38,11 +38,11 @@ use sha2::Sha512;
 use umbrella_crypto_primitives::MlockedSecret;
 use zeroize::Zeroize;
 
-/// Application-secret needle — 32 bytes that the lldb scanner looks for.
-/// The needle is the derived `application_secret` from HKDF(epoch_secret).
-/// We compute it once below and pass the resulting bytes back to the
-/// scanner via the `r12_needle.bin` sidecar file so the scanner doesn't
-/// need to hardcode a value (the needle depends on HKDF output).
+// Application-secret needle — 32 bytes that the lldb scanner looks for.
+// The needle is the derived `application_secret` from HKDF(epoch_secret).
+// We compute it once below and pass the resulting bytes back to the
+// scanner via the `r12_needle.bin` sidecar file so the scanner doesn't
+// need to hardcode a value (the needle depends on HKDF output).
 
 #[inline(never)]
 pub fn r12_phase_session_live() {
@@ -72,6 +72,7 @@ pub fn r12_phase_after_drop() {
 /// scanner then runs at `r12_phase_session_live` — the helper's frame
 /// has already been popped, so its stack-spill bytes are gone.
 #[inline(never)]
+#[allow(clippy::ptr_arg)] // chacha20poly1305 `Buffer` trait requires growable storage; `&mut [u8]` does not impl it.
 fn encrypt_with_app_secret(
     key_bytes: &[u8; 32],
     nonce_bytes: &[u8; 12],

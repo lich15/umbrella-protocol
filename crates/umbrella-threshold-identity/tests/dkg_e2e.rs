@@ -15,7 +15,7 @@ use umbrella_threshold_identity::{
 #[test]
 fn acceptance_gate_dkg_5_servers_threshold_3() {
     // 5 mock servers, threshold 3-of-5 per round-6 spec.
-    let mut rng = ChaCha20Rng::seed_from_u64(0xACCED_F0F0_F0F0_u64);
+    let mut rng = ChaCha20Rng::seed_from_u64(0x000A_CCED_F0F0_F0F0_u64);
     let (key_packages, public_key_package) =
         run_in_process_dkg(TOTAL_SERVERS, THRESHOLD, &mut rng).expect("5-of-3 DKG must succeed");
 

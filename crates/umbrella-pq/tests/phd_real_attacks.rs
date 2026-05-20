@@ -764,9 +764,8 @@ fn attack_xtra_xwing_pubkey_length_fuzz_full_range() {
     }
     // Exactly one length accepted: XWING_PUBLIC_KEY_LEN = 1216.
     assert_eq!(accepted, 1);
-    assert_eq!(accepted as usize, 1);
     assert_eq!(
-        rejected as usize, 4096,
+        rejected, 4096,
         "lengths in [0,4096] minus 1216 must all reject"
     );
     let _ = XWING_PUBLIC_KEY_LEN; // import sanity
@@ -926,13 +925,10 @@ fn attack_xtra_xwing_decaps_raw_random_seed_search_100_no_match() {
     for _ in 0..100 {
         let mut seed = [0u8; XWING_SECRET_SEED_LEN];
         rng.fill_bytes(&mut seed);
-        match xwing_decaps_raw(&seed, &ct) {
-            Ok(ss) => {
-                if ss.expose_secret() == ss_sender.expose_secret() {
-                    matches += 1;
-                }
+        if let Ok(ss) = xwing_decaps_raw(&seed, &ct) {
+            if ss.expose_secret() == ss_sender.expose_secret() {
+                matches += 1;
             }
-            Err(_) => {}
         }
     }
     assert_eq!(matches, 0, "random seed search NEVER yields sender's ss");

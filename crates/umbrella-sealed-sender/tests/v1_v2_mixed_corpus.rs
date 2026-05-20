@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: dispatcher coverage test exercises legacy IdentitySeed::generate
 //! Integration tests блока 8.6: V1 ↔ V2 dispatcher pattern + mixed wire corpus.
 //! Integration tests for block 8.6: V1 ↔ V2 dispatcher pattern + mixed wire corpus.
 //!

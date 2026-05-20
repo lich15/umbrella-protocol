@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: test exercises legacy IdentitySeed::generate; production uses bootstrap_account
 //! Drill C — Server compromise recovery: симуляция utterly compromised
 //! delivery service, переключение клиентов на redundant region, проверка
 //! что sealed-sender V2 X-Wing envelopes остаются confidential под

@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: SLH-DSA backup recovery test exercises legacy IdentitySeed::generate
 //! Integration tests для SLH-DSA backup recovery flow (Этап 8 ADR-011 Решение 5).
 //! Integration tests for the SLH-DSA backup recovery flow (Stage 8 ADR-011 Decision 5).
 //!

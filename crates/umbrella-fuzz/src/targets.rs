@@ -1074,8 +1074,16 @@ pub fn fuzz_sealed_sender_v2_parser(data: &[u8]) {
     // uniffi targets.
     // IdentitySeed::generate возвращает Self (не Result) — постулат 1
     // следует actual signature, не plan-предположению.
+    // Round-6 deprecation: bootstrap_account — production path; fuzz-target
+    // намеренно exercises legacy ephemeral-seed API чтобы validate panic-free
+    // parsing на arbitrary bytes (unseal_v2 не уязвим к выбору seed).
     // IdentitySeed::generate returns Self (not Result) — postulate 1 follows
     // the actual signature, not the plan assumption.
+    // Round-6 deprecation: bootstrap_account is the production path; this
+    // fuzz target intentionally exercises the legacy ephemeral-seed API to
+    // validate panic-free parsing on arbitrary bytes (unseal_v2 is invariant
+    // to the choice of seed).
+    #[allow(deprecated)]
     let id_seed = IdentitySeed::generate(&mut rand_core::OsRng, MnemonicLanguage::English);
     let Ok(keystore) = InMemoryKeyStore::open(id_seed, 0, Arc::new(SystemClock) as Arc<dyn Clock>)
     else {

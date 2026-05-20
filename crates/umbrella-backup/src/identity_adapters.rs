@@ -195,6 +195,7 @@ mod tests {
 
     fn fresh_keystore() -> InMemoryKeyStore {
         // Random BIP-39 seed для каждого теста.
+        #[allow(deprecated)]
         let seed = IdentitySeed::generate(&mut OsRng, MnemonicLanguage::English);
         InMemoryKeyStore::open(seed, 0, Arc::new(SystemClock)).unwrap()
     }

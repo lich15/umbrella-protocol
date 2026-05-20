@@ -98,8 +98,18 @@ fn main() {
 
     r6_phase_after_keygen();
 
-    drop(seed);
-    drop(pk);
+    // Move bindings into a black_box-wrapped tuple, then drop the tuple. The
+    // tuple itself is `()`-like (no Drop impl on `XWingSecretSeed`/`XWingPublicKey`),
+    // but the move forces both stack slots to be considered released; the LLDB
+    // scan at `r6_phase_after_drop()` inspects post-frame memory for the 0xAA
+    // pattern. ZeroizeOnDrop semantics are enforced internally inside
+    // `xwing_keygen` (see `xwing.rs:151`) — the local `seed` here is only the
+    // public stamp, the secret half lives inside ML-KEM internals.
+    // Переносим bindings в black_box-обёрнутую tuple и роняем её; LLDB-скан
+    // на `r6_phase_after_drop()` смотрит post-frame память. ZeroizeOnDrop
+    // обеспечивается внутри `xwing_keygen` (zeroize seed-buffer там);
+    // локальные `seed` и `pk` — public материал без секрета.
+    let _ = std::hint::black_box((seed, pk));
 
     r6_phase_after_drop();
 }

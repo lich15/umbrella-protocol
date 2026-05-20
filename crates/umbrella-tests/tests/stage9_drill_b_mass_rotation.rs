@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: test exercises legacy IdentitySeed::generate; production uses bootstrap_account
 //! Drill B — Mass key rotation: симуляция компрометации 3+ Sealed Servers
 //! (catastrophic threshold breach), активация warrant canary, массовая ротация
 //! identity ключей всех пользователей через mnemonic + новую HKDF context salt

@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: test exercises legacy IdentitySeed::generate; production uses bootstrap_account
 //! Interop: наш `UmbrellaGroup` совместим с vanilla `openmls` 0.8.1 клиентом.
 //! Interop: our `UmbrellaGroup` is compatible with a vanilla `openmls` 0.8.1 client.
 //!

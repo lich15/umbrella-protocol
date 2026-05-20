@@ -154,6 +154,7 @@ mod tests {
 
     fn fresh_keystore_with_devices(indices: &[u32]) -> Arc<InMemoryKeyStore> {
         let mut rng = OsRng;
+        #[allow(deprecated)]
         let seed = IdentitySeed::generate(&mut rng, MnemonicLanguage::English);
         let ks = InMemoryKeyStore::open(seed, 0, Arc::new(SystemClock) as Arc<dyn Clock>).unwrap();
         for &i in indices {

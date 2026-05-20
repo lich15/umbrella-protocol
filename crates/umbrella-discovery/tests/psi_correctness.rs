@@ -41,8 +41,7 @@ fn psi_correctness_50_vs_500_intersection_120_works() {
 
     let (req, state) = prepare_psi_query(&mk, &client_refs, 1, &mut OsRng).unwrap();
     let mut responses = Vec::new();
-    for idx in 0..3 {
-        let (wi, sk) = shares[idx];
+    for &(wi, sk) in shares.iter().take(3) {
         responses.push((wi, psi_server_respond(&req, &sk, &mut OsRng).unwrap()));
     }
     let resp_refs: Vec<_> = responses.iter().map(|(w, r)| (*w, r)).collect();
@@ -67,8 +66,7 @@ fn psi_correctness_no_overlap_zero_intersection() {
 
     let (req, state) = prepare_psi_query(&mk, &client_refs, 1, &mut OsRng).unwrap();
     let mut responses = Vec::new();
-    for idx in 0..3 {
-        let (wi, sk) = shares[idx];
+    for &(wi, sk) in shares.iter().take(3) {
         responses.push((wi, psi_server_respond(&req, &sk, &mut OsRng).unwrap()));
     }
     let resp_refs: Vec<_> = responses.iter().map(|(w, r)| (*w, r)).collect();
@@ -90,8 +88,7 @@ fn psi_correctness_full_overlap_complete_intersection() {
 
     let (req, state) = prepare_psi_query(&mk, &refs, 1, &mut OsRng).unwrap();
     let mut responses = Vec::new();
-    for idx in 0..3 {
-        let (wi, sk) = shares[idx];
+    for &(wi, sk) in shares.iter().take(3) {
         responses.push((wi, psi_server_respond(&req, &sk, &mut OsRng).unwrap()));
     }
     let resp_refs: Vec<_> = responses.iter().map(|(w, r)| (*w, r)).collect();

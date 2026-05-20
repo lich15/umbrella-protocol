@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: test exercises legacy IdentitySeed::generate; production uses bootstrap_account
 //! Drill A — SLH-DSA backup activation: симуляция CVE для ML-DSA-65, переключение
 //! identity-подписи на SLH-DSA backup, проверка достижимости pre-CVE V2 entries
 //! через KT log replay, контроль end-to-end timing внутри 72-часового бюджета.

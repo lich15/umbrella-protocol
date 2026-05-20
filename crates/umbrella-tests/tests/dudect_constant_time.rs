@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: test exercises legacy IdentitySeed::generate; production uses bootstrap_account
 //! Block 10.24 (Stage 10 Phase 3 cross-cutting third block) — measured
 //! constant-time verification CT-критичных операций workspace через
 //! локальный dudect bench harness `umbrella_tests::dudect`.

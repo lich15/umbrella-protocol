@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: test exercises legacy IdentitySeed::generate; production uses bootstrap_account
 //! Milestone end-to-end сценарии для Этапа 6 — Calls.
 //! Milestone end-to-end scenarios for Stage 6 — Calls.
 //!
@@ -22,7 +23,6 @@
 use std::sync::Arc;
 
 use openmls::group::GroupId;
-use secrecy::ExposeSecret;
 
 use umbrella_calls::{
     compute_mutual_identity_binding, CallError, IdentityDtlsFingerprint, SframeBaseKey,

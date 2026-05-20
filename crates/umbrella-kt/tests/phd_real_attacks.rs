@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: PhD-level attack test exercises legacy IdentitySeed::generate
 //! REAL PhD-level хакерские атаки (session #68b — supplement к session #68
 //! после честного user assessment «делал PhD атаку?» = нет).
 //!

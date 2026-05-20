@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: test exercises legacy IdentitySeed::generate; production uses bootstrap_account
 //! Stage 8 closing milestone — end-to-end integration scenarios для Hybrid
 //! Post-Quantum слоя UmbrellaX.
 //!

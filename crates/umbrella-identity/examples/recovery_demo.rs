@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: demo exercises legacy IdentitySeed::generate flow
 //! CLI demo: round-trip recovery — milestone Этапа 1.
 //! CLI demo: round-trip recovery — Stage 1 milestone.
 //!

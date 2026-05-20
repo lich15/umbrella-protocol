@@ -52,6 +52,7 @@ struct Client {
 impl Client {
     fn new(device_index: u32) -> Self {
         let mut rng = rand_core::OsRng;
+        #[allow(deprecated)]
         let seed = IdentitySeed::generate(&mut rng, MnemonicLanguage::English);
         let clock = FixedClock::new(T0);
         let ks = InMemoryKeyStore::open(seed, 0, Arc::new(clock) as Arc<dyn Clock>).unwrap();

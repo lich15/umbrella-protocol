@@ -1,3 +1,4 @@
+#![allow(deprecated)] // Round-6: integration test exercises legacy IdentitySeed::generate fixture
 //! Integration tests блока 8.5: end-to-end self-monitoring V2 entries через
 //! wire-format roundtrip.
 //! Integration tests for block 8.5: end-to-end self-monitoring of V2 entries

@@ -14,13 +14,10 @@
 //! 3. Discovery-ответ содержит `KtInclusionProof` с (leaf_payload, leaf_index,
 //!    tree_size, siblings, claimed_epoch_root).
 //! 4. Клиент:
-//!    a. Проверяет, что `claimed_epoch_root == pinned_epoch_root` (D-3 forge
-//!       блокируется без необходимости пересчитывать).
+//!    a. Проверяет, что `claimed_epoch_root == pinned_epoch_root` (D-3 forge блокируется без необходимости пересчитывать).
 //!    b. Вычисляет `leaf_hash(leaf_payload)` через RFC 6962.
-//!    c. Запускает `umbrella_kt::verify_inclusion(leaf_hash, leaf_index,
-//!       tree_size, audit_path, &expected_root)`.
-//!    d. Проверяет, что `device_pubkey` в leaf_payload совпадает с ожидаемым
-//!       (то, что клиент собирается использовать для Sealed Sender V2).
+//!    c. Запускает `umbrella_kt::verify_inclusion(leaf_hash, leaf_index, tree_size, audit_path, &expected_root)`.
+//!    d. Проверяет, что `device_pubkey` в leaf_payload совпадает с ожидаемым (то, что клиент собирается использовать для Sealed Sender V2).
 //! 5. Любое расхождение → `DiscoveryError::KtBindFailed { kind }` (fail-stop).
 //!
 //! ## Algorithm
