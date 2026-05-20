@@ -6,9 +6,11 @@
 //! # Compliance-gate no-P2P (SPEC-06 §3)
 //!
 //! 1-1 звонки в Secret-режиме всегда идут через TURN relay (никогда не
-//! напрямую). В Блоке 7.6 это принудительно enforced на уровне `IceAgent`
-//! через `AgentConfig.candidate_types = [Relay]`. API `start_call` появится в
-//! Блоке 7.6; в Блоке 7.2 только текстовый фасад.
+//! напрямую). Это принудительно enforced на уровне `IceAgent` через
+//! `AgentConfig.candidate_types = [Relay]` — двойная защита через
+//! [`ModeEnforcement::SecretMode`] strip'ает `allow_p2p_global` /
+//! `DirectP2P` из user policy, а `IceAgent::new_no_p2p` строит webrtc-ice
+//! agent только с relay candidate'ами.
 //!
 //! Secret-mode UmbrellaX facade. ADR-006 Variant C type-safe separation.
 //! Pure MLS RFC 9420 without Sealed Servers: history lives only on participant
@@ -18,9 +20,11 @@
 //! # Compliance-gate no-P2P (SPEC-06 §3)
 //!
 //! 1-1 calls in Secret mode always flow through a TURN relay (never direct).
-//! Enforced in Block 7.6 at the `IceAgent` level via
-//! `AgentConfig.candidate_types = [Relay]`. The `start_call` API arrives in
-//! Block 7.6; Block 7.2 ships the text facade only.
+//! Enforced at the `IceAgent` level via
+//! `AgentConfig.candidate_types = [Relay]` — two-layer defence:
+//! [`ModeEnforcement::SecretMode`] strips `allow_p2p_global` / `DirectP2P`
+//! from user policy, and `IceAgent::new_no_p2p` builds the webrtc-ice
+//! agent with relay candidates only.
 //!
 //! # Type-safety compile-fail tests (ADR-006 Вариант C enforcement)
 //!
@@ -78,9 +82,10 @@ use crate::facade::chat_common::{
 /// runtime `Result::Err`, а **compile error** (метода нет в `impl`).
 ///
 /// Хранит effective IANA ciphersuite по тем же правилам что [`CloudChat`]:
-/// `create` берёт `ChatSettings.ciphersuite` либо `core.default_ciphersuite()`,
-/// `open` использует `core.default_ciphersuite()` (Блок 7.2 stub без
-/// persistent MLS state).
+/// `create` берёт `ChatSettings.ciphersuite` либо `core.default_ciphersuite()`;
+/// `open` использует `core.default_ciphersuite()`, потому что persistent MLS
+/// state восстанавливается через device-transfer (единственный путь
+/// recovery'а в Secret-режиме), а не из server-side snapshot.
 ///
 /// Secret chat. Mirrors [`CloudChat`] on shared methods, but **without**
 /// `cloud_sync_history` and `add_bot`. Calling them on `SecretChat` is a
@@ -89,8 +94,9 @@ use crate::facade::chat_common::{
 ///
 /// Holds the effective IANA ciphersuite under the same rules as [`CloudChat`]:
 /// `create` reads `ChatSettings.ciphersuite` or `core.default_ciphersuite()`;
-/// `open` uses `core.default_ciphersuite()` (Block 7.2 stub without
-/// persistent MLS state).
+/// `open` uses `core.default_ciphersuite()` because persistent MLS state is
+/// recovered via device-transfer (the only recovery path in Secret mode),
+/// not from a server-side snapshot.
 ///
 /// [`CloudChat`]: crate::facade::CloudChat
 #[derive(Clone)]
@@ -111,13 +117,17 @@ impl SecretChat {
     ///
     /// # Errors
     ///
-    /// В Блоке 7.2 — infallible stub; в 7.4 `ClientError::Storage` если
-    /// MLS snapshot недоступен (device resync необходим через device-transfer,
-    /// единственный путь для Secret).
+    /// Infallible: возвращает handle с `effective_ciphersuite =
+    /// core.default_ciphersuite()`. Persistent MLS state восстанавливается
+    /// lazily (через [`Self::open_from_welcome`] или device-transfer); failure
+    /// fetch'а на этом пути surface'ится через [`Self::send_text`] /
+    /// [`Self::fetch_inbox`] как `ClientError::Mls`.
     ///
-    /// Infallible stub in Block 7.2; Block 7.4 may return
-    /// `ClientError::Storage` if the MLS snapshot is missing (the device must
-    /// resync via device-transfer — the only path in Secret mode).
+    /// Infallible: returns a handle with `effective_ciphersuite =
+    /// core.default_ciphersuite()`. Persistent MLS state is materialised
+    /// lazily (via [`Self::open_from_welcome`] or device-transfer); failure
+    /// of that path surfaces through [`Self::send_text`] / [`Self::fetch_inbox`]
+    /// as `ClientError::Mls`.
     pub async fn open(core: Arc<ClientCore>, chat_id: ChatId) -> Result<Self> {
         let effective_ciphersuite = core.default_ciphersuite();
         Ok(Self {
@@ -158,11 +168,19 @@ impl SecretChat {
     ///
     /// # Errors
     ///
-    /// В Блоке 7.2 — infallible stub. В 7.4 — `ClientError::Mls /
-    /// SealedSender / Network`.
+    /// - `ClientError::Mls` — `UmbrellaGroup::create_private` failed
+    ///   (unsupported ciphersuite через `UmbrellaCiphersuite::from_raw_id`,
+    ///   provider не поддерживает X-Wing KEM под PQ, либо MLS keystore
+    ///   write failure). `_participants` на текущей стадии игнорируется при
+    ///   create — реальное добавление идёт через [`Self::add_member`] с
+    ///   serialized `KeyPackage`.
     ///
-    /// Infallible stub in Block 7.2. Block 7.4 may return `ClientError::Mls /
-    /// SealedSender / Network`.
+    /// - `ClientError::Mls` — `UmbrellaGroup::create_private` failed
+    ///   (unsupported ciphersuite via `UmbrellaCiphersuite::from_raw_id`,
+    ///   provider lacks X-Wing KEM under PQ, or MLS keystore write
+    ///   failure). `_participants` is intentionally ignored at create time —
+    ///   real addition flows through [`Self::add_member`] with a serialized
+    ///   `KeyPackage`.
     pub async fn create(
         core: Arc<ClientCore>,
         _participants: Vec<PeerId>,
@@ -317,9 +335,13 @@ impl SecretChat {
     ///
     /// # Errors
     ///
-    /// `ClientError::Mls / SealedSender / Network` в Блоке 7.4.
+    /// Текущая реализация — `Ok(())` (stub до wire-up MLS Remove + Commit
+    /// fan-out через blind-postman). Когда станет wired — будет возвращать
+    /// `ClientError::Mls / SealedSender / Network`.
     ///
-    /// `ClientError::Mls / SealedSender / Network` in Block 7.4.
+    /// Current implementation returns `Ok(())` (stub until MLS Remove +
+    /// Commit fan-out is wired through blind-postman). Once wired it will
+    /// return `ClientError::Mls / SealedSender / Network`.
     pub async fn remove_participant(&self, _peer: PeerId) -> Result<()> {
         Ok(())
     }
@@ -394,10 +416,10 @@ impl SecretChat {
     }
 
     /// Ссылка на `ClientCore` — для внутреннего использования `call` слоя
-    /// и тестов (первый reader появляется в Блоке 7.6 compliance-gate).
+    /// (compliance-gate no-P2P enforcement) и тестов.
     ///
-    /// Reference to `ClientCore` — used by the internal `call` layer and
-    /// tests (first reader arrives in Block 7.6 compliance-gate).
+    /// Reference to `ClientCore` — used by the internal `call` layer
+    /// (compliance-gate no-P2P enforcement) and tests.
     #[must_use]
     #[allow(dead_code)]
     pub(crate) fn core(&self) -> &Arc<ClientCore> {

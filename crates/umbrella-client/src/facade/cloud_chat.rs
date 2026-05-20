@@ -50,10 +50,11 @@ use crate::facade::chat_common::{
 ///
 /// `effective_ciphersuite` фиксируется в момент `create` — либо из
 /// `ChatSettings.ciphersuite` (явный per-chat override), либо из
-/// `core.default_ciphersuite()` (bootstrap-режим). После `open` `(_, _)`
-/// существующего чата ciphersuite читается из persistent MLS state в
-/// Блоке 7.4+; в Блоке 7.2 `open` использует `core.default_ciphersuite()`
-/// (нет persistent MLS state stub'е).
+/// `core.default_ciphersuite()` (bootstrap-режим). `open` по `ChatId`
+/// использует `core.default_ciphersuite()` (persistent MLS state
+/// материализуется lazily при первом `send_text` / `fetch_inbox`); для
+/// recovery нового устройства правильный путь — [`Self::open_from_welcome`],
+/// который вычитывает effective ciphersuite напрямую из Welcome.
 ///
 /// Cloud chat. Thin wrapper over `Arc<ClientCore>` + `ChatId` + effective
 /// ciphersuite; the facade owns no cryptographic state — everything is held
@@ -62,10 +63,11 @@ use crate::facade::chat_common::{
 ///
 /// `effective_ciphersuite` is pinned at `create` — either from
 /// `ChatSettings.ciphersuite` (explicit per-chat override) or from
-/// `core.default_ciphersuite()` (bootstrap mode). After `open` of an existing
-/// chat the ciphersuite is read from the persistent MLS state in Block 7.4+;
-/// in Block 7.2 `open` uses `core.default_ciphersuite()` (no persistent MLS
-/// state in the stub).
+/// `core.default_ciphersuite()` (bootstrap mode). `open` by `ChatId` uses
+/// `core.default_ciphersuite()` (persistent MLS state is materialised
+/// lazily on the first `send_text` / `fetch_inbox`); for new-device
+/// recovery the correct path is [`Self::open_from_welcome`], which reads
+/// the effective ciphersuite directly from the Welcome.
 #[derive(Clone)]
 pub struct CloudChat {
     core: Arc<ClientCore>,
@@ -86,11 +88,17 @@ impl CloudChat {
     ///
     /// # Errors
     ///
-    /// В Блоке 7.2 — инфalible (stub); в Блоке 7.4 вернёт `ClientError::Storage`
-    /// если local MLS snapshot недоступен.
+    /// Infallible: возвращает handle с `effective_ciphersuite =
+    /// core.default_ciphersuite()`. Если MLS state ещё не материализован
+    /// для `chat_id`, ошибки surface'ятся позже в [`Self::send_text`] /
+    /// [`Self::fetch_inbox`] / [`Self::cloud_sync_history`] как
+    /// `ClientError::Mls` / `ClientError::Backup` / `ClientError::Network`.
     ///
-    /// Infallible in Block 7.2 (stub); Block 7.4 may return
-    /// `ClientError::Storage` if the local MLS snapshot is missing.
+    /// Infallible: returns a handle with `effective_ciphersuite =
+    /// core.default_ciphersuite()`. If MLS state is not yet materialised
+    /// for `chat_id`, errors surface later in [`Self::send_text`] /
+    /// [`Self::fetch_inbox`] / [`Self::cloud_sync_history`] as
+    /// `ClientError::Mls` / `ClientError::Backup` / `ClientError::Network`.
     pub async fn open(core: Arc<ClientCore>, chat_id: ChatId) -> Result<Self> {
         let effective_ciphersuite = core.default_ciphersuite();
         Ok(Self {
@@ -139,22 +147,30 @@ impl CloudChat {
     }
 
     /// Создать новый Cloud-чат с указанными участниками и settings.
-    /// В Блоке 7.4 инициирует MLS group create + публикует
-    /// `WelcomeMessage` через blind-postman-svc.
+    /// `UmbrellaGroup::create_private` инициализирует MLS group state с
+    /// random 32-byte GroupId (RFC 9420 §13.1.1) и регистрирует его в
+    /// `ClientCore.groups`. `_participants` на этом шаге игнорируется —
+    /// production add flow идёт через [`Self::add_member`] после fetch
+    /// `KeyPackage` из key-svc.
     ///
-    /// Create a new Cloud chat with the given participants and settings. In
-    /// Block 7.4 initiates an MLS group creation and publishes the
-    /// `WelcomeMessage` through blind-postman-svc.
+    /// Create a new Cloud chat with the given participants and settings.
+    /// `UmbrellaGroup::create_private` initialises MLS group state with a
+    /// random 32-byte GroupId (RFC 9420 §13.1.1) and registers it in
+    /// `ClientCore.groups`. `_participants` is ignored at this step — the
+    /// production add flow goes through [`Self::add_member`] after fetching
+    /// `KeyPackage`s from key-svc.
     ///
     /// # Errors
     ///
-    /// В Блоке 7.2 — infallible stub, возвращает `ChatId([0u8; 32])`. В 7.4
-    /// могут возвращаться `ClientError::Mls`, `ClientError::SealedSender`,
-    /// `ClientError::Network`.
+    /// - `ClientError::Mls` — `UmbrellaGroup::create_private` failed
+    ///   (unsupported ciphersuite через `UmbrellaCiphersuite::from_raw_id`,
+    ///   provider не поддерживает X-Wing KEM под PQ, либо MLS keystore
+    ///   write failure).
     ///
-    /// Block 7.2 infallible stub, returns `ChatId([0u8; 32])`. Block 7.4 may
-    /// return `ClientError::Mls`, `ClientError::SealedSender`,
-    /// `ClientError::Network`.
+    /// - `ClientError::Mls` — `UmbrellaGroup::create_private` failed
+    ///   (unsupported ciphersuite via `UmbrellaCiphersuite::from_raw_id`,
+    ///   provider lacks X-Wing KEM under PQ, or MLS keystore write
+    ///   failure).
     pub async fn create(
         core: Arc<ClientCore>,
         _participants: Vec<PeerId>,
@@ -167,9 +183,9 @@ impl CloudChat {
         // chat_id as MLS GroupId (RFC 9420 §13.1.1 opaque). `_participants`
         // intentionally ignored at create-time: production add flow goes
         // through `add_member(peer, key_package_bytes)` after fetching
-        // KeyPackages from key-svc (session 6+). Block 7.2 callers that pass
-        // peer list at create do not actually add members yet — same as
-        // pre-session-5 stub behaviour.
+        // KeyPackages from key-svc. Callers that pass a peer list at create
+        // do not actually add members at this step — they must follow up
+        // with `add_member` per peer.
         let chat_id = create_mls_group(&core, effective_ciphersuite).await?;
         Ok(Self {
             core,
@@ -179,21 +195,43 @@ impl CloudChat {
     }
 
     /// Отправить текстовое сообщение. В Cloud-режиме: MLS-шифрование через
-    /// shared chat_common helper, затем Cloud-wrap ключа через 3-of-5 Sealed
-    /// Servers + запись `(ciphertext, wrapped_key)` на Почтальон (Блок 7.4).
+    /// shared chat_common helper (`send_mls_text` → MLS encrypt с
+    /// max-ratchet aggressive DH rekey + SPQR HMAC + v3 wire envelope при
+    /// зарегистрированной группе; raw text fallback для test fixtures без
+    /// gateway), затем at-rest write — Cloud-wrap случайного message_key
+    /// через 3-of-5 Sealed Servers HPKE + ChaCha20-Poly1305 encrypt
+    /// plaintext + push `CloudHistoryEntry` в postman.cloud_history для
+    /// будущего [`Self::cloud_sync_history`].
     ///
     /// Send a text message. Cloud mode: MLS encryption via the shared
-    /// chat_common helper, then Cloud-wrap of the message key via 3-of-5
-    /// Sealed Servers, followed by a Postman write of `(ciphertext,
-    /// wrapped_key)` (Block 7.4).
+    /// chat_common helper (`send_mls_text` → MLS encrypt with max-ratchet
+    /// aggressive DH rekey + SPQR HMAC + v3 wire envelope when the group
+    /// is registered; raw-text fallback for test fixtures without a
+    /// gateway), then at-rest write — Cloud-wrap of a random message_key
+    /// via 3-of-5 Sealed Servers HPKE + ChaCha20-Poly1305 encrypt of the
+    /// plaintext + push of a `CloudHistoryEntry` into
+    /// postman.cloud_history for future [`Self::cloud_sync_history`].
     ///
     /// # Errors
     ///
-    /// В Блоке 7.2 stub — infallible. В 7.4 — `ClientError::Mls/Backup/
-    /// Network/SealedSender/Padding`.
+    /// - `ClientError::Network` — gateway send/recv I/O failed либо
+    ///   неожиданный server payload.
+    /// - `ClientError::Mls` — MLS encrypt failed (group evicted, ratchet
+    ///   state corrupt, либо max-ratchet encrypt failure).
+    /// - `ClientError::Backup` — `wrap_message_key` failed (invalid
+    ///   wrapping_params, Sealed Server unwrap failure).
+    /// - `ClientError::Internal` — ChaCha20-Poly1305 at-rest encrypt failed
+    ///   (unusual; only AAD too large).
     ///
-    /// Block 7.2 infallible stub. Block 7.4 may return `ClientError::Mls /
-    /// Backup / Network / SealedSender / Padding`.
+    /// At-rest write выполняется только когда live send succeeded с real
+    /// gateway (`msg_id != [0u8; 16]` stub); пути без gateway не создают
+    /// at-rest entry, чтобы избежать duplicate-msg_id violations postman
+    /// invariant uniqueness.
+    ///
+    /// At-rest write runs only when the live send succeeded against a real
+    /// gateway (`msg_id != [0u8; 16]` stub); paths without a gateway skip
+    /// the at-rest entry to avoid duplicate-msg_id violations of the
+    /// postman uniqueness invariant.
     pub async fn send_text(&self, text: String) -> Result<MessageId> {
         // F-CLIENT-FACADE-1 session 6c: dual-write path для Cloud-mode.
         // (1) Live MLS encrypt + send via gateway (session 5 path) — для
@@ -218,20 +256,31 @@ impl CloudChat {
     }
 
     /// Получить inbox — сообщения, пришедшие с момента последнего
-    /// `fetch_inbox`. Пустой `Vec` если нет новых. В Блоке 7.4 делает
-    /// blind-postman-svc fetch + параллельный Sealed Server unwrap 3-of-5
-    /// для каждого сообщения.
+    /// `fetch_inbox`. Пустой `Vec` если нет новых либо если gateway не
+    /// сконфигурирован (test fixtures без networking). Drain loop читает
+    /// `ServerPayload::IncomingMessage` с per-envelope timeout, конвертит
+    /// каждое через MLS decrypt (если group зарегистрирован) либо UTF-8
+    /// lossy fallback (legacy путь до session 5). SPQR HMAC failure
+    /// fail-closed silently drop'ит message (warn-logged, без UI
+    /// pollution).
     ///
     /// Fetch the inbox — messages that have arrived since the last
-    /// `fetch_inbox`. Empty `Vec` when nothing new. Block 7.4 issues a
-    /// blind-postman-svc fetch plus a parallel 3-of-5 Sealed Servers unwrap
-    /// for each message.
+    /// `fetch_inbox`. Empty `Vec` when nothing new, or when the gateway
+    /// is not configured (test fixtures without networking). The drain
+    /// loop reads `ServerPayload::IncomingMessage` with a per-envelope
+    /// timeout, decoding each via MLS decrypt (when a group is
+    /// registered) or a UTF-8 lossy fallback (legacy pre-session-5 path).
+    /// SPQR HMAC failure fail-closes by silently dropping the message
+    /// (warn-logged, no UI pollution).
     ///
     /// # Errors
     ///
-    /// `ClientError::Network / Backup / Mls / SealedSender` в Блоке 7.4.
-    ///
-    /// `ClientError::Network / Backup / Mls / SealedSender` in Block 7.4.
+    /// - `ClientError::Network` — gateway recv I/O failure (timeout не
+    ///   считается ошибкой — drain просто заканчивается).
+    /// - `ClientError::Mls` — MLS decrypt failure (group epoch desync,
+    ///   ratchet state corrupt).
+    /// - `ClientError::Internal` — decoder failure при `decode_server_msg_id`
+    ///   / `parse_peer_id_from_bytes`.
     pub async fn fetch_inbox(&self) -> Result<Vec<DecryptedMessage>> {
         fetch_mls_inbox(&self.core, self.chat_id).await
     }
@@ -250,9 +299,25 @@ impl CloudChat {
     ///
     /// # Errors
     ///
-    /// `ClientError::Network / Backup / Mls / SealedSender` в Блоке 7.4.
+    /// - `ClientError::Backup(InsufficientUnwrapShares)` — менее 3 shares
+    ///   returned для msg_id (нужны 3-of-5 Sealed Server unwraps).
+    /// - `ClientError::Backup(AllSubsetsFailedUnwrap)` — все subset
+    ///   combinations 3-of-N не дали валидный message_key.
+    /// - `ClientError::Backup(AeadDecryptFailed)` — outer ciphertext_at_rest
+    ///   AEAD verify не прошёл (corrupt/tampered postman entry).
+    /// - `ClientError::Internal` — инвариант nарушен (ciphertext без
+    ///   wrapped_key либо negative `since` cursor).
     ///
-    /// `ClientError::Network / Backup / Mls / SealedSender` in Block 7.4.
+    /// - `ClientError::Backup(InsufficientUnwrapShares)` — fewer than 3
+    ///   shares returned for a msg_id (3-of-5 Sealed Server unwraps
+    ///   required).
+    /// - `ClientError::Backup(AllSubsetsFailedUnwrap)` — every 3-of-N
+    ///   subset combination failed to recover the message_key.
+    /// - `ClientError::Backup(AeadDecryptFailed)` — outer
+    ///   ciphertext_at_rest AEAD verify failed (corrupt/tampered postman
+    ///   entry).
+    /// - `ClientError::Internal` — invariant violation (ciphertext without
+    ///   wrapped_key, negative `since` cursor).
     pub async fn cloud_sync_history(
         &self,
         since: Option<Timestamp>,
@@ -272,28 +337,39 @@ impl CloudChat {
     ///
     /// # Errors
     ///
-    /// `ClientError::Network / Backup / Identity` в Блоке 7.4.
+    /// Текущая реализация — `Ok(())` (stub до wire-up Sealed Server
+    /// bot-authorize flow + bot identity registry). Когда станет wired —
+    /// будет возвращать `ClientError::Network / Backup / Identity`.
     ///
-    /// `ClientError::Network / Backup / Identity` in Block 7.4.
+    /// Current implementation returns `Ok(())` (stub until the Sealed
+    /// Server bot-authorize flow and bot identity registry are wired).
+    /// Once wired it will return `ClientError::Network / Backup /
+    /// Identity`.
     pub async fn add_bot(&self, _bot_id: [u8; 32]) -> Result<()> {
         Ok(())
     }
 
-    /// Добавить участника (human device) в Cloud-чат. В Блоке 7.4 делает
-    /// MLS Add proposal + Commit, публикует `WelcomeMessage` через
-    /// blind-postman-svc. До wire-up к key-svc / blind-postman (sessions 6+)
+    /// Добавить участника (human device) в Cloud-чат. До wire-up к
+    /// key-svc / blind-postman (KeyPackage fetch + Welcome fan-out)
     /// этот метод stub `Ok(())` — реальная MLS Add логика доступна через
-    /// [`Self::add_member`] (peer + serialized KeyPackage).
+    /// [`Self::add_member`] (peer + serialized KeyPackage), которая
+    /// выполняет MLS Add proposal + Commit и возвращает Welcome bytes
+    /// для distribution.
     ///
-    /// Add a participant (human device) to the Cloud chat. In Block 7.4 emits
-    /// an MLS Add proposal + Commit and publishes the `WelcomeMessage` via
-    /// blind-postman-svc. Pending key-svc / blind-postman wiring (sessions
-    /// 6+) this method is a `Ok(())` stub — the real MLS Add logic is
-    /// available through [`Self::add_member`] (peer + serialized KeyPackage).
+    /// Add a participant (human device) to the Cloud chat. Pending
+    /// key-svc / blind-postman wiring (KeyPackage fetch + Welcome
+    /// fan-out) this method is a `Ok(())` stub — the real MLS Add logic
+    /// is available through [`Self::add_member`] (peer + serialized
+    /// KeyPackage), which performs the MLS Add proposal + Commit and
+    /// returns the Welcome bytes for distribution.
     ///
     /// # Errors
     ///
-    /// `ClientError::Mls / SealedSender / Network` once wired in session 6+.
+    /// Текущая реализация — `Ok(())`. Когда станет wired —
+    /// `ClientError::Mls / SealedSender / Network`.
+    ///
+    /// Current implementation returns `Ok(())`. Once wired —
+    /// `ClientError::Mls / SealedSender / Network`.
     pub async fn add_participant(&self, _peer: PeerId) -> Result<()> {
         Ok(())
     }
@@ -344,9 +420,13 @@ impl CloudChat {
     ///
     /// # Errors
     ///
-    /// `ClientError::Mls / SealedSender / Network` в Блоке 7.4.
+    /// Текущая реализация — `Ok(())` (stub до wire-up MLS Remove + Commit
+    /// fan-out через blind-postman). Когда станет wired — будет возвращать
+    /// `ClientError::Mls / SealedSender / Network`.
     ///
-    /// `ClientError::Mls / SealedSender / Network` in Block 7.4.
+    /// Current implementation returns `Ok(())` (stub until MLS Remove +
+    /// Commit fan-out is wired through blind-postman). Once wired it will
+    /// return `ClientError::Mls / SealedSender / Network`.
     pub async fn remove_participant(&self, _peer: PeerId) -> Result<()> {
         Ok(())
     }
@@ -361,19 +441,20 @@ impl CloudChat {
 
     /// Effective IANA ciphersuite (RFC 9420 §17.1) этого чата. Возвращает
     /// либо явный `ChatSettings.ciphersuite` из `create`, либо
-    /// `ClientCore::default_ciphersuite` для `open` существующего чата
-    /// (Блок 7.2 stub) или для `create` без override. В блоке 8.8 closing
-    /// milestone integration scenarios используют этот accessor для verify
-    /// что Cloud-чат поднялся под нужным ciphersuite (например `0x004D`
-    /// hybrid PQ vs `0x0003` classical).
+    /// `ClientCore::default_ciphersuite` (для `open` по `ChatId` либо для
+    /// `create` без override); `open_from_welcome` вычитывает effective
+    /// ciphersuite напрямую из Welcome. Integration scenarios используют
+    /// этот accessor для verify что Cloud-чат поднялся под нужным
+    /// ciphersuite (например `0x004D` hybrid PQ vs `0x0003` classical).
     ///
-    /// Effective IANA ciphersuite (RFC 9420 §17.1) of this chat. Returns the
-    /// explicit `ChatSettings.ciphersuite` from `create` if any, otherwise
-    /// `ClientCore::default_ciphersuite` (used by `open` of an existing chat
-    /// in the Block 7.2 stub or by `create` without an override). The Block
-    /// 8.8 closing milestone integration scenarios rely on this accessor to
-    /// verify that the Cloud chat negotiated the desired ciphersuite (e.g.
-    /// `0x004D` hybrid PQ vs `0x0003` classical).
+    /// Effective IANA ciphersuite (RFC 9420 §17.1) of this chat. Returns
+    /// the explicit `ChatSettings.ciphersuite` from `create` if any,
+    /// otherwise `ClientCore::default_ciphersuite` (for `open` by
+    /// `ChatId` or for `create` without an override); `open_from_welcome`
+    /// reads the effective ciphersuite directly from the Welcome.
+    /// Integration scenarios rely on this accessor to verify that the
+    /// Cloud chat negotiated the desired ciphersuite (e.g. `0x004D`
+    /// hybrid PQ vs `0x0003` classical).
     #[must_use]
     pub fn ciphersuite(&self) -> u16 {
         self.effective_ciphersuite
@@ -415,11 +496,12 @@ impl CloudChat {
     }
 
     /// Ссылка на `ClientCore` — для тестов и внутреннего использования
-    /// `facade` и `call` слоёв (первый reader появится в Блоке 7.6 при
-    /// wiring `CallSession`).
+    /// `facade` и `call` слоёв (`CallSession` wiring + integration
+    /// scenarios).
     ///
-    /// Reference to `ClientCore` — used by tests and the internal `facade` /
-    /// `call` layers (first reader arrives in Block 7.6 wiring `CallSession`).
+    /// Reference to `ClientCore` — used by tests and the internal
+    /// `facade` / `call` layers (`CallSession` wiring + integration
+    /// scenarios).
     #[must_use]
     #[allow(dead_code)]
     pub(crate) fn core(&self) -> &Arc<ClientCore> {
