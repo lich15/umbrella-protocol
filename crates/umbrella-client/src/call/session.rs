@@ -310,7 +310,7 @@ impl CallSession {
     /// blocking on a lock that protects unrelated state during a
     /// read-only public-half accessor.
     ///
-    /// Returns the freshly-derived [`IdentityDtlsFingerprint`] —
+    /// Returns the freshly-derived `IdentityDtlsFingerprint` —
     /// determined at session construction from
     /// `core.identity_verifying_key() + random session_nonce`.
     ///
@@ -340,8 +340,8 @@ impl CallSession {
     /// present matches the identity they claim в KT.
     ///
     /// Constant-time comparison via
-    /// [`IdentityDtlsFingerprint::verify_or_err`] (delegated through
-    /// [`DtlsRunner::verify_remote`]).
+    /// `IdentityDtlsFingerprint::verify_or_err` (delegated through
+    /// `DtlsRunner::verify_remote`).
     ///
     /// # Errors
     ///

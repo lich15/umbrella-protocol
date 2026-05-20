@@ -267,8 +267,8 @@ pub struct HwIdentityState {
 /// stubs, group registry, etc. Constructed via [`Self::new_for_test`]
 /// (in-memory test path) or [`Self::new_with_hw_callback`] (production
 /// HW-backed path). Mutability is field-scoped through interior locks
-/// (e.g. [`Self::mls_keystore`] swap, [`Self::hw_identity_state`]
-/// rotation refresh); the outer `Arc<ClientCore>` is shared read-only.
+/// (e.g. `mls_keystore` swap, `hw_identity_state` rotation refresh);
+/// the outer `Arc<ClientCore>` is shared read-only.
 ///
 /// Centralized state container shared across facade methods. Mutability
 /// is field-scoped through interior locks; the outer `Arc<ClientCore>`
@@ -805,7 +805,7 @@ impl ClientCore {
     /// микросекунды (M-FINAL-1 disclosure). Closure refactor'ит
     /// `core.identity` в `Option<Arc<IdentityKey>>`, выставляет `None` в
     /// этой ветке и кэширует real verifying-key (после F-CLIENT-HW-2) в
-    /// поле [`hw_verifying_key`]. Производство secret material'а в Rust
+    /// поле `hw_verifying_key`. Производство secret material'а в Rust
     /// heap в hw-bootstrap path eliminated полностью.
     ///
     /// Round-5 device-capture closure F-PHD-DC-R7-1 + F-PHD-DC-R10-1 entry
@@ -821,7 +821,7 @@ impl ClientCore {
     /// microseconds (M-FINAL-1 disclosure). The closure refactors
     /// `core.identity` to `Option<Arc<IdentityKey>>`, sets `None` on this
     /// branch, and caches the real verifying-key (post-F-CLIENT-HW-2)
-    /// in the [`hw_verifying_key`] field. Production of secret material
+    /// in the `hw_verifying_key` field. Production of secret material
     /// on the Rust heap in the hw-bootstrap path is eliminated entirely.
     ///
     /// # Параметры / Parameters
@@ -835,7 +835,7 @@ impl ClientCore {
     ///
     /// # Ошибки / Errors
     ///
-    /// - `ClientError::Platform(...)` — native side вернул [`HwKeystoreError`]
+    /// - `ClientError::Platform(...)` — native side вернул `HwKeystoreError`
     ///   (user denied prompt, SE unavailable, etc.).
     pub async fn new_with_hw_callback(
         config: ClientConfig,
@@ -941,7 +941,7 @@ impl ClientCore {
     /// Rust heap.
     ///
     /// **F-CLIENT-FACADE-1 session 9e (2026-05-19):** reads `handle`
-    /// presence under a brief read-lock on [`Self::hw_identity_state`].
+    /// presence under a brief read-lock on `hw_identity_state`.
     /// Post-rotation refresh via [`Self::swap_hw_identity`] preserves
     /// the invariant: HW identity is bootstrapped iff `hw_callback` is
     /// `Some` AND the current `hw_identity_state.handle` is `Some`.
@@ -951,7 +951,7 @@ impl ClientCore {
     /// resides in the TEE, not the Rust heap.
     ///
     /// **F-CLIENT-FACADE-1 session 9e (2026-05-19):** reads handle
-    /// presence under a brief read-lock on [`Self::hw_identity_state`].
+    /// presence under a brief read-lock on `hw_identity_state`.
     #[must_use]
     pub fn has_hw_identity(&self) -> bool {
         self.hw_callback.is_some()
@@ -1346,7 +1346,7 @@ impl ClientCore {
 
     /// Регистрирует MLS-группу для `chat_id`. Перезапишет существующую группу
     /// под тем же chat_id (последний `create` / restore wins). Используется
-    /// [`CloudChat::create`] / [`SecretChat::create`] после `UmbrellaGroup::create_private`.
+    /// `CloudChat::create` / `SecretChat::create` после `UmbrellaGroup::create_private`.
     ///
     /// Register an MLS group for `chat_id`. Overwrites any existing group
     /// under the same id (last write wins). Called by `CloudChat::create` /

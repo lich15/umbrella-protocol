@@ -530,8 +530,8 @@ impl KtAuthorizationEntry {
 ///
 /// # Errors
 ///
-/// - [`KtError::InvalidAuthorizationEntryWire("too_short")`] для empty input.
-/// - [`KtError::InvalidAuthorizationEntryWire("wrong_prefix")`] для byte[0]
+/// - `KtError::InvalidAuthorizationEntryWire("too_short")` для empty input.
+/// - `KtError::InvalidAuthorizationEntryWire("wrong_prefix")` для `byte[0]`
 ///   ∉ {0x04, 0x05, 0x06}.
 /// - Per-type decoder errors propagate через `wrong_length` /
 ///   `record_invalid_wire_format` / `record_unknown_wire_version`.

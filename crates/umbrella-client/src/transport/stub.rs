@@ -456,12 +456,12 @@ impl StubKtTransport {
 }
 
 /// Stub call-relay-svc. Счётчик аллокаций TURN relay (SPEC-06 §3) + per-call
-/// `allocate(...)` returning deterministic [`TurnAllocation`] — production
-/// [`Http2CallRelayTransport`] uses HTTP/2 round-trip to `call-relay-svc`.
+/// `allocate(...)` returning deterministic `TurnAllocation` — production
+/// `Http2CallRelayTransport` uses HTTP/2 round-trip to `call-relay-svc`.
 ///
 /// Stub call-relay-svc. Counter of TURN relay allocations (SPEC-06 §3) + a
-/// per-call `allocate(...)` that returns a deterministic [`TurnAllocation`]
-/// — the production [`Http2CallRelayTransport`] uses an HTTP/2 round-trip
+/// per-call `allocate(...)` that returns a deterministic `TurnAllocation`
+/// — the production `Http2CallRelayTransport` uses an HTTP/2 round-trip
 /// to `call-relay-svc` instead.
 #[derive(Debug, Default)]
 pub struct StubCallRelayTransport {
@@ -483,8 +483,8 @@ pub struct StubCallRelayTransport {
 
 impl StubCallRelayTransport {
     /// **F-CLIENT-FACADE-1 session 10a (2026-05-19):** stub mirror of
-    /// [`crate::transport::Http2CallRelayTransport::allocate`]. Returns a
-    /// deterministic [`TurnAllocation`] suitable for offline test rigs —
+    /// `crate::transport::Http2CallRelayTransport::allocate`. Returns a
+    /// deterministic `TurnAllocation` suitable for offline test rigs —
     /// `primary_url` interpolates `peer_id` hex prefix so distinct peers
     /// produce distinct URLs (catches "stub returned identical creds for
     /// different peers" bugs); `valid_until_ms` is a fixed 24-hour
@@ -497,14 +497,14 @@ impl StubCallRelayTransport {
     ///
     /// # Errors
     ///
-    /// Infallible in Block 7.6 — production [`Http2CallRelayTransport`]
-    /// surfaces network errors as [`ClientError::Network`], but the stub
+    /// Infallible in Block 7.6 — production `Http2CallRelayTransport`
+    /// surfaces network errors as `ClientError::Network`, but the stub
     /// is in-memory and cannot fail. Returns `Result` to match the
     /// production signature (call-site can `.await?` either impl).
     ///
     /// **F-CLIENT-FACADE-1 session 10a (2026-05-19):** stub mirror of
-    /// [`crate::transport::Http2CallRelayTransport::allocate`]. Returns a
-    /// deterministic [`TurnAllocation`] for offline test rigs; production
+    /// `crate::transport::Http2CallRelayTransport::allocate`. Returns a
+    /// deterministic `TurnAllocation` for offline test rigs; production
     /// allocation flows through HTTP/2 to `call-relay-svc`.
     pub async fn allocate(
         &self,

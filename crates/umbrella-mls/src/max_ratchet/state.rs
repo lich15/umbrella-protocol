@@ -7,10 +7,11 @@
 //! (`CloudChat` / `SecretChat`) держать `MaxRatchetState` и `UmbrellaGroup` под
 //! раздельными locks/storage в `ClientCore` без conflict с existing API.
 //!
-//! [`MaxRatchetGroup`] делегирует все операции в `MaxRatchetState` — оба варианта shared
-//! одну и ту же оркестрацию защит.
+//! [`MaxRatchetGroup`](super::MaxRatchetGroup) делегирует все операции в `MaxRatchetState` —
+//! оба варианта shared одну и ту же оркестрацию защит.
 //!
-//! [`MaxRatchetState`] is the borrowing-mode counterpart of [`MaxRatchetGroup`]. It
+//! [`MaxRatchetState`] is the borrowing-mode counterpart of
+//! [`MaxRatchetGroup`](super::MaxRatchetGroup). It
 //! stores only the defence state (`config` + `commit_counter` + `last_timer_check_unix`)
 //! and accepts `&mut UmbrellaGroup` as a parameter in every method. This lets the facade
 //! layer (`CloudChat` / `SecretChat`) hold `MaxRatchetState` and `UmbrellaGroup` under
@@ -89,7 +90,8 @@ impl MaxRatchetState {
     /// для полного описания потока.
     ///
     /// Encrypts an application message with an aggressive DH ratchet step on a borrowed
-    /// group; see [`MaxRatchetGroup::encrypt_with_rekey`] for the full flow.
+    /// group; see [`MaxRatchetGroup::encrypt_with_rekey`](super::MaxRatchetGroup::encrypt_with_rekey)
+    /// for the full flow.
     pub fn encrypt_with_rekey(
         &mut self,
         group: &mut UmbrellaGroup,

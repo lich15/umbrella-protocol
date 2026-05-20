@@ -196,7 +196,7 @@ impl SecretChat {
     /// gateway / blind-postman).
     ///
     /// **F-CLIENT-FACADE-1 session 7 (2026-05-19):** wired end-to-end
-    /// через [`crate::facade::chat_common::send_secret_text`]. До session 7
+    /// через `crate::facade::chat_common::send_secret_text`. До session 7
     /// SecretChat::send_text вызывал `send_mls_text` напрямую (raw MLS
     /// ciphertext через gateway, без envelope wrap) — это leak'ило sender
     /// MLS Ed25519 identity_pk на gateway через MLSCiphertext sender_index
@@ -220,7 +220,7 @@ impl SecretChat {
     /// `UmbrellaGroup.encrypt_application` → sealed-sender V1 envelope
     /// wrap per recipient → per-peer gateway `SendMessage`. No Cloud-wrap.
     /// **F-CLIENT-FACADE-1 session 7 (2026-05-19):** wired end-to-end via
-    /// [`crate::facade::chat_common::send_secret_text`]; sender Ed25519
+    /// `crate::facade::chat_common::send_secret_text`; sender Ed25519
     /// identity_pk never appears on the wire.
     ///
     /// # Errors
@@ -247,7 +247,7 @@ impl SecretChat {
     /// X25519 identity ключом.
     ///
     /// **F-CLIENT-FACADE-1 session 7 (2026-05-19):** wired end-to-end через
-    /// [`crate::facade::chat_common::fetch_secret_inbox`]. До session 7
+    /// `crate::facade::chat_common::fetch_secret_inbox`. До session 7
     /// fetch_inbox вызывал `fetch_mls_inbox` напрямую (decrypt'ило raw MLS
     /// ciphertext, sender брался из gateway `from_user_id` — sender-anonymous
     /// в blind-postman model был неработающим). Session 7 закрыл: sender
@@ -267,7 +267,7 @@ impl SecretChat {
     /// Sender recovered from inner signature, NOT gateway routing metadata.
     ///
     /// **F-CLIENT-FACADE-1 session 7 (2026-05-19):** wired end-to-end via
-    /// [`crate::facade::chat_common::fetch_secret_inbox`].
+    /// `crate::facade::chat_common::fetch_secret_inbox`.
     ///
     /// # Errors
     ///

@@ -41,7 +41,7 @@ pub const V3_MARKER: u8 = 0xFF;
 pub const V3_VERSION: u8 = 0x03;
 
 /// SPQR HMAC длина (HMAC-SHA256 → 32 bytes). Matches
-/// [`umbrella_mls::max_ratchet::spqr::SPQR_HMAC_LEN`].
+/// [`SPQR_HMAC_LEN`](super::spqr::SPQR_HMAC_LEN).
 pub const SPQR_MAC_LEN: usize = 32;
 
 /// Минимальный размер v3 bundle: marker(1) + version(1) + commit_len(2) + ct_len(4) + mac(32).

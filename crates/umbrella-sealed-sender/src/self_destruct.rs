@@ -1,7 +1,7 @@
 //! # Self-destruct TTL для sealed envelopes (round-6 Stage 4)
 //!
 //! Wraps any HPKE sealed envelope с TTL header. Receiver invokes
-//! [`MessageRetention`] from `umbrella-mls::screenshot_policy` after open;
+//! `MessageRetention` from `umbrella-mls::screenshot_policy` after open;
 //! when TTL expires, raw ciphertext can be wiped from local storage.
 //!
 //! Self-destruct TTL wrapper для sealed envelopes — anti-forensic в secret

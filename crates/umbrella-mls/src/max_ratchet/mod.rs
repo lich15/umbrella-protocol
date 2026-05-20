@@ -10,7 +10,7 @@
 //!    триггерит принудительный rekey.
 //! 4. **Post-quantum X-Wing ratchet каждые 3 commits** — flag для дополнительного
 //!    PQ-extension в commit. Реальная X-Wing combine integration реализована через
-//!    [`MaxRatchetGroup::encrypt_with_rekey_pq_authenticated`] + [`UmbrellaGroup::force_rekey_with_pq`]
+//!    [`MaxRatchetGroup::encrypt_with_rekey_pq_authenticated`] + [`UmbrellaGroup::force_rekey_with_pq`](crate::group::UmbrellaGroup::force_rekey_with_pq)
 //!    под ciphersuite 0x004D + [`UmbrellaXWingProvider`](crate::provider::xwing::UmbrellaXWingProvider)
 //!    (feature `pq`). См. `tests/test_max_ratchet_pq_real.rs` для верификации.
 //! 5. **SPQR Deniable Authentication** — HMAC поверх каждого ciphertext через общий эпоховый
@@ -32,7 +32,7 @@
 //! 4. **Post-quantum X-Wing ratchet every 3 commits** — flag for an extra PQ extension in
 //!    the commit. Real X-Wing combine integration is implemented via
 //!    [`MaxRatchetGroup::encrypt_with_rekey_pq_authenticated`] +
-//!    [`UmbrellaGroup::force_rekey_with_pq`] under ciphersuite 0x004D +
+//!    [`UmbrellaGroup::force_rekey_with_pq`](crate::group::UmbrellaGroup::force_rekey_with_pq) under ciphersuite 0x004D +
 //!    [`UmbrellaXWingProvider`](crate::provider::xwing::UmbrellaXWingProvider) (feature
 //!    `pq`). See `tests/test_max_ratchet_pq_real.rs` for verification.
 //! 5. **SPQR Deniable Authentication** — HMAC over each ciphertext via the shared epoch

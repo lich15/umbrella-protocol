@@ -157,7 +157,7 @@ impl MaxRatchetGroup {
     ///    новый epoch
     /// 2. Извлекаем `exporter_secret` нового epoch'а через
     ///    [`UmbrellaGroup::exporter_secret`] с label `"umbrellax-spqr-deniable-auth"`
-    /// 3. Выводим `epoch_secret` через [`spqr::derive_epoch_secret_from_exporter`]
+    /// 3. Выводим `epoch_secret` через [`derive_epoch_secret_from_exporter`](super::spqr::derive_epoch_secret_from_exporter)
     /// 4. (classical path: `pq_extension_used` остаётся flag-only. Для real X-Wing keying
     ///    используйте [`encrypt_with_rekey_pq_authenticated`](Self::encrypt_with_rekey_pq_authenticated)
     ///    под feature `pq`.)
@@ -206,7 +206,7 @@ impl MaxRatchetGroup {
     /// - При `should_trigger_pq=true` вызывает
     ///   [`UmbrellaGroup::force_rekey_with_pq`](crate::group::UmbrellaGroup::force_rekey_with_pq)
     ///   — извлекает **реальный** PQ-derived shared secret из exporter нового epoch'a.
-    /// - SPQR HMAC на trigger-commits использует [`spqr::pq_extend_epoch_secret`] для combine
+    /// - SPQR HMAC на trigger-commits использует [`pq_extend_epoch_secret`](super::spqr::pq_extend_epoch_secret) для combine
     ///   classical_secret + pq_shared → keying material от которого нельзя восстановить
     ///   classical-only secret даже под compromised X25519.
     ///

@@ -62,7 +62,7 @@
 //!
 //! # API contract
 //!
-//! ```ignore
+//! ```text
 //! // Swift side:
 //! // final class MyKeyStore: PersistentKeyStoreCallback {
 //! //     func generateIdentity(label: String) throws -> HwKeyHandle { ... }
