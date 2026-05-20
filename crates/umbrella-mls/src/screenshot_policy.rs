@@ -13,6 +13,7 @@
 
 use std::time::{Duration, SystemTime};
 
+/// Per-chat policy для screenshot/screen-record поведения.
 /// Per-chat policy enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ScreenshotPolicy {
@@ -25,6 +26,7 @@ pub enum ScreenshotPolicy {
     BlockAndNotify,
 }
 
+/// Метаданные одного сообщения для TTL / self-destruct.
 /// Single message metadata for TTL / self-destruct.
 #[derive(Debug, Clone, Default)]
 pub struct MessageRetention {
@@ -38,6 +40,9 @@ pub struct MessageRetention {
     pub anonymous_watermark: Option<[u8; 32]>,
 }
 
+/// Состояние одного сообщения на стороне получателя: «not viewed», «viewed
+/// at T», «expired».
+///
 /// State of a single message on the receiver side: «not viewed», «viewed
 /// at T», «expired».
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,6 +61,7 @@ pub enum ReceiverViewState {
     Expired,
 }
 
+/// Tracker view-состояния одного сообщения + решение wipe'нуть ли контент.
 /// Tracks one message's view state + decides whether content should be wiped.
 #[derive(Debug, Clone)]
 pub struct ReceiverMessageTracker {
@@ -118,6 +124,9 @@ impl ReceiverMessageTracker {
     }
 }
 
+/// Определяет что UI должен показать когда screen-capture активен и
+/// видно сообщение с policy `policy`.
+///
 /// Determines what UI should display when screen-capture is active and a
 /// message with policy `policy` is visible.
 pub fn screen_capture_overlay(policy: ScreenshotPolicy) -> Option<&'static str> {
@@ -127,6 +136,9 @@ pub fn screen_capture_overlay(policy: ScreenshotPolicy) -> Option<&'static str> 
     }
 }
 
+/// Определяет нужно ли уведомлять отправителя о screenshot получателя
+/// для указанной policy.
+///
 /// Determines whether sender should be notified about receiver screenshot
 /// for the given policy.
 pub fn should_notify_on_screenshot(policy: ScreenshotPolicy) -> bool {

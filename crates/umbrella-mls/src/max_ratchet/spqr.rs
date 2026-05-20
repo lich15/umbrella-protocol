@@ -35,8 +35,17 @@ pub const SPQR_HMAC_LEN: usize = 32;
 ///
 /// Computes HMAC-SHA256(epoch_secret, message) → 32 bytes.
 pub fn compute_hmac(epoch_secret: &[u8; 32], message: &[u8]) -> [u8; SPQR_HMAC_LEN] {
-    let mut mac = HmacSha256::new_from_slice(epoch_secret)
-        .expect("HMAC-SHA256 accepts any key length up to block size");
+    // 32-байтный ключ всегда валиден для HMAC-SHA256 (block size 64 байта).
+    // `new_from_slice` возвращает Result для general API, но для нашего fixed
+    // input ответ всегда `Ok`. Fallback на zero-mac (fail-closed) если
+    // инвариант когда-то нарушится — receiver не сможет verify и отвергнет.
+    // 32-byte key is always valid for HMAC-SHA256 (block size 64 bytes).
+    // `new_from_slice` returns `Result` for the general API, but our fixed
+    // input is always `Ok`. Fall back to zero-mac (fail-closed) if the
+    // invariant ever breaks — the receiver cannot verify and rejects.
+    let Ok(mut mac) = HmacSha256::new_from_slice(epoch_secret) else {
+        return [0u8; SPQR_HMAC_LEN];
+    };
     mac.update(message);
     let result = mac.finalize().into_bytes();
 

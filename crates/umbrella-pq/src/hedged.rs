@@ -71,6 +71,16 @@
 //! `rng.fill_bytes`. The receiver still uses the same `xwing_decaps` —
 //! the change is sender-only.
 
+// Module внутренне используется только из `xwing.rs` (gated под feature
+// `ml-kem`) и re-exports `HedgedWitness` через `lib.rs`. Под `--no-default-features`
+// xwing-зависимые items становятся unused — silence dead_code локально;
+// public re-exports остаются доступны под их feature gates.
+// Module is used internally only from `xwing.rs` (gated by `ml-kem`) and
+// re-exports `HedgedWitness` via `lib.rs`. Under `--no-default-features` the
+// xwing-dependent items become unused — silence dead_code locally; the public
+// re-exports remain available to consumers under their feature gates.
+#![cfg_attr(not(feature = "ml-kem"), allow(dead_code))]
+
 use hkdf::Hkdf;
 use sha2::{Sha256, Sha512};
 use umbrella_crypto_primitives::MlockedSecret;

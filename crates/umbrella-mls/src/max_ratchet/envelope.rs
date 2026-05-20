@@ -70,11 +70,15 @@ pub fn encode_v3(
     spqr_mac: Option<&[u8; SPQR_MAC_LEN]>,
 ) -> Vec<u8> {
     let commit = commit_bytes.unwrap_or(&[]);
-    assert!(
+    // Invariants enforced by callers (UmbrellaGroup keeps commit/ciphertext
+    // within MLS wire-format limits which are far below u16::MAX / u32::MAX).
+    // `debug_assert!` is no-op in release — no panic vector per ADR-015 §5.5.
+    // Инварианты обеспечивают вызывающие; `debug_assert!` no-op в release.
+    debug_assert!(
         commit.len() <= u16::MAX as usize,
         "commit bytes exceed wire format u16 length"
     );
-    assert!(
+    debug_assert!(
         ciphertext_bytes.len() <= u32::MAX as usize,
         "ciphertext bytes exceed wire format u32 length"
     );

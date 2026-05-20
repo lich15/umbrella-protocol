@@ -33,7 +33,7 @@ use umbrella_crypto_primitives::mlocked::MlockedSecret;
 
 use crate::error::{ThresholdIdentityError, ThresholdIdentityResult};
 
-/// Argon2id memory cost — 64 MiB, mobile-friendly per RFC 9106 §4.
+/// Стоимость памяти Argon2id — 64 MiB, mobile-friendly по RFC 9106 §4.
 /// Argon2id memory cost — 64 MiB. Mobile-friendly per RFC 9106 §4.
 pub const MEMORY_COST_KIB: u32 = 64 * 1024;
 
