@@ -141,7 +141,8 @@ skip = [
     { crate = "libcrux-traits@0.0.6", reason = "latest openmls_rust_crypto 0.5.1 still pulls hpke-rs/libcrux-sha3 0.0.8; Umbrella PQ uses libcrux 0.0.9 to fix RUSTSEC-2026-0125/0126" },
     { crate = "foldhash@0.1.5", reason = "transitive through hashbrown 0.15 in RustCrypto/Boring/Quinn stack; workspace itself does not depend on foldhash directly" },
     { crate = "hash32@0.2.1", reason = "transitive through heapless 0.7 pulled by frost-ed25519 3.0 (umbrella-threshold-identity round-6 FROST DKG); modern heapless 0.8 uses hash32 0.3 but upstream FROST still on heapless 0.7" },
-    { crate = "hashbrown@0.14.5", reason = "transitive through openmls / RustCrypto stack; workspace uses hashbrown 0.15 via newer indexmap" },
+    { crate = "hashbrown@0.14.5", reason = "transitive через openmls / RustCrypto stack; workspace uses hashbrown 0.15 через newer indexmap" },
+    { crate = "hashbrown@0.15.5", reason = "duplicate-version: одна копия 0.15.5 с default features (через indexmap), вторая копия 0.15.5 с alloc-only features (через no_std путь heapless / frost-core); cargo-deny treats different feature sets as different entries" },
     { crate = "heapless@0.7.17", reason = "transitive through frost-ed25519 3.0 (umbrella-threshold-identity round-6 FROST DKG); modern heapless 0.8 dropped atomic-polyfill but FROST 3.0 still on 0.7" },
 ]
 

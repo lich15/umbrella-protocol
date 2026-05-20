@@ -155,6 +155,19 @@ impl From<ClientError> for UmbrellaError {
             ClientError::Crypto(s) => UmbrellaError::Crypto(s),
             ClientError::WrongPin => UmbrellaError::WrongPin,
             ClientError::AccountDeleted => UmbrellaError::AccountDeleted,
+            // Task 2 PhD-B (commit `41f1cf71`): strict-error migration для
+            // SPQR HMAC verify failure на incoming Max Ratchet v3 messages.
+            // Маппится к Internal — на FFI surface это аутентификационная
+            // ошибка с описательным сообщением, fail-closed без silent
+            // drop в UI.
+            // Task 2 PhD-B (commit `41f1cf71`): strict-error migration for
+            // SPQR HMAC verify failure on incoming Max Ratchet v3 messages.
+            // Mapped to Internal — on the FFI surface this is an
+            // authentication error with a descriptive message, fail-closed
+            // without silent drop in the UI.
+            ClientError::SpqrAuthFailed => {
+                UmbrellaError::Internal("spqr_auth_failed".to_string())
+            }
         }
     }
 }

@@ -43,16 +43,16 @@
 //!
 //! | Зависимость | Зачем |
 //! |---|---|
-//! | [`umbrella-oprf`] | Ristretto255 OPRF primitives + Shamir 3-of-5 |
-//! | [`umbrella-threshold-identity`] | Anonymous-id derivation pattern (round 6) |
-//! | [`umbrella-kt`] | RFC 6962 Merkle inclusion proof verifier |
+//! | `umbrella-oprf` | Ristretto255 OPRF primitives + Shamir 3-of-5 |
+//! | `umbrella-threshold-identity` | Anonymous-id derivation pattern (round 6) |
+//! | `umbrella-kt` | RFC 6962 Merkle inclusion proof verifier |
 //!
 //! ## Dependencies
 //!
-//! - [`umbrella-oprf`] — Ristretto255 OPRF primitives + Shamir 3-of-5.
-//! - [`umbrella-threshold-identity`] — anonymous-id derivation pattern
+//! - `umbrella-oprf` — Ristretto255 OPRF primitives + Shamir 3-of-5.
+//! - `umbrella-threshold-identity` — anonymous-id derivation pattern
 //!   (round 6).
-//! - [`umbrella-kt`] — RFC 6962 Merkle inclusion proof verifier.
+//! - `umbrella-kt` — RFC 6962 Merkle inclusion proof verifier.
 //!
 //! ## Литература
 //!

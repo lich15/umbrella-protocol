@@ -70,12 +70,10 @@ impl TransportSelector {
     /// Walks `fallback_chain` and returns the first channel that probes true.
     /// Returns `None` if all channels failed.
     pub fn pick<P: ChannelProbe>(&self, probe: &P) -> Option<TransportChannel> {
-        for &channel in &self.fallback_chain {
-            if probe.probe(channel, self.probe_timeout) {
-                return Some(channel);
-            }
-        }
-        None
+        self.fallback_chain
+            .iter()
+            .copied()
+            .find(|&channel| probe.probe(channel, self.probe_timeout))
     }
 }
 
