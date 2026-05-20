@@ -49,13 +49,15 @@ Key transitions from the prior status snapshot below:
   `crates/umbrella-tests/tests/dudect_constant_time.rs`. 100 K-
   sample smoke test confirms 47–92 % |t|-reduction across the
   three affected sites.
-- Single open finding **F-CLIENT-FACADE-1** is now categorised as
-  Block 7.4 engineering scope (chat facades return stubbed
-  `MessageId([0u8; 16])`), not a security finding. Integration
-  contract is specified in
-  `docs/integration/gateway-svc-contract.md` and closure is
-  planned across follow-up sessions implementing QUIC +
-  WebSocket transports against the contract.
+- **F-CLIENT-FACADE-1 MILESTONE 10/10 CLOSED** (commit `9417096b`,
+  session 10f). All 12 sub-sessions on `main`: WebSocket + QUIC
+  transports, MLS group create / sealed-sender / KT self-monitor /
+  identity rotation / call relay TURN+DTLS+SRTP+SFrame / device
+  transfer. Integration contract at
+  `docs/integration/gateway-svc-contract.md` is the implemented
+  surface, not a future plan. Public FFI bootstrap remains gated
+  on external platform attestation, mobile bridges, and real
+  server-deployment integration (separate milestone).
 
 The rest of the original status text from 2026-05-18 follows
 below. Any contradiction with the update block above resolves in
@@ -70,29 +72,33 @@ security hardening. It contains real cryptographic crates, test
 harnesses, formal models, fuzzing entry points, and local verification scripts.
 
 On 2026-05-18 the PhD-B six-round audit (rounds 1-6) was merged into `main`
-via PR #6 (commit `84b4d576`). The audit added the `umbrella-threshold-identity`
-crate (FROST-Ed25519 DKG, threshold sign, PIN/Argon2id KDF, duress detection,
-lifecycle modules), a `MlockedSecret<T>` wrapper migrated across seven
-production storage sites, hedged-encaps in three production callers
-(`umbrella-backup`, `umbrella-sealed-sender`, `umbrella-mls`), iOS Secure
-Enclave and Android StrongBox real-API bridges, anti-forensic chat modules
-(screen-capture overlay + TTL self-destruct), and eight R20-R27 attack tests
-with measured numerical outcomes. The independent reviewer verdict
+via PR #6 (commit `84b4d576`). Round 7 (discovery — PSI + `@username`
+lookup with KT bind) merged subsequently, adding the `umbrella-discovery`
+crate (~5000 LoC), 38 D-1..D-8 attack-regression sub-tests, the
+`discovery.spthy` Tamarin model, and the `docs/spec/discovery-integration.md`
+client-side wire contract. The audit chain added the
+`umbrella-threshold-identity` crate (FROST-Ed25519 DKG, threshold sign,
+PIN/Argon2id KDF, duress detection, lifecycle modules), a `MlockedSecret<T>`
+wrapper migrated across seven production storage sites, hedged-encaps in
+three production callers (`umbrella-backup`, `umbrella-sealed-sender`,
+`umbrella-mls`), iOS Secure Enclave and Android StrongBox real-API bridges,
+anti-forensic chat modules (screen-capture overlay + TTL self-destruct),
+and eight R20-R27 attack tests with measured numerical outcomes. The
+independent reviewer verdict on rounds 1-6
 (`docs/audits/phd-b-final-independent-review-2026-05-19.md`) returned
-0 BLOCKER + 1 MAJOR (M-FINAL-1) + 3 MINOR. Workspace baseline after merge
-is **2080 release-mode tests** (`cargo test --release --workspace
---all-features`), up from 1977 pre round-6.
+0 BLOCKER + 1 MAJOR (M-FINAL-1, since closed) + 3 MINOR. Workspace baseline
+after round 7 is **2179+ release-mode tests** (`cargo test --release
+--workspace --all-features`); the post-1.1.0 series on `main`
+(F-CLIENT-FACADE-1 10/10 + Pass 5 + Max Ratchet v3 + Tasks 1-5 PhD-B)
+adds further tests to that floor.
 
-The 1 MAJOR finding M-FINAL-1 is a scope-of-closure caveat:
-`ClientCore::new_with_hw_callback` still synthesises an ephemeral signing
-seed via `IdentitySeed::generate` for backwards compatibility. The seed is
-heap-resident, zeroize-on-drop, and the window of existence is microseconds.
-The round-6 R20 lldb claim "0 identity_sk hits in 2.2 GB process memory"
-applies to the `distributed_identity_client::bootstrap_account` flow only,
-not to `new_with_hw_callback`. The disclosure is recorded in
-`docs/audits/phd-b-distributed-identity-closure-2026-05-19.md` §1.1 and in
-the code comment at `crates/umbrella-client/src/core.rs:407-422`. Removal
-is tracked for v1.2.x.
+The MAJOR finding M-FINAL-1 was closed via Pass 5 commit `e7b034ff`
+(F-CLIENT-HW-1): `ClientCore.identity` was refactored to
+`Option<Arc<IdentityKey>>` and is `None` on the hw bootstrap path; the
+ephemeral `IdentitySeed::generate` synthesis was eliminated. The
+disclosure block in
+`docs/audits/phd-b-distributed-identity-closure-2026-05-19.md` §1.1 records
+the pre-closure caveat for historical reference.
 
 The full public client bootstrap is not open for production use yet. Public FFI
 bootstrap fails closed until platform verifiers, mobile bridges, and server
@@ -179,7 +185,11 @@ Umbrella Protocol 1.1.0 — набор Rust-крейтов протокола с
 проверки, формальные модели, входы для фаззинга и локальные скрипты проверки.
 
 2026-05-18 в `main` влит PR #6 (коммит `84b4d576`) — PhD-B аудит из шести
-раундов на кодовой базе 1.1.0. Аудит добавил крейт
+раундов на кодовой базе 1.1.0. Раунд 7 (discovery — PSI + поиск по
+`@username` с KT-bind) влит позднее, добавив крейт `umbrella-discovery`
+(~5000 строк), 38 атакующих суб-тестов D-1..D-8, Tamarin-модель
+`discovery.spthy` и спецификацию клиентской стороны
+`docs/spec/discovery-integration.md`. Аудит добавил крейт
 `umbrella-threshold-identity` (FROST-Ed25519 DKG, threshold sign, PIN +
 Argon2id KDF, обнаружение duress, lifecycle), обёртку `MlockedSecret<T>` —
 смигрировано семь production-мест хранения секретов, hedged-encaps в трёх
@@ -187,22 +197,20 @@ production-вызовах (`umbrella-backup`, `umbrella-sealed-sender`,
 `umbrella-mls`), мосты к iOS Secure Enclave и Android StrongBox через
 настоящий API, анти-форенсик модули чата (overlay при захвате экрана +
 TTL self-destruct), и восемь атакующих тестов R20-R27 с измеренными
-результатами. Заключение независимого ревьюера
+результатами. Заключение независимого ревьюера по раундам 1-6
 (`docs/audits/phd-b-final-independent-review-2026-05-19.md`) — 0 BLOCKER +
-1 MAJOR (M-FINAL-1) + 3 MINOR. Базовая линия рабочей области после слияния
-— **2080 release-mode тестов** (`cargo test --release --workspace
---all-features`), плюс 103 теста к 1977 базовой линии до раунда 6.
+1 MAJOR (M-FINAL-1, закрыт позднее) + 3 MINOR. Базовая линия рабочей
+области после раунда 7 — **2179+ release-mode тестов** (`cargo test
+--release --workspace --all-features`); post-1.1.0 серия в `main`
+(F-CLIENT-FACADE-1 10/10 + Pass 5 + Max Ratchet v3 + Tasks 1-5 PhD-B)
+добавляет ещё.
 
-Одна MAJOR-находка M-FINAL-1 — граница покрытия:
-`ClientCore::new_with_hw_callback` всё ещё синтезирует эфемерный seed для
-подписания через `IdentitySeed::generate` для обратной совместимости. Seed
-лежит в heap, zeroize-on-drop, окно жизни — микросекунды. Заявление R20
-lldb «0 identity_sk hits в 2.2 GB» применимо только к
-`distributed_identity_client::bootstrap_account`, не к
-`new_with_hw_callback`. Раскрытие записано в
-`docs/audits/phd-b-distributed-identity-closure-2026-05-19.md` §1.1 и в
-комментарии кода `crates/umbrella-client/src/core.rs:407-422`. Удаление
-вынесено в v1.2.x.
+MAJOR-находка M-FINAL-1 закрыта в Pass 5 коммитом `e7b034ff`
+(F-CLIENT-HW-1): `ClientCore.identity` стал `Option<Arc<IdentityKey>>`
+и `None` на hw bootstrap пути; эфемерный синтез `IdentitySeed::generate`
+устранён. Раскрытие в
+`docs/audits/phd-b-distributed-identity-closure-2026-05-19.md` §1.1
+оставлено как исторический снимок до закрытия.
 
 Полный публичный запуск клиента ещё не открыт для боевого применения.
 Публичный FFI-запуск закрыто отказывает, пока не связаны платформенные

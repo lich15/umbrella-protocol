@@ -4,6 +4,114 @@
 
 ## English
 
+### Post-1.1.0 Max Ratchet v3 — 2026-05-20
+
+Added a default-on aggressive DH + 5-minute timer rekey + post-quantum
+extension every third commit + SPQR HMAC deniable authentication layer
+on top of every Umbrella v3 group.
+
+Implementation modules in `crates/umbrella-mls/src/max_ratchet/`
+(`config.rs`, `counter.rs`, `timer.rs`, `spqr.rs`, `group.rs`, `state.rs`,
+`envelope.rs`). Wire format uses an in-band v3 marker (`0xFF`) inside
+`ClientPayload::SendMessage.ciphertext`; backward read-compat with
+existing v2 readers; no gateway-svc proto changes.
+
+Coverage:
+
+- 36 unit tests across max_ratchet modules.
+- 10 baseline + 5 active-mode security claim integration tests in
+  `crates/umbrella-client/tests/facade_max_ratchet_v3.rs`.
+- 6 PQ integration tests (real X-Wing combine into SPQR keying) in
+  `crates/umbrella-mls/tests/test_max_ratchet_pq_real.rs`.
+- 5 proptest property-based fuzz tests + 5.67M libFuzzer iterations in
+  `crates/umbrella-fuzz/fuzz/fuzz_targets/max_ratchet_envelope_*.rs`.
+- Criterion benchmarks on Apple M2: 27 μs baseline encrypt, 140 μs
+  force_rekey, 0.26 μs SPQR HMAC; total max_ratchet 167.36 μs.
+- Tamarin formal models for SPQR deniability + aggressive DH PCS
+  (Task 5 PhD-B): `crates/umbrella-formal-verification/models/
+  spqr_deniability.spthy` + `aggressive_dh_pcs.spthy`.
+- Local dudect 1M-sample constant-time evidence for `verify_hmac`
+  (|t|=0.000 perfect on Apple M2 single-thread; Task 4 PhD-B).
+- Forward-secrecy Tamarin lemma in `aggressive_dh_pcs.spthy`
+  (post-fix: explicit `Ex` binding closes wellformedness gap).
+
+Specification + evidence:
+
+- `docs/audits/max-ratchet-deniability-spec-2026-05-20.md` — 10/10
+  acceptance criteria.
+- `docs/audits/max-ratchet-v3-security-evidence-2026-05-20.md` — per-claim
+  test → measured outcome → numerical bound matrix per
+  `feedback_real_not_paperwork`.
+
+Carry-over: external cryptographic review (Cure53 / NCC / Trail of Bits)
+remains the standard pre-ship process.
+
+### Post-1.1.0 F-CLIENT-FACADE-1 MILESTONE 10/10 closure - 2026-05-19
+
+Closed F-CLIENT-FACADE-1 across 12 sub-sessions (1-10f):
+
+- session 1: WebSocket transport + mock gateway + 14 contract tests.
+- session 2: QUIC transport (quinn) + auto-fallback dispatcher + 17 tests.
+- session 3: `send_text` wired end-to-end through `GatewayConnection`.
+- session 4: `fetch_inbox` wired via `IncomingMessage` envelope drain.
+- session 5: real MLS group create + add_member.
+- session 6 / 6c: `cloud_sync_history` 3-of-5 unwrap + Welcome
+  distribution + Cloud at-rest dual-write.
+- session 7: SecretChat sealed-sender envelope wrap/unwrap.
+- session 8a / 8b / 8c1-3: on-demand KT self-monitor + 3-of-5 witness
+  threshold + `SignedEpochRoot` production wire codec.
+- session 9 / 9a-9f: `rotate_identity_full` HW-callback orchestration +
+  KT identity rotation wire codec + atomic keystore slot swap.
+- session 10 / 10a-10f: TURN allocation + DTLS / SRTP keying +
+  SFrame multi-party media + state-machine transitions + webrtc-srtp
+  Context wire-up at facade + `initiate_device_transfer`
+  HW-signing+publish orchestration.
+
+Integration contract documented at `docs/integration/gateway-svc-contract.md`.
+Public FFI bootstrap remains gated on real platform attestation,
+mobile bridges, and server deployment integration (separate milestone).
+
+### Post-1.1.0 PhD-B Pass 5 remediation closure - 2026-05-19
+
+Closed 18 PhD-B Pass 5 findings across 20 commits on `main` between
+`471e7928` and `23eda73a`:
+
+- 4 CRITICAL ship-blockers (F-1 Shamir Lagrange / F-2 server-side OPRF /
+  F-3 R23 honest naming / F-FFI-2 session-handle pattern).
+- 5 HIGH findings (F-4 R21 FROST 3-of-5 / F-MLS-1 compile-time gate on
+  `UmbrellaXWingProvider` / F-CLIENT-HW-1 + F-IDENT-1 + F-IDENT-2 hw
+  bootstrap path closes M-FINAL-1).
+- 6 formal-model tautologies in `mls_ed25519.spthy`,
+  `kt_v1_self_monitoring.spthy`, `kt_v2_self_monitoring.spthy`,
+  `sframe_rfc9605.spthy`, `downgrade_resistance.spthy`, and
+  `type_safe_enforcement.spthy` replaced with substantive multi-rule
+  correspondence lemmas.
+- 3 dudect measurement-artifact findings closed via bounded-pool
+  pattern at sub-100 ns sites; F-DUDECT-HKDF-BORDERLINE-1 methodology
+  documented in `docs/audits/dudect-saturation-methodology-2026-05-19.md`.
+
+M-FINAL-1 from the 2026-05-18 independent review is therefore closed.
+`ClientCore.identity` is `Option<Arc<IdentityKey>>` and the hw bootstrap
+path no longer materialises ephemeral identity_sk. Consolidated report:
+`docs/audits/phd-b-pass5-remediation-2026-05-19.md`.
+
+### Post-1.1.0 PhD-B Round 7 discovery merge - 2026-05-18
+
+Round 7 PhD-B audit landed:
+
+- New crate `umbrella-discovery` (~5000 LoC) — OPRF-PSI for phone-number
+  intersection and `@username → device_pubkey` lookup, both with KT bind
+  via `umbrella-kt::verify_inclusion`.
+- Threshold 3-of-5 across Sealed Servers (reuses `umbrella-oprf` round-2
+  attack-tested primitive).
+- Per-query anonymous-id derivation through HKDF.
+- Client-side rate-limit + nonce-replay guard.
+- 38 D-series attack-regression sub-tests across 8 files.
+- Tamarin model `discovery.spthy` (5 main lemmas + 1 exists-trace).
+- Wire-contract spec `docs/spec/discovery-integration.md` (229 LoC).
+
+Workspace baseline 2080 → 2179 release-mode tests.
+
 ### Post-1.1.0 PhD-B six-round audit closure - 2026-05-18
 
 Audit:
@@ -28,7 +136,7 @@ Audit:
   v1.2.x removal.
 - Workspace baseline now 2080 release-mode tests (+103 vs 1977 pre-round-6).
 
-Consolidated summary: `docs/audits/ROUND-1-TO-6-SUMMARY.md`.
+Consolidated summary: `docs/audits/ROUND-1-TO-7-SUMMARY.md`.
 
 ### Post-1.1.0 memory hygiene hardening - 2026-05-16
 
@@ -165,6 +273,114 @@ Security:
 
 ## Русский
 
+### Max Ratchet v3 после 1.1.0 — 2026-05-20
+
+Добавлен default-on слой агрессивного DH + 5-минутный таймер rekey +
+post-quantum расширение каждый третий commit + SPQR HMAC отрицаемая
+аутентификация поверх каждой v3 группы Umbrella.
+
+Реализация в `crates/umbrella-mls/src/max_ratchet/` (модули
+`config.rs`, `counter.rs`, `timer.rs`, `spqr.rs`, `group.rs`,
+`state.rs`, `envelope.rs`). Wire format — in-band v3 маркер `0xFF`
+внутри `ClientPayload::SendMessage.ciphertext`; обратная read-совместимость
+с существующими v2 читателями; изменений в proto gateway-svc не требуется.
+
+Покрытие:
+
+- 36 unit-тестов в модулях max_ratchet.
+- 10 baseline + 5 active-mode integration-тестов в
+  `crates/umbrella-client/tests/facade_max_ratchet_v3.rs`.
+- 6 PQ integration-тестов (реальная X-Wing combine интеграция в SPQR
+  keying) в `crates/umbrella-mls/tests/test_max_ratchet_pq_real.rs`.
+- 5 proptest property-based fuzz-тестов + 5.67M libFuzzer итераций
+  в `crates/umbrella-fuzz/fuzz/fuzz_targets/max_ratchet_envelope_*.rs`.
+- Criterion benchmarks Apple M2: 27 μs baseline encrypt, 140 μs
+  force_rekey, 0.26 μs SPQR HMAC; итог max_ratchet 167.36 μs.
+- Tamarin формальные модели для SPQR deniability + aggressive DH PCS
+  (Task 5 PhD-B): `crates/umbrella-formal-verification/models/
+  spqr_deniability.spthy` + `aggressive_dh_pcs.spthy`.
+- Локальная dudect 1M-sample constant-time проверка для `verify_hmac`
+  (|t|=0.000 perfect на Apple M2 single-thread; Task 4 PhD-B).
+- Forward-secrecy Tamarin лемма в `aggressive_dh_pcs.spthy`.
+
+Спецификация и доказательства:
+
+- `docs/audits/max-ratchet-deniability-spec-2026-05-20.md` — 10/10
+  acceptance criteria.
+- `docs/audits/max-ratchet-v3-security-evidence-2026-05-20.md` —
+  таблица per-claim test → measured outcome → numerical bound по
+  правилу `feedback_real_not_paperwork`.
+
+Carry-over: внешний крипто-аудит (Cure53 / NCC / Trail of Bits)
+остаётся стандартным pre-ship шагом.
+
+### Закрытие F-CLIENT-FACADE-1 MILESTONE 10/10 после 1.1.0 — 2026-05-19
+
+F-CLIENT-FACADE-1 закрыт по 12 под-сессиям (1-10f):
+
+- сессия 1: WebSocket-транспорт + mock gateway + 14 contract-тестов.
+- сессия 2: QUIC-транспорт (quinn) + auto-fallback + 17 тестов.
+- сессия 3: `send_text` сквозной через `GatewayConnection`.
+- сессия 4: `fetch_inbox` через дренаж `IncomingMessage` конвертов.
+- сессия 5: реальная MLS group create + add_member.
+- сессии 6 / 6c: `cloud_sync_history` 3-of-5 unwrap + Welcome
+  distribution + Cloud at-rest dual-write.
+- сессия 7: SecretChat sealed-sender wrap/unwrap.
+- сессии 8a / 8b / 8c1-3: on-demand KT self-monitor + 3-of-5
+  witness-порог + `SignedEpochRoot` production wire codec.
+- сессии 9 / 9a-9f: `rotate_identity_full` HW-callback orchestration +
+  KT identity rotation wire codec + атомарный swap keystore слотов.
+- сессии 10 / 10a-10f: TURN allocation + DTLS / SRTP keying +
+  SFrame multi-party media + state-machine transitions +
+  webrtc-srtp Context wire-up в facade + `initiate_device_transfer`
+  HW-signing+publish orchestration.
+
+Контракт интеграции описан в `docs/integration/gateway-svc-contract.md`.
+Публичный FFI-запуск остаётся закрыт до реальной платформенной
+проверки, мобильных мостов и серверной интеграции (отдельный milestone).
+
+### Закрытие PhD-B Pass 5 remediation после 1.1.0 — 2026-05-19
+
+Закрыто 18 находок PhD-B Pass 5 за 20 коммитов в `main` между
+`471e7928` и `23eda73a`:
+
+- 4 CRITICAL ship-блокера (F-1 Lagrange Шамир / F-2 серверный OPRF /
+  F-3 R23 честное naming / F-FFI-2 session-handle паттерн).
+- 5 HIGH (F-4 R21 FROST 3-of-5 / F-MLS-1 compile-time gate на
+  `UmbrellaXWingProvider` / F-CLIENT-HW-1 + F-IDENT-1 + F-IDENT-2
+  hw bootstrap закрывает M-FINAL-1).
+- 6 формальных моделей с tautological леммами заменены на substantive
+  multi-rule correspondence: `mls_ed25519.spthy`,
+  `kt_v1_self_monitoring.spthy`, `kt_v2_self_monitoring.spthy`,
+  `sframe_rfc9605.spthy`, `downgrade_resistance.spthy`,
+  `type_safe_enforcement.spthy`.
+- 3 dudect measurement-artifact находки закрыты bounded-pool
+  паттерном на sub-100 ns сайтах; F-DUDECT-HKDF-BORDERLINE-1
+  методология задокументирована в
+  `docs/audits/dudect-saturation-methodology-2026-05-19.md`.
+
+M-FINAL-1 из независимого review 2026-05-18 поэтому закрыт.
+`ClientCore.identity` теперь `Option<Arc<IdentityKey>>`, эфемерный
+identity_sk на hw bootstrap пути не материализуется. Сводный отчёт:
+`docs/audits/phd-b-pass5-remediation-2026-05-19.md`.
+
+### Слияние раунда 7 «discovery» после 1.1.0 — 2026-05-18
+
+Раунд 7 PhD-B аудит влит:
+
+- Новый крейт `umbrella-discovery` (~5000 LoC) — OPRF-PSI для
+  пересечения телефонных номеров и поиска `@username → device_pubkey`,
+  оба с KT-bind через `umbrella-kt::verify_inclusion`.
+- Порог 3-из-5 через Sealed Servers (реиспользует `umbrella-oprf`
+  раунда 2).
+- Per-query anonymous-id вывод через HKDF.
+- Client-side rate-limit + nonce-replay guard.
+- 38 D-series attack-регрессионных под-тестов в 8 файлах.
+- Tamarin модель `discovery.spthy` (5 main + 1 exists-trace).
+- Спецификация wire-контракта `docs/spec/discovery-integration.md`.
+
+Базовая линия рабочей области 2080 → 2179 release-mode тестов.
+
 ### Закрытие PhD-B аудита из шести раундов после 1.1.0 - 2026-05-18
 
 Аудит:
@@ -193,7 +409,7 @@ Security:
 - Базовая линия рабочей области теперь 2080 release-mode тестов
   (плюс 103 теста к 1977 базовой линии до раунда 6).
 
-Сводный отчёт: `docs/audits/ROUND-1-TO-6-SUMMARY.md`.
+Сводный отчёт: `docs/audits/ROUND-1-TO-7-SUMMARY.md`.
 
 ### Гигиена памяти после 1.1.0 - 2026-05-16
 

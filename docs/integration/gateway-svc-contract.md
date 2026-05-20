@@ -1,11 +1,13 @@
 # Gateway-svc Integration Contract
 
-**Status:** Draft v0.0.1 (2026-05-19, sourced via read-only
-inspection of `rust_1mlrd` HEAD).
+**Status:** v0.0.1 implemented (2026-05-19 draft; F-CLIENT-FACADE-1
+sessions 1-10f wired this contract end-to-end into
+`crates/umbrella-client/src/transport/` and the chat / call /
+identity-rotation / device-transfer facades).
 **Source repositories:** `Umbrella Protocol` (client side, this
 repo) ↔ `rust_1mlrd` (backend, separate repo).
-**Audience:** authors of `crates/umbrella-client/src/transport/`
-HTTP transports + F-CLIENT-FACADE-1 closure session leads.
+**Audience:** authors maintaining `crates/umbrella-client/src/transport/`
+HTTP transports + the facade closure surface.
 **Reading direction:** read-only from `rust_1mlrd`; this contract
 extracts what the client side needs to know to interoperate. No
 backend changes proposed in this document.
@@ -255,9 +257,10 @@ WebTunnel). The QUIC + WebSocket transports documented here
 operate INSIDE that tunnel — the gateway itself does not need
 to know which tunnel the client used.
 
-Initial F-CLIENT-FACADE-1 closure sessions focus on the
-QUIC + WebSocket transports against a directly-reachable
-gateway. Tunnel integration is a later milestone.
+F-CLIENT-FACADE-1 closure sessions 1-10f implemented the QUIC +
+WebSocket transports against a directly-reachable gateway. Tunnel
+integration (anti-DPI obfuscation stack) is a later milestone outside
+the closure.
 
 ## 8. Versioning and evolution
 
@@ -276,12 +279,11 @@ gateway. Tunnel integration is a later milestone.
   (already used in `rust_1mlrd/crates/proto-gen` — same
   artifact should be re-used by the client side).
 
-## 9. Mock server harness (planned)
+## 9. Mock server harness (implemented)
 
-The F-CLIENT-FACADE-1 closure will add a `wiremock`-driven mock
-gateway at
+F-CLIENT-FACADE-1 session 1 added a mock gateway at
 `crates/umbrella-client/tests/mock_gateway/` simulating the
-endpoints described above. Tests will exercise:
+endpoints described above. Tests exercise:
 
 - Subprotocol negotiation (offer `umx.pb.v1, umx.v1`;
   verify gateway selects `umx.pb.v1`).

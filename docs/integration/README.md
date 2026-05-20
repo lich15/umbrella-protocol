@@ -56,20 +56,32 @@ method at `crates/umbrella-client/src/facade/` returns a Block
 requires implementing the facade methods against real transports.
 
 After the Pass 5 remediation series (2026-05-19), F-CLIENT-FACADE-1
-is reclassified as a Block 7.4 engineering milestone, not a
-security finding. The closure plan is decomposed across follow-up
-sessions:
+was reclassified as a Block 7.4 engineering milestone (not a security
+finding) and **closed across 12 sub-sessions** (commits on `main`
+between session 1 and `9417096b` for session 10f / MILESTONE 10/10):
 
-1. WebSocket transport implementation (`umx.pb.v1` Protobuf
-   subprotocol).
-2. QUIC transport implementation (`umx-quic-v1` ALPN) with
-   auto-fallback to WebSocket.
-3. Contract tests against a `wiremock` mock gateway.
-4. Per-facade wire-up (`send_mls_text`, `receive`, `create_group`,
-   `cloud_sync_history`, etc.).
+1. session 1 — WebSocket transport (`umx.pb.v1` Protobuf
+   subprotocol) + mock gateway + 14 contract tests.
+2. session 2 — QUIC transport (`umx-quic-v1` ALPN via `quinn`) with
+   auto-fallback to WebSocket + 17 contract tests.
+3. session 3 — `send_text` wired through `GatewayConnection`.
+4. session 4 — `fetch_inbox` wired via `IncomingMessage` envelope drain.
+5. session 5 — real MLS group create + add_member.
+6. session 6 / 6c — `cloud_sync_history` 3-of-5 unwrap + Welcome
+   distribution + Cloud at-rest dual-write.
+7. session 7 — SecretChat sealed-sender envelope wrap/unwrap.
+8. sessions 8a / 8b / 8c1-3 — on-demand KT self-monitor + 3-of-5
+   witness threshold + `SignedEpochRoot` production wire codec.
+9. sessions 9 / 9a-9f — identity rotation HW-callback orchestration +
+   atomic keystore slot swap + KT identity rotation wire codec.
+10. sessions 10 / 10a-10f — TURN allocation + DTLS / SRTP keying +
+    SFrame multi-party media + state-machine transitions + webrtc-srtp
+    `Context` wire-up at facade + `initiate_device_transfer`
+    HW-signing+publish orchestration.
 
-The contract documented here is the technical foundation for
-those sessions.
+The contract documented here is the implemented surface; public FFI
+bootstrap remains gated on external platform attestation, mobile
+bridges, and real server deployment integration (separate milestone).
 
 ## Related Pass 5 remediation references
 
@@ -129,20 +141,33 @@ honest-gap находку: каждый facade-метод `CloudChat` и
 Block 7.2 заглушку (`Ok(MessageId([0u8; 16]))`). Закрытие
 требует реализации facade-методов против реальных транспортов.
 
-После remediation-серии Pass 5 (2026-05-19), F-CLIENT-FACADE-1
-переклассифицирована как Block 7.4 engineering milestone, а
-не security-находка. План закрытия разбит на follow-up сессии:
+После remediation-серии Pass 5 (2026-05-19) F-CLIENT-FACADE-1
+переклассифицирована как Block 7.4 engineering milestone (не
+security-находка) и **закрыта по 12 под-сессиям** (коммиты в `main`
+между сессией 1 и `9417096b` для сессии 10f / MILESTONE 10/10):
 
-1. Реализация WebSocket-транспорта (`umx.pb.v1` Protobuf
-   subprotocol).
-2. Реализация QUIC-транспорта (`umx-quic-v1` ALPN) с
-   auto-fallback на WebSocket.
-3. Контракт-тесты против `wiremock` mock-шлюза.
-4. Wire-up per-фасад (`send_mls_text`, `receive`, `create_group`,
-   `cloud_sync_history` и т.д.).
+1. сессия 1 — WebSocket-транспорт (`umx.pb.v1` Protobuf subprotocol)
+   + mock gateway + 14 contract-тестов.
+2. сессия 2 — QUIC-транспорт (`umx-quic-v1` ALPN через `quinn`) с
+   auto-fallback на WebSocket + 17 contract-тестов.
+3. сессия 3 — `send_text` сквозной через `GatewayConnection`.
+4. сессия 4 — `fetch_inbox` через дренаж `IncomingMessage`.
+5. сессия 5 — реальная MLS group create + add_member.
+6. сессии 6 / 6c — `cloud_sync_history` 3-of-5 unwrap + Welcome
+   distribution + Cloud at-rest dual-write.
+7. сессия 7 — SecretChat sealed-sender wrap/unwrap.
+8. сессии 8a / 8b / 8c1-3 — on-demand KT self-monitor + 3-of-5
+   witness-порог + `SignedEpochRoot` production wire codec.
+9. сессии 9 / 9a-9f — identity rotation с HW-callback orchestration +
+   атомарный swap keystore слотов + KT identity rotation wire codec.
+10. сессии 10 / 10a-10f — TURN allocation + DTLS / SRTP keying +
+    SFrame multi-party media + state-machine transitions + webrtc-srtp
+    `Context` wire-up в facade + `initiate_device_transfer`
+    HW-signing+publish orchestration.
 
-Документированный здесь контракт — техническое основание для
-этих сессий.
+Документированный здесь контракт — реализованная поверхность; публичный
+FFI-запуск остаётся закрыт до внешней платформенной проверки, мобильных
+мостов и серверной интеграции (отдельный milestone).
 
 ## Связанные ссылки Pass 5 remediation
 

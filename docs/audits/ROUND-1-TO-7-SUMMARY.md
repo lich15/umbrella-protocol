@@ -1,8 +1,9 @@
 # PhD-B Audit Rounds 1-7 — Consolidated Summary
 
-**Status:** Rounds 1-6 CLOSED — merged into `main` on 2026-05-18 via PR #6,
-commit `84b4d576`. Round 7 single-session audit landed on branch
-`audit/phd-b-discovery-2026-05-18` on 2026-05-18; awaiting PR review.
+**Status:** Rounds 1-7 CLOSED — rounds 1-6 merged into `main` on 2026-05-18
+via PR #6 commit `84b4d576`; round 7 (discovery) merged subsequently. The
+`umbrella-discovery` crate is present on `main`. Pass 5 remediation
+(2026-05-19) closed M-FINAL-1 plus the other 17 Pass 5 findings.
 **Branches under audit:** `audit/phd-b-hybrid-pq-2026-05-19` (rounds 1-6),
 `audit/phd-b-discovery-2026-05-18` (round 7).
 **Codebase under audit:** Umbrella Protocol 1.1.0.
@@ -141,11 +142,11 @@ branch; key deliverables:
 
 | ID            | Severity | Title                                                              | Status                  |
 |---------------|----------|--------------------------------------------------------------------|-------------------------|
-| M-FINAL-1     | MAJOR    | `ClientCore::new_with_hw_callback` still calls `IdentitySeed::generate` | Disclosed; v1.2.x track |
+| M-FINAL-1     | MAJOR    | `ClientCore::new_with_hw_callback` still calls `IdentitySeed::generate` | **CLOSED via Pass 5 commit `e7b034ff` (F-CLIENT-HW-1)** — `core.identity` is `Option<Arc<IdentityKey>>` and `None` on hw path |
 | MINOR-1       | MINOR    | `r6_zeroize_lldb_target` build needs `--features ml-kem`            | Documented              |
 | MINOR-2       | MINOR    | R8 SQLite inspection not re-run in review session                   | Re-run instructions add |
-| MINOR-3       | MINOR    | R23 5-registry test is a toy HashMap model                          | Clarified in report     |
-| MINOR-4       | MINOR    | `unlock_with_pin` XOR-combines shares (placeholder)                 | Honestly disclosed      |
+| MINOR-3       | MINOR    | R23 5-registry test is a toy HashMap model                          | **CLOSED via Pass 5 commit `f68c6fa6` (F-3) — test renamed `decision_logic_*` with honest disclaimer** |
+| MINOR-4       | MINOR    | `unlock_with_pin` XOR-combines shares (placeholder)                 | **CLOSED via Pass 5 commit `456ffe7f` (F-1) — Shamir 3-of-5 Lagrange interpolation over curve25519 GF(q)** |
 | MINOR-5       | MINOR    | FFI `OnboardingHandle` only exposes `mock_with_pin_root`             | Production wiring TBD   |
 
 ### Round 7 (discovery: PSI + @username) — `D-*` (D-1..D-8 threat-model rows)
@@ -321,21 +322,20 @@ not an A-level pass.
 
 ## 9. Roadmap to v1.2.x
 
-Tracked carry-overs from rounds 1-6:
+Tracked carry-overs from rounds 1-6 (status updated post Pass 5 remediation):
 
-| Item                                                                               | Source       | Target  |
-|------------------------------------------------------------------------------------|--------------|---------|
-| M-FINAL-1: refactor `core.identity` to `Option<Arc<IdentityKey>>` or public-only verifying-key variant; remove `IdentitySeed::generate` in `new_with_hw_callback` | M-FINAL-1   | v1.2.x  |
-| MINOR-4: replace XOR-combine of server shares with real Shamir / FROST share combining in `unlock_with_pin` | MINOR-4     | v1.2.x  |
-| MINOR-5: expose `OnboardingHandle::with_http_cluster` constructor through FFI       | MINOR-5     | v1.2.x  |
-| F-PHD-PQ-3: extend `downgrade_resistance.spthy` with forked-transcript active-MITM modelling | Round 1   | Stage 11 |
-| F-PHD-PQ-5: import draft-connolly-cfrg-xwing-kem-10 Appendix C vectors 2..n         | Round 1     | v1.2.0  |
-| F-PHD-PQ-6: pull NIST CSRC ACVP test vector set for ML-KEM-768                      | Round 1     | v1.2.0  |
-| F-PHD-PQ-8: file libcrux-ml-kem improvement issue documenting 1-2 ns valid-vs-invalid ct timing signal | Round 1   | upstream |
-| F-PHD-RP-R3-1: SLSA L3 attestation + cargo-vet/crev review pass + reproducible-build verification gate | Round 2   | v1.2.0  |
-| Real-device runtime tests for HW keystore (iOS + Android) — replace toy `r5_hw_callback_wiring` integration with on-real-device run | Round 5 closure | v1.2.x  |
-| R23: replace toy `HashMap<&str, [u8; 32]>` 5-registry model with real Sigstore + CT verification pipeline | MINOR-3   | v1.2.x  |
-| FFI `OnboardingHandle::with_http_cluster` exposed                                   | MINOR-5     | v1.2.x  |
+| Item                                                                               | Source       | Target  | Status |
+|------------------------------------------------------------------------------------|--------------|---------|--------|
+| M-FINAL-1: refactor `core.identity` to `Option<Arc<IdentityKey>>` or public-only verifying-key variant; remove `IdentitySeed::generate` in `new_with_hw_callback` | M-FINAL-1   | v1.2.x  | **CLOSED via Pass 5 commit `e7b034ff` (F-CLIENT-HW-1)** |
+| MINOR-4: replace XOR-combine of server shares with real Shamir / FROST share combining in `unlock_with_pin` | MINOR-4     | v1.2.x  | **CLOSED via Pass 5 commit `456ffe7f` (F-1)** — Shamir 3-of-5 Lagrange interpolation |
+| MINOR-5: expose `OnboardingHandle::with_http_cluster` constructor through FFI       | MINOR-5     | v1.2.x  | Open |
+| F-PHD-PQ-3: extend `downgrade_resistance.spthy` with forked-transcript active-MITM modelling | Round 1   | Stage 11 | **CLOSED via Pass 5 commit `c0082bc2` (F-DOWNGRADE-MODEL-1)** — substantive multi-rule correspondence lemmas |
+| F-PHD-PQ-5: import draft-connolly-cfrg-xwing-kem-10 Appendix C vectors 2..n         | Round 1     | v1.2.0  | Open |
+| F-PHD-PQ-6: pull NIST CSRC ACVP test vector set for ML-KEM-768                      | Round 1     | v1.2.0  | Open |
+| F-PHD-PQ-8: file libcrux-ml-kem improvement issue documenting 1-2 ns valid-vs-invalid ct timing signal | Round 1   | upstream | Open |
+| F-PHD-RP-R3-1: SLSA L3 attestation + cargo-vet/crev review pass + reproducible-build verification gate | Round 2   | v1.2.0  | Open |
+| Real-device runtime tests for HW keystore (iOS + Android) — replace toy `r5_hw_callback_wiring` integration with on-real-device run | Round 5 closure | v1.2.x  | Open (operational milestone) |
+| R23: replace toy `HashMap<&str, [u8; 32]>` 5-registry model with real Sigstore + CT verification pipeline | MINOR-3   | v1.2.x  | **CLOSED via Pass 5 commit `f68c6fa6` (F-3)** — test renamed `decision_logic_*` with honest disclaimer; real Sigstore + CT pipeline remains an operational deployment item, not a code carry-over |
 
 The next planned audit round is **round 7 — discovery (search by
 @username and phone-number contact discovery via OPRF/PSI)**. See
@@ -384,9 +384,10 @@ closure claims are honest; tests reflect real attacker scenarios.
 
 ## 12. Round 7 completion (discovery, PSI + @username)
 
-**ON BRANCH; AWAITING PR.** Round 7 single-session PhD-B audit completed
-2026-05-18 on `audit/phd-b-discovery-2026-05-18`. All 7 acceptance gate
-items PASS:
+**MERGED to `main`.** Round 7 single-session PhD-B audit completed
+2026-05-18 on `audit/phd-b-discovery-2026-05-18` and was subsequently
+merged into `main`; the `umbrella-discovery` crate is part of the
+workspace. All 7 acceptance gate items PASS:
 
 1. PSI 500 vs 1M intersection: 73/500 correct, 0 plaintext bytes in 32-KB
    request + 96-KB three-server response.
@@ -414,11 +415,19 @@ Branch commit log: see closure report §9.
 
 ## 13. Verdict — rounds 1-7 combined
 
-**Rounds 1-6 MERGED to `main`.** **Round 7 ON BRANCH awaiting PR.**
+**Rounds 1-7 MERGED to `main`.**
 
-Combined: 0 BLOCKER, 1 MAJOR (M-FINAL-1 from rounds 1-6, disclosed; round 7
-adds no new MAJOR), 3 MINOR rounds 1-6 + 0 MINOR round 7. Approximately
-38 D-series attack regression sub-tests in round 7 alone, on top of
-~30 attack/closure tests from rounds 1-6. The seven-round audit chain
-is technically sound; closure claims are honest; tests reflect real
-attacker scenarios.
+Combined: 0 BLOCKER, 0 MAJOR (M-FINAL-1 closed via Pass 5 commit
+`e7b034ff`), 1 open MINOR (MINOR-5 — FFI `OnboardingHandle` with_http_cluster);
+the remaining 2 MINORs from rounds 1-6 are closed via Pass 5
+(`f68c6fa6` for MINOR-3 / `456ffe7f` for MINOR-4). Approximately 38
+D-series attack regression sub-tests in round 7 alone, on top of ~30
+attack/closure tests from rounds 1-6 + 8 R20-R27 numerical-evidence
+tests. The seven-round audit chain is technically sound; closure
+claims are honest; tests reflect real attacker scenarios.
+
+Post-round-7 work on `main`: F-CLIENT-FACADE-1 MILESTONE 10/10 closure
+(12 sub-sessions wiring transports + MLS facades + KT + calls + device
+transfer), Max Ratchet v3 implementation (10/10 acceptance + dudect
++ Tamarin), and Tasks 1-5 PhD-B follow-up. These are post-1.1.0
+release-ceremony work tracked in the repository-root `CHANGELOG.md`.

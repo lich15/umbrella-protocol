@@ -340,10 +340,13 @@ NOT paperwork flag toggle — real cryptographic effect
 
 ## Not yet covered (carry-over к external audit phase)
 
-- **Constant-time dudect:** SPQR `compute_hmac` / `verify_hmac` локально через 1M-sample dudect run. Upstream RustCrypto `subtle::ConstantTimeEq` audited; локальная CI integration — carry-over.
-- **Tamarin/ProVerif formal model:** spec §3.4 deniability + aggressive DH PCS как Tamarin lemmas. Formal proof — carry-over к v3.1 либо external audit phase.
 - **End-to-end Android/iOS device benchmarks:** Apple M2 numbers captured (167.36 μs full overhead); production-grade Snapdragon 8 Gen 4 + 4 Gen 1 device benches — carry-over к pre-ship CI infrastructure.
 - **External cryptographic review:** Cure53 / NCC / Trail of Bits — standard post-implementation pre-ship process.
+
+(Закрыто в последующих коммитах: SPQR `verify_hmac` 1M-sample dudect
+constant-time evidence — Task 4 PhD-B, commit `b1b9968a`, см. §4.1
+выше; Tamarin модели для SPQR deniability + aggressive DH PCS — Task 5
+PhD-B, commits `7337afc7` + `87db7ad1`, см. §2.1 + §3.1 выше.)
 
 ## Cross-references
 

@@ -1,9 +1,9 @@
 # Max Ratchet + Deniable Authentication — Specification v3.0
 
-**Дата:** 2026-05-20
-**Статус:** Initial implementation merged (Tasks 1-5 of 8); facade integration + benchmarks pending follow-up sessions
+**Дата:** 2026-05-20 (initial), refreshed 2026-05-20 reconciliation pass
+**Статус:** Implementation 10/10 acceptance closed 2026-05-20 (см. §8). Tasks 4-5 PhD-B (dudect 1M-sample evidence + Tamarin formal models для SPQR deniability + aggressive DH PCS) закрыты отдельной серией коммитов 2026-05-21+ (`b1b9968a`, `7337afc7`, `87db7ad1`). Single remaining pre-ship step — внешний крипто-аудит (Cure53 / NCC / Trail of Bits).
 **Scope:** Default-on максимальный режим ratchet + отрицаемая аутентификация для всех пользователей Umbrella v3
-**Implementation:** `crates/umbrella-mls/src/max_ratchet/` (5 файлов, ~600 строк Rust + 36 тестов)
+**Implementation:** `crates/umbrella-mls/src/max_ratchet/` (7 файлов — `config.rs`, `counter.rs`, `timer.rs`, `spqr.rs`, `group.rs`, `state.rs`, `envelope.rs`; ~700 строк Rust + 36 unit tests + 10 baseline integration + 5 active-mode security claim + 6 PQ integration + 5 proptest)
 
 ---
 
@@ -409,9 +409,13 @@ Carry-over: Android/iOS device-native benchmarks через NDK toolchain (vne s
 - [x] Real X-Wing integration в provider layer (Task 4.7 — closed 2026-05-20, см. §7.1)
 - [x] CloudChat / SecretChat использует MaxRatchetState (Task 6 — closed 2026-05-20, см. §7.2)
 - [x] Criterion benchmarks с реальными числами (Task 7 — closed 2026-05-20, см. §5.1)
+- [x] Local dudect 1M-sample constant-time evidence для `verify_hmac` (Task 4 PhD-B — closed 2026-05-21, см. evidence matrix §4.1)
+- [x] Tamarin formal models для SPQR deniability + aggressive DH PCS (Task 5 PhD-B — closed 2026-05-21, см. evidence matrix §2.1 + §3.1)
 - [ ] External audit (рекомендуется: Cure53, NCC, Trail of Bits)
 
-**10 of 10 implementation acceptance criteria achieved.** Только external audit остаётся (post-ship process).
+**10 of 10 implementation acceptance criteria achieved**, плюс **2/2 PhD-B
+follow-up tasks** (dudect 1M + Tamarin) закрыты. Только external audit
+остаётся (post-ship process).
 
 ---
 

@@ -8,6 +8,12 @@ posed by `docs/audits/phd-b-final-consolidation-2026-05-18.md` §6.
 **Outcome:** SHIP for v2.0.0 with documented methodology limit; monthly
 cross-platform saturation cron added; no further code change required.
 
+> **Versioning note (2026-05-20 reconciliation):** "v2.0.0" in this
+> document refers to the intended next ship label. The most recent
+> git tag is still `v1.1.0`; the `v2.0.0` ceremony (tag + cosign
+> signing) is a separate administrative step tracked under the
+> repository-root `CHANGELOG.md` and the post-1.1.0 hardening series.
+
 ---
 
 ## 1. Question

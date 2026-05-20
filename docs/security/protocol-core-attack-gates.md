@@ -1,6 +1,6 @@
 # Боевые атакующие ворота ядра протокола
 
-Дата: 2026-05-18 (обновлено после PR #6 — добавлены строки R20-R27 + MlockedSecret)
+Дата: 2026-05-18 (обновлено после PR #6 — добавлены строки R20-R27 + MlockedSecret); reconciliation refresh 2026-05-20 добавил Max Ratchet v3 строки (aggressive DH PCS, idle window, deniability, codec robustness, PQ resistance)
 
 ## Русский
 
@@ -66,6 +66,19 @@
 | Чаты | PIN-экран не блокирует системные сервисы (Siri, AutoFill, ...) | закрыто тестом | `attack_r25_system_services_disabled`: 7/7 ограничений применены |
 | Транспорт | DPI-блокировка единственного канала делает unlock невозможным | закрыто тестом | `attack_r26_dos_fallback_channels`: TLS → AltIP → Tor → Mixnet fallback chain |
 | Производительность | сервер в критическом пути отправки сообщения | закрыто тестом | `attack_r27_speed_local_operations`: 1000 сообщений 42 ns/msg, 0 server RPC; локальная доставка через Sealed Sender |
+| Max Ratchet v3 | compromised chain key at epoch E расшифровывает все следующие messages в том же epoch | закрыто тестом | `forward_secrecy_aggressive_dh_each_send_in_new_epoch` — 10 sends → 10 distinct epochs (`umbrella-client/tests/facade_max_ratchet_v3.rs`); strict monotonic +1 per send |
+| Max Ratchet v3 | idle window attack — adversary с compromised chain key ждёт паузы > 5 мин чтобы декриптовать | закрыто тестом | `idle_window_attack_defence_timer_rekey_advances_epoch_after_pause` — 90s idle → force_rekey по таймеру → новая epoch |
+| Max Ratchet v3 | court adversary attribute MAC к specific party (non-deniability) | закрыто тестом | `spqr_deniability_either_party_can_forge_mac_over_arbitrary_payload` — bit-equal MAC из обеих сторон с shared epoch_secret; 0 bits информации об авторстве |
+| Max Ratchet v3 | SPQR HMAC integrity — tampered MAC либо ciphertext принимается | закрыто тестом | `end_to_end_alice_send_bob_decrypt_with_spqr_verify` Phase 9-10 — 1-bit flip → 100% rejection; `Mac::verify_slice` constant-time через `subtle::ConstantTimeEq` |
+| Max Ratchet v3 | timing channel на `verify_hmac` (bit-by-bit MAC recovery, Lawson 2009) | закрыто тестом | dudect 1M samples Apple M2: site 10 verify_hmac \|t\|=0.000 CLEAN (3 consecutive runs), strict 4.5 PASS; FIPS 180-4 SHA-256 + `subtle::ConstantTimeEq` без short-circuit |
+| Max Ratchet v3 | v3 envelope decoder panic на adversarial input | закрыто тестом | `v3_envelope_decoder_robust_to_adversarial_inputs` (8 sub-cases) + 256-iter proptest + libFuzzer 5.67M iterations: 0 panics, 0 overflows |
+| Max Ratchet v3 | quantum adversary breaks X25519 (Shor) → восстанавливает session keys | закрыто тестом | `pq_triggered_mac_differs_from_classical_only_mac_on_same_ciphertext` (`umbrella-mls/tests/test_max_ratchet_pq_real.rs`) — реально X-Wing combine (X25519 ∥ ML-KEM-768) меняет SPQR HMAC keying |
+| Max Ratchet v3 | v3 wire format ломает v2 readers либо collide с MLS ProtocolVersion | закрыто тестом | `reject_wrong_marker_legacy_mls_path` — v3 marker `0xFF` collision-free с MLS ProtocolVersion (first byte `0x01`); 460+ existing v2 tests pass unchanged |
+| Discovery (Round 7) | сервер узнаёт plaintext phone из blinded queries | закрыто тестом | OPRF RFC 9497 blinding + Tamarin lemma `server_never_learns_plaintext_phone`; `attack_d1_plaintext_phone_leak` 4 sub-tests; 0 substring matches в 32 KB request/response |
+| Discovery (Round 7) | сервер коррелирует @username queries от одного клиента | закрыто тестом | per-query anon-id HKDF + fresh CSPRNG salt + Tamarin `anon_id_unlinkable_across_queries`; `attack_d2_query_correlation`: 1000 queries → 0 collisions |
+| Discovery (Round 7) | сервер возвращает поддельный device_pubkey для запрошенного handle (silent swap) | закрыто тестом | RFC 6962 KT inclusion proof + pinned epoch root + Tamarin `kt_bind_prevents_silent_swap`; `attack_d3_kt_bind_silent_swap`: 4 sub-cases |
+| Discovery (Round 7) | 4-of-5 server cluster collusion восстанавливает address book | закрыто тестом | threshold 3-of-5 + OPRF SUF + 3 attack regression tests `attack_d4_cluster_collusion` |
+| Discovery (Round 7) | OPRF response replay | закрыто тестом | server nonce + `NonceReplayGuard` (1000 rolling) + Tamarin `replay_protection_enforced`; `attack_d5_oprf_replay`: 5 sub-tests |
 
 ## Внешний реестр
 

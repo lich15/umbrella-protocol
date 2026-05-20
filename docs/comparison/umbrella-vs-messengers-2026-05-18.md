@@ -44,7 +44,7 @@
 | Video Call | Yes | umbrella-calls + WebRTC через relay-only ICE (no P2P в secret mode) |
 | Phoneless | Yes | Round-7 PSI discovery работает без phone number |
 | Decentralized or Federated | Federated | Sealed Servers 3-of-5 cluster — semi-federated; не fully P2P |
-| Open Spec | Yes | docs/specifications/SPEC-01...SPEC-13 публичны |
+| Open Spec | Yes | публичные PDF протокола в корне репозитория (`UmbrellaX_protocol_public_en.pdf` + `UmbrellaX_protocol_public_ru.pdf`) + публичный wire-контракт `docs/spec/discovery-integration.md` + публичные audit-отчёты в `docs/audits/`; нормативные SPEC-01..SPEC-13 — приватные рабочие документы вне публичного набора |
 | IETF | Yes | RFC 9420 MLS, RFC 9605 SFrame, RFC 9180 HPKE, RFC 9497 OPRF, RFC 8439 ChaCha20-Poly1305, RFC 5869 HKDF, RFC 6962 Merkle, RFC 8032 Ed25519, RFC 9106 Argon2 |
 | Introduced | 2024 | Development started; v1.0.0 release-ready 2026 |
 

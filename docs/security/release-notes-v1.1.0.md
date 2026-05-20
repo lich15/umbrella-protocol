@@ -4,6 +4,25 @@
 
 [English](#english) | [Русский](#русский)
 
+> **Note (2026-05-20 reconciliation):** these notes describe the
+> **v1.1.0 release baseline** as tagged on 2026-05-15. Post-1.1.0
+> hardening additions on `main` — Pass 5 remediation closure (18
+> findings closed across 20 commits), F-CLIENT-FACADE-1 MILESTONE 10/10
+> closure (WebSocket + QUIC transports, MLS facades, KT self-monitor
+> + 3-of-5 witness threshold, identity rotation, calls, device
+> transfer), Round 7 discovery merge (umbrella-discovery crate),
+> Max Ratchet v3 implementation (aggressive DH + 5-min timer rekey
+> + PQ extend + SPQR HMAC deniable auth), and Tasks 1-5 PhD-B
+> closures — are tracked in the repository-root `CHANGELOG.md`. The
+> next release-tag ceremony is a separate administrative step.
+>
+> **Замечание (2026-05-20):** эти notes описывают **базовую линию
+> v1.1.0**, тегированную 2026-05-15. Post-1.1.0 hardening в `main` —
+> Pass 5 remediation closure, F-CLIENT-FACADE-1 MILESTONE 10/10
+> closure, Round 7 discovery merge, Max Ratchet v3, Tasks 1-5 PhD-B
+> closures — записаны в корневом `CHANGELOG.md`. Очередной
+> release-tag ceremony — отдельный административный шаг.
+
 ## English
 
 Version 1.1.0 is a security-hardening release. It makes the public repository

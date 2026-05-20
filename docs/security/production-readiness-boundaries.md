@@ -7,11 +7,15 @@ Summary status: [`current-status.md`](current-status.md).
 Сводный статус: [`current-status.md`](current-status.md).
 
 Audit chain: PhD-B rounds 1-6 closed on 2026-05-18 (PR #6, commit
-`84b4d576`). Consolidated summary:
-[`../audits/ROUND-1-TO-6-SUMMARY.md`](../audits/ROUND-1-TO-6-SUMMARY.md).
-Independent reviewer verdict: 0 BLOCKER + 1 MAJOR (M-FINAL-1, tracked for
-v1.2.x removal of `ClientCore::new_with_hw_callback` ephemeral seed
-synthesis) + 3 MINOR. Workspace baseline: 2080 release-mode tests.
+`84b4d576`); round 7 (discovery) merged subsequently. Consolidated
+summary:
+[`../audits/ROUND-1-TO-7-SUMMARY.md`](../audits/ROUND-1-TO-7-SUMMARY.md).
+Independent reviewer verdict on rounds 1-6: 0 BLOCKER + 1 MAJOR
+(M-FINAL-1 — since closed via Pass 5 commit `e7b034ff`) + 3 MINOR.
+Workspace baseline post-round-7: 2179+ release-mode tests; the
+post-1.1.0 series on `main` (F-CLIENT-FACADE-1 10/10 + Pass 5
+remediation + Max Ratchet v3 + Tasks 1-5 PhD-B closures) adds further
+tests to that floor.
 
 ## English
 

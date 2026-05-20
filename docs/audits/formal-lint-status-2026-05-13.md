@@ -17,7 +17,7 @@ not part of the committed public docs.
 | Rustdoc | `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace --all-features --locked` | 0 | Passed with documentation warnings denied. |
 | Formal readiness | `bash scripts/verify-formal-production-readiness.sh` | 0 | Passed: ProVerif `oprf_ristretto255` and the listed Tamarin downgrade lemmas verified. |
 | ProVerif models | `bash scripts/verify-proverif-models.sh` | 0 | Passed: 4 ProVerif models verified. The script now falls back to `opam exec` when `proverif` is not directly in `PATH`. |
-| Tamarin models | `bash scripts/verify-tamarin-models.sh` | 0 | Passed: 9 Tamarin models verified. |
+| Tamarin models | `bash scripts/verify-tamarin-models.sh` | 0 | Passed (snapshot 2026-05-13: 9 Tamarin models verified). Post-1.1.0 the model count grew to 14: `aggressive_dh_pcs.spthy`, `spqr_deniability.spthy`, `discovery.spthy`, `sealed_servers_threshold_3of5.spthy`, `sealed_servers_threshold_universal.spthy` added across Round 7, Pass 5 remediation, and Max Ratchet v3 Task 5 PhD-B. |
 | Dylint | `DYLINT_RUSTFLAGS="-D warnings" cargo dylint --all --path crates/umbrella-lints --workspace -- --ignore-rust-version --all-targets --all-features --locked` | 0 | Passed after loading the local lint crate through `--path`; findings are treated as errors. |
 
 Important boundaries:
@@ -50,7 +50,7 @@ Important boundaries:
 | Документация Rust | `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace --all-features --locked` | 0 | Прошло, предупреждения документации запрещены. |
 | Общая формальная проверка | `bash scripts/verify-formal-production-readiness.sh` | 0 | Прошло: ProVerif `oprf_ristretto255` и Tamarin-леммы про downgrade подтверждены. |
 | Модели ProVerif | `bash scripts/verify-proverif-models.sh` | 0 | Прошло: 4 модели ProVerif подтверждены. Скрипт теперь использует `opam exec`, если `proverif` не найден напрямую в `PATH`. |
-| Модели Tamarin | `bash scripts/verify-tamarin-models.sh` | 0 | Прошло: 9 моделей Tamarin подтверждены. |
+| Модели Tamarin | `bash scripts/verify-tamarin-models.sh` | 0 | Прошло (снимок 2026-05-13: 9 моделей Tamarin). После 1.1.0 количество моделей выросло до 14: `aggressive_dh_pcs.spthy`, `spqr_deniability.spthy`, `discovery.spthy`, `sealed_servers_threshold_3of5.spthy`, `sealed_servers_threshold_universal.spthy` добавлены в раунде 7, Pass 5 remediation и Max Ratchet v3 Task 5 PhD-B. |
 | Dylint | `DYLINT_RUSTFLAGS="-D warnings" cargo dylint --all --path crates/umbrella-lints --workspace -- --ignore-rust-version --all-targets --all-features --locked` | 0 | Прошло после загрузки местного крейта правил через `--path`; найденные проблемы считаются ошибками. |
 
 Границы:
