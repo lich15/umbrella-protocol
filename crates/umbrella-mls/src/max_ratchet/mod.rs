@@ -43,6 +43,7 @@
 
 pub mod config;
 pub mod counter;
+pub mod envelope;
 pub mod group;
 pub mod spqr;
 pub mod state;

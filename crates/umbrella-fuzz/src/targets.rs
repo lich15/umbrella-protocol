@@ -24,6 +24,13 @@ use umbrella_oprf::{
 use umbrella_padding::{strip_padding, strip_padding_zeroizing};
 use umbrella_server_blind_postman::parse_mls_envelope;
 
+// Task 3 closure 2026-05-21: max_ratchet v3 envelope codec moved из umbrella-client в
+// umbrella-mls (sibling других max_ratchet модулей); umbrella-fuzz уже dep umbrella-mls
+// под feature `pq` — никакой transitive umbrella-client unification ошибки.
+// Task 3 (2026-05-21): v3 envelope codec now in `umbrella_mls::max_ratchet::envelope`.
+#[cfg(feature = "pq")]
+use umbrella_mls::max_ratchet::envelope::{encode_v3, try_decode_v3, SPQR_MAC_LEN, V3_MIN_LEN};
+
 /// Fuzz-таргет: парсинг MLSMessage в server-blind-postman.
 /// Fuzz target: MLSMessage parsing in server-blind-postman.
 ///
@@ -47,6 +54,81 @@ pub fn fuzz_parse_mls_envelope(data: &[u8]) {
 pub fn fuzz_strip_padding(data: &[u8]) {
     let _ = strip_padding(data);
     let _ = strip_padding_zeroizing(data);
+}
+
+/// Fuzz-таргет: max_ratchet v3 envelope decode — `try_decode_v3(data)` не паникует на
+/// произвольных attacker-controlled байтах. Закрывает Task 3 carry-over из max_ratchet
+/// v3 spec 2026-05-21: proptest даёт 1280 random inputs, libFuzzer с coverage-guided
+/// mutation расширяет до millions iterations с persistent corpus.
+///
+/// Инвариант: для любого `data` функция возвращает либо `Some(V3Decoded)` либо `None`
+/// без panic / unwrap failure / arithmetic overflow.
+///
+/// Доступен только под feature `pq` потому что `umbrella-mls` opt-in dep в umbrella-fuzz.
+///
+/// Fuzz target: max_ratchet v3 envelope decoder must not panic on arbitrary
+/// attacker-controlled bytes. Coverage-guided libFuzzer extension of the proptest harness
+/// (1280 random inputs → millions of iterations + persistent corpus). For any `data` the
+/// function returns `Some(V3Decoded)` or `None` — no panics, no unwrap failures, no
+/// arithmetic overflow. Gated on feature `pq` (umbrella-mls is an opt-in dep).
+#[cfg(feature = "pq")]
+pub fn fuzz_max_ratchet_envelope_decode(data: &[u8]) {
+    let _ = try_decode_v3(data);
+}
+
+/// Fuzz-таргет: max_ratchet v3 envelope encode→decode roundtrip property. Для любого
+/// достаточно длинного `data` extracted в commit + ciphertext + mac slots,
+/// `encode_v3(...) → try_decode_v3(...)` должен returning `Some(V3Decoded)` с
+/// commit_bytes / ciphertext_bytes / spqr_mac equal to inputs. Coverage-guided libFuzzer
+/// проверяет invariant против millions of structural permutations (length boundaries,
+/// edge ciphertext sizes, marker byte patterns).
+///
+/// Инвариант: encode → decode roundtrip bit-exact для structural fields. Это closure
+/// гарантирует что любое incoming v3 message (созданное honest sender'ом через encode_v3)
+/// будет decode'ить успешно — никаких lost messages из-за codec drift.
+///
+/// Доступен только под feature `pq` потому что `umbrella-mls` opt-in dep в umbrella-fuzz.
+///
+/// Fuzz target: encode_v3 → try_decode_v3 roundtrip property. Gated on feature `pq`.
+#[cfg(feature = "pq")]
+pub fn fuzz_max_ratchet_envelope_roundtrip(data: &[u8]) {
+    // Минимальный input: V3_MIN_LEN = 40 bytes (marker + version + commit_len + ct_len + mac).
+    // На меньших данных нечего split — silently return (libFuzzer continues mutation).
+    // Минимальный input: V3_MIN_LEN = 40 bytes; меньшего нечего split.
+    if data.len() < V3_MIN_LEN {
+        return;
+    }
+    // Эвристика split: first byte controls commit_len (mod data range), 32 байта на mac.
+    let commit_len = (data[0] as usize) % data.len().min(256);
+    let rest = &data[1..];
+    if rest.len() < commit_len + SPQR_MAC_LEN {
+        return;
+    }
+    let commit_bytes = &rest[..commit_len];
+    let ct_and_mac = &rest[commit_len..];
+    let ct_split = ct_and_mac.len() - SPQR_MAC_LEN;
+    let ciphertext_bytes = &ct_and_mac[..ct_split];
+    let mut mac = [0u8; SPQR_MAC_LEN];
+    mac.copy_from_slice(&ct_and_mac[ct_split..]);
+
+    let commit_opt = if commit_len > 0 {
+        Some(commit_bytes)
+    } else {
+        None
+    };
+
+    let encoded = encode_v3(commit_opt, ciphertext_bytes, Some(&mac));
+    let decoded =
+        try_decode_v3(&encoded).expect("encoded bundle must decode — roundtrip invariant");
+
+    // Structural roundtrip checks.
+    assert_eq!(
+        decoded.commit_bytes.unwrap_or(&[]),
+        commit_bytes,
+        "commit roundtrip"
+    );
+    assert_eq!(decoded.ciphertext_bytes, ciphertext_bytes, "ct roundtrip");
+    assert_eq!(decoded.spqr_mac, mac, "mac roundtrip");
 }
 
 /// Fuzz-таргет: AEAD ChaCha20-Poly1305 decrypt malleability — на любых байтах вернёт либо

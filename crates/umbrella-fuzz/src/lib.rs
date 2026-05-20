@@ -42,6 +42,15 @@ pub use targets::{
     fuzz_unwrap_share_parse, fuzz_verify_inclusion, fuzz_wrapped_key_parse,
 };
 
+// Task 3 carry-over closure 2026-05-21: max_ratchet v3 envelope fuzz targets — feature-
+// gated `pq` потому что codec moved в `umbrella-mls::max_ratchet::envelope` (umbrella-mls
+// — opt-in dep в umbrella-fuzz через feature `pq`).
+//
+// Task 3 (2026-05-21): max_ratchet v3 envelope fuzz harnesses — gated on feature `pq`
+// (codec lives in umbrella-mls which is an opt-in dep).
+#[cfg(feature = "pq")]
+pub use targets::{fuzz_max_ratchet_envelope_decode, fuzz_max_ratchet_envelope_roundtrip};
+
 // Этап 9, блок 9.6 — PQ wire-format fuzz harnesses (feature-gated).
 // Stage 9, block 9.6 — PQ wire-format fuzz harnesses (feature-gated).
 //

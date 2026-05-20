@@ -59,6 +59,14 @@ umbrella-backup = { workspace = true }
 umbrella-calls = { workspace = true }
 umbrella-identity = { workspace = true }
 
+# Task 3 carry-over closure 2026-05-21: max_ratchet v3 envelope codec moved в
+# `umbrella-mls::max_ratchet::envelope` (sibling других max_ratchet модулей); harnesses
+# `fuzz_max_ratchet_envelope_decode` + `fuzz_max_ratchet_envelope_roundtrip` импортируют
+# его через existing `umbrella-mls = { optional = true, ... }` под feature `pq`. Никакой
+# transitive umbrella-client unification не нужен.
+# Task 3 (2026-05-21): v3 envelope codec lives in umbrella-mls; existing umbrella-mls
+# optional dep already covers fuzz target imports under feature `pq`.
+
 # Для синтеза валидного QR/handshake state в Secret device-transfer fuzz targets.
 # For synthesising a valid QR/handshake state in Secret device-transfer fuzz targets.
 ed25519-dalek = { workspace = true }

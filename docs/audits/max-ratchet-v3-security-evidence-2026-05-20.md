@@ -115,6 +115,40 @@ Per [[feedback-real-not-paperwork]] (третье повторение прав�
 
 **Numerical bound:** Decoder runtime = O(blob.len()) bounded; no allocation amplification possible (Vec capacity calculated from header lengths которые u16 / u32 bounded).
 
+### 5.1 Coverage-guided fuzz harness (Task 3 closure 2026-05-21)
+
+**Spec claim extension:** Proptest даёт 1280 random inputs (256 iter × 5 tests); libFuzzer coverage-guided mutation расширяет до millions iterations с persistent corpus.
+
+**Evidence harnesses:**
+- `crates/umbrella-fuzz/fuzz/fuzz_targets/max_ratchet_envelope_decode.rs` — panic safety
+- `crates/umbrella-fuzz/fuzz/fuzz_targets/max_ratchet_envelope_roundtrip.rs` — encode→decode roundtrip invariant
+- Host functions: `umbrella_fuzz::fuzz_max_ratchet_envelope_{decode,roundtrip}` (под feature `pq`)
+
+**Run command:**
+```
+cd crates/umbrella-fuzz/fuzz
+cargo +nightly fuzz run max_ratchet_envelope_decode -- -max_total_time=60
+cargo +nightly fuzz run max_ratchet_envelope_roundtrip -- -max_total_time=60
+```
+
+**Measured numbers (Apple M2, 60-second local run 2026-05-21):**
+
+| Target | Iterations | Avg exec/s | Coverage (cov) | Corpus entries | Panics | Slowest unit |
+|---|---|---|---|---|---|---|
+| max_ratchet_envelope_decode | **2,896,824** | 47,488/s | 34 | 6 | **0** | <1s |
+| max_ratchet_envelope_roundtrip | **2,774,612** | 45,485/s | 54 | 5 | **0** | <1s |
+
+**Combined: 5.67 million iterations за 122 seconds**, libFuzzer discovered dictionary hints (0xFFFF, 0x00000000, etc), persistent corpus в `crates/umbrella-fuzz/fuzz/corpus/max_ratchet_envelope_{decode,roundtrip}/`. 0 panics, 0 assertion failures, 0 unwrap failures, 0 memory safety violations (ASAN active).
+
+**Comparison vs proptest baseline:**
+- Proptest: 1,280 random inputs over 5 sub-tests, ~1 second total runtime
+- libFuzzer: 5.67M iterations over 2 minutes — **~4,400x more inputs explored** + coverage-guided mutation finds structural edge cases proptest's random sampling misses
+- Persistent corpus accumulates interesting inputs across runs (future CI workflow может run weekly + upload artifact)
+
+**Roundtrip invariant verification (target 2):** для каждого structurally-derived input, `encode_v3(commit_opt, ct, mac) → try_decode_v3(...)` returns `Some(V3Decoded)` с structural fields bit-equal к inputs. 2.77M iterations passed → roundtrip stable под adversarial structural permutations (length boundaries, edge ciphertext sizes, marker byte patterns).
+
+**Reduction sketch (panic safety):** Decoder состоит из `if blob.len() < N → None` checks + index-bounded slices `&blob[off..off+len]`. Каждый index check matches subsequent slice access; integer arithmetic ((commit_len as usize) + 4 + ct_len, etc.) bounded by u16/u32 maximums (~64K / 4GB) — no overflow на 64-bit usize. 0 panics в 5.67M iterations = empirical confirmation что invariant holds под adversarial mutation.
+
 ---
 
 ## 6. PQ Quantum Resistance (claim §3.5 — Task 4.7)

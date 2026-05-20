@@ -292,3 +292,24 @@ path = "fuzz_targets/ml_kem_decapsulate_fuzz.rs"
 test = false
 doc = false
 bench = false
+
+# Task 3 carry-over closure 2026-05-21 — max_ratchet v3 envelope codec coverage-guided
+# fuzz harnesses. `max_ratchet_envelope_decode` exercises panic safety на arbitrary
+# attacker bytes (extension proptest 1280 inputs → millions iterations + persistent
+# corpus). `max_ratchet_envelope_roundtrip` proves encode → decode roundtrip invariant.
+#
+# Task 3 (2026-05-21) — max_ratchet v3 envelope codec coverage-guided harnesses extending
+# proptest 1280-input harness with libFuzzer's millions-iteration + persistent corpus.
+[[bin]]
+name = "max_ratchet_envelope_decode"
+path = "fuzz_targets/max_ratchet_envelope_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "max_ratchet_envelope_roundtrip"
+path = "fuzz_targets/max_ratchet_envelope_roundtrip.rs"
+test = false
+doc = false
+bench = false
