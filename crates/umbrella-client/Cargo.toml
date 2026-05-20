@@ -251,6 +251,17 @@ hex = { workspace = true }
 # via prost-build. Generated output lives in `$OUT_DIR/umbrellax.gateway.v1.rs`
 # and is `include!`'d from `src/transport/proto_ws.rs`.
 prost-build = { workspace = true }
+# Vendored `protoc` binary — устраняет зависимость от системного `protoc`
+# в CI runner'ах (GitHub Actions macOS / Ubuntu без preinstalled
+# protobuf-compiler). prost-build требует `protoc` в PATH; vendored
+# дистрибутив поставляет precompiled binary для всех major host
+# triples (Apache-2.0 / MIT, проходит cargo-deny licenses).
+# Vendored `protoc` binary — removes the system-`protoc` dependency
+# for CI runners (GitHub Actions macOS / Ubuntu without preinstalled
+# protobuf-compiler). prost-build requires `protoc` in PATH; the
+# vendored crate ships a precompiled binary for every major host
+# triple (Apache-2.0 / MIT, passes cargo-deny licenses).
+protoc-bin-vendored = "3.0"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
