@@ -8,7 +8,7 @@ posed by `docs/audits/phd-b-final-consolidation-2026-05-18.md` §6.
 **Outcome:** SHIP for v3.0.0 with documented methodology limit; monthly
 cross-platform saturation cron added; no further code change required.
 
-> **Versioning note (2026-05-20 reconciliation, refresh 2):** This decision document was originally written with v3.0.0 as the intended next ship label; that label was skipped (workspace jumped 1.1.0 → 3.0.0, commit `1ee8dbb3` ceremony 2026-05-20, tag `v3.0.0`). All mentions of «v3.0.0» в этом документе should be read as «v3.0.0» — the substantive decision (SHIP with documented methodology limit + monthly cron) applies к v3.0.0.
+> **Versioning note (2026-05-20 reconciliation, refresh 2):** This decision document was originally written with **v2.0.0** as the intended next ship label; that label was skipped (workspace jumped 1.1.0 → 3.0.0 — commit `1ee8dbb3` ceremony 2026-05-20, tag `v3.0.0`). The 2026-05-20 reconciliation pass rewrote all body mentions of «v2.0.0» → «v3.0.0»; the substantive decision (SHIP with documented methodology limit + monthly cross-platform saturation cron) applies unchanged к v3.0.0.
 
 ---
 
