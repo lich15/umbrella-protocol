@@ -1,5 +1,10 @@
 # PhD-style Recon-Breadth Security Audit Implementation Plan
 
+> **Historical note (2026-05-20 reconciliation):** This plan documents the pre-v3.0.0 implementation track for PhD recon-breadth audit. The work has been superseded by:
+> - 5-pass PhD-B sweep (Pass 1-5 closed 2026-05-18 + 2026-05-19)
+>
+> The unchecked task boxes below are planning text, not the current active task list. Current status lives в `docs/security/current-status.md` + `docs/audits/ROUND-1-TO-7-SUMMARY.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Run a recon-breadth active red-team audit across the 21 Umbrella

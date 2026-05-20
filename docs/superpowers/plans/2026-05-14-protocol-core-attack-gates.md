@@ -1,5 +1,10 @@
 # Protocol Core Attack Gates Implementation Plan
 
+> **Historical note (2026-05-20 reconciliation):** This plan documents the pre-v3.0.0 implementation track for protocol core attack gates. The work has been superseded by:
+> - Pass 5 ship-blocker closure + `docs/security/protocol-core-attack-gates.md`
+>
+> The unchecked task boxes below are planning text, not the current active task list. Current status lives в `docs/security/current-status.md` + `docs/audits/ROUND-1-TO-7-SUMMARY.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** довести ядро Umbrella Protocol до честных боевых атакующих ворот: повтор, подмена, откат, плохой адрес, тестовая платформа и смешение версий либо отвергаются кодом, либо явно записаны как неоткрытая граница выпуска.

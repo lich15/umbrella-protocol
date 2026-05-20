@@ -1,5 +1,10 @@
 # Максимальный храповик + полная отрицаемость — план реализации
 
+> **Historical note (2026-05-20 reconciliation):** This plan documents the pre-v3.0.0 implementation track for Max Ratchet v3 deniability layer. The work has been superseded by:
+> - Max Ratchet v3 10/10 (`docs/audits/max-ratchet-deniability-spec-2026-05-20.md`; commits `5907a9cd`, `bd17c571`, `078234b5`, `2b56ba7a`, `b1b9968a`, `7337afc7`, `87db7ad1`, `11805ba9`, `41f1cf71`, `62505ba4`)
+>
+> The unchecked task boxes below are planning text, not the current active task list. Current status lives в `docs/security/current-status.md` + `docs/audits/ROUND-1-TO-7-SUMMARY.md`.
+
 > **Для исполнителя:** ОБЯЗАТЕЛЬНЫЙ SUB-SKILL: superpowers:subagent-driven-development (рекомендуется) либо superpowers:executing-plans для выполнения плана по задачам. Шаги используют синтаксис чекбоксов (`- [ ]`).
 
 **Цель:** включить ВСЕМ пользователям Umbrella по умолчанию максимальный режим криптографической защиты — DH-храповик на каждое сообщение, таймер 5 минут, post-quantum ratchet каждые 3 сообщения, полная post-quantum отрицаемая аутентификация поверх MLS.

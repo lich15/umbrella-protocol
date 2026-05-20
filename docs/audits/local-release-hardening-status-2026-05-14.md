@@ -1,5 +1,7 @@
 # Локальные выпускные ворота Umbrella Protocol
 
+> **Annotation (2026-05-20 reconciliation):** The «27 fuzz targets» counts на lines 39, 43 в этом отчёте reflect the snapshot at 2026-05-14. **Current HEAD `938d1a89` has 29 fuzz targets** — 2 added 2026-05-20 для Max Ratchet v3: `max_ratchet_envelope_decode.rs` + `max_ratchet_envelope_roundtrip.rs`. Other counts (0 panics, miri pass) are still accurate for the 27 targets in scope at audit time.
+
 Дата: 2026-05-14
 
 Этот документ фиксирует только локальные проверки. Он не заменяет настоящие

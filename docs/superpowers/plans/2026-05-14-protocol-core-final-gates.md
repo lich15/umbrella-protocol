@@ -1,5 +1,10 @@
 # Protocol Core Final Gates Implementation Plan
 
+> **Historical note (2026-05-20 reconciliation):** This plan documents the pre-v3.0.0 implementation track for protocol core final gates. The work has been superseded by:
+> - F-CLIENT-FACADE-1 MILESTONE 10/10 (commit `9417096b`)
+>
+> The unchecked task boxes below are planning text, not the current active task list. Current status lives в `docs/security/current-status.md` + `docs/audits/ROUND-1-TO-7-SUMMARY.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** закрыть оставшиеся локально доказуемые боевые ворота ядра Umbrella Protocol, не открывая публичный FFI-клиент, не подключая сервер и не делая финальную проверку реальных Apple/Android устройств.

@@ -1,5 +1,7 @@
 # R12 — Live Ratchet-State Capture Attempt
 
+> **CLOSURE BANNER (2026-05-20 reconciliation):** F-PHD-DC-R12-1 + F-PHD-DC-R12-2 documented в этом artifact are **CLOSED** as of Round 5 closure + Pass 5 remediation. `Key::from_slice` stack-copy hardened via `Box<[u8; N]>` heap refactor + `MlockedSecret<T>` wrapping; application_secret live extraction prevented through HW keystore wire-up (R10-1 closure). This file remains as an archive of the round-4 audit findings at the time of writing.
+
 **Date:** 2026-05-19 (round-4 PhD-B device-capture audit)
 **Status:** CRITICAL — application_secret extractable while session live;
 **HIGH** — stack copy survives drop.

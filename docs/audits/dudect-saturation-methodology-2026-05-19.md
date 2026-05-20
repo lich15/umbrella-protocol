@@ -1,18 +1,14 @@
-# Dudect Saturation Methodology — Decision Document v2.0.0
+# Dudect Saturation Methodology — Decision Document v3.0.0
 
 **Date:** 2026-05-19
 **Scope:** Resolution of the F-DUDECT-HKDF-BORDERLINE-1 saturation question
 posed by `docs/audits/phd-b-final-consolidation-2026-05-18.md` §6.
 **Author:** Kirill Abramov (independent verification +
 `feedback_real_not_paperwork.md` measured-numbers requirement).
-**Outcome:** SHIP for v2.0.0 with documented methodology limit; monthly
+**Outcome:** SHIP for v3.0.0 with documented methodology limit; monthly
 cross-platform saturation cron added; no further code change required.
 
-> **Versioning note (2026-05-20 reconciliation):** "v2.0.0" in this
-> document refers to the intended next ship label. The most recent
-> git tag is still `v1.1.0`; the `v2.0.0` ceremony (tag + cosign
-> signing) is a separate administrative step tracked under the
-> repository-root `CHANGELOG.md` and the post-1.1.0 hardening series.
+> **Versioning note (2026-05-20 reconciliation, refresh 2):** This decision document was originally written with v3.0.0 as the intended next ship label; that label was skipped (workspace jumped 1.1.0 → 3.0.0, commit `1ee8dbb3` ceremony 2026-05-20, tag `v3.0.0`). All mentions of «v3.0.0» в этом документе should be read as «v3.0.0» — the substantive decision (SHIP with documented methodology limit + monthly cron) applies к v3.0.0.
 
 ---
 
@@ -27,7 +23,7 @@ bounded-pool closure pattern; the 100K post-closure smoke test reported
 1. Does the closure hold under increased sample budget (1M+)?
 2. Is the BORDERLINE signal a real subtle leak in
    `hmac::Hmac<sha2::Sha256>` upstream, or a measurement artifact?
-3. Should v2.0.0 ship with the existing closure, or escalate to
+3. Should v3.0.0 ship with the existing closure, or escalate to
    upstream investigation?
 
 This document answers all three based on independent verification with
@@ -168,7 +164,7 @@ divergence.
 
 ---
 
-## 5. SHIP decision for v2.0.0
+## 5. SHIP decision for v3.0.0
 
 **Verdict: SHIP.** Justification:
 
@@ -283,7 +279,7 @@ Linux x86_64 cross-platform reference: monthly cron via
 `dudect-saturation-1m-samples` containing `run.log` and
 `t-statistics.txt`.
 
-End of decision document. v2.0.0 ships with F-DUDECT-HKDF-BORDERLINE-1
+End of decision document. v3.0.0 ships with F-DUDECT-HKDF-BORDERLINE-1
 formally closed (commit 76947fc0) + methodology limit documented (this
 document) + monthly cross-platform tracking established (this
 document's reference workflow).

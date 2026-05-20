@@ -1,5 +1,7 @@
 # R10 — Hardware Keystore Integration Audit
 
+> **CLOSURE BANNER (2026-05-20 reconciliation):** F-PHD-DC-R10-1 (HW Keystore not wired) documented в этом artifact is **CLOSED** as of Round 5 closure + Pass 5 remediation: `PersistentKeyStoreCallback` trait wired через `ClientCore::new_with_hw_callback`; `HwBackedKeyStore` eliminates in-heap seed + identity_sk (commit `46784d1a`); `core.identity` is `Option<Arc<IdentityKey>>` and `None` on hw bootstrap path (commit `e7b034ff` F-CLIENT-HW-1 closes M-FINAL-1). This file remains as an archive of the round-4 audit findings at the time of writing.
+
 ## File enumeration
 
 iOS bridge (`examples/ios-harness/`):

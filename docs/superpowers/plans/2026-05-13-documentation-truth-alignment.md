@@ -1,5 +1,10 @@
 # Documentation Truth Alignment Implementation Plan
 
+> **Historical note (2026-05-20 reconciliation):** This plan documents the pre-v3.0.0 implementation track for documentation truth alignment (Phase 1 + Phase 2). The work has been superseded by:
+> - v3.0.0 reconciliation pass (`docs/superpowers/specs/2026-05-20-docs-code-full-reconciliation-design.md`)
+>
+> The unchecked task boxes below are planning text, not the current active task list. Current status lives в `docs/security/current-status.md` + `docs/audits/ROUND-1-TO-7-SUMMARY.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Привести все документы Umbrella Protocol к одной честной картине текущей боевой готовности, без ложных обещаний и без смешивания тестовых путей с боевыми.

@@ -1,5 +1,10 @@
 # Local Release Hardening Implementation Plan
 
+> **Historical note (2026-05-20 reconciliation):** This plan documents the pre-v3.0.0 implementation track for local release hardening. The work has been superseded by:
+> - Stage 9 closure + v3.0.0 ceremony (commit `1ee8dbb3`)
+>
+> The unchecked task boxes below are planning text, not the current active task list. Current status lives в `docs/security/current-status.md` + `docs/audits/ROUND-1-TO-7-SUMMARY.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** закрыть локальные выпускные ворота Umbrella Protocol без настоящих серверов и реальных устройств: формальные модели, fuzz, нагрузка, split-view, гонки, секреты и закрытый отказ недоделанных путей.

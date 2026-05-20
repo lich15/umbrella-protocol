@@ -1,5 +1,11 @@
 # R7 — Live Memory Extraction of identity_sk
 
+> **CLOSURE BANNER (2026-05-20 reconciliation):** The CRITICAL findings F-PHD-DC-R7-1 / R7-2 / R7-3 documented в этом artifact are **CLOSED** as of:
+> - Round 5 closure (`docs/audits/phd-b-device-capture-closure-2026-05-19.md`): R7-1, R7-2, R7-3 защищены через `HwBackedKeyStore` + `MlockedSecret<T>` + `IdentitySeed::Box<[u8; N]>` heap refactor;
+> - Pass 5 remediation (`docs/audits/phd-b-pass5-remediation-2026-05-19.md`): F-IDENT-1 + F-IDENT-2 commit `46784d1a`; F-CLIENT-HW-1 commit `e7b034ff` closes M-FINAL-1.
+>
+> This file remains as an archive of the round-4 audit findings at the time of writing.
+
 **Date:** 2026-05-19 (round-4 PhD-B device-capture audit)
 **Status:** CRITICAL — entropy + master_key extractable from live process memory.
 

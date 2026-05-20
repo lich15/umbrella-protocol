@@ -1,5 +1,7 @@
 # R9 — Swap-Out / Cold-Boot Analysis + R11 — mlock Audit
 
+> **CLOSURE BANNER (2026-05-20 reconciliation):** F-PHD-DC-R9-1 + F-PHD-DC-R11-1 documented в этом artifact are **CLOSED** as of Round 5 closure (`docs/audits/phd-b-device-capture-closure-2026-05-19.md`). `MlockedSecret<T>` was added в `crates/umbrella-crypto-primitives/src/mlocked.rs` and wired across the workspace (current HEAD has **182 MlockedSecret usages**). This file remains as an archive of the round-4 audit findings at the time of writing.
+
 ## R9 swap analysis on darwin (macOS 15.7.4 arm64, audit host)
 
 ### vm_stat output (snapshot at audit time)
