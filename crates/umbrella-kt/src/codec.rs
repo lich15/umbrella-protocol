@@ -147,7 +147,7 @@ pub fn decode_signed_epoch_root(bytes: &[u8]) -> Result<SignedEpochRoot> {
     let epoch = u64::from_be_bytes(
         bytes[cursor..cursor + 8]
             .try_into()
-            .expect("slice of length 8"),
+            .map_err(|_| KtError::InvalidSignedEpochRootWire("header_slice_len"))?,
     );
     cursor += 8;
 
@@ -158,14 +158,14 @@ pub fn decode_signed_epoch_root(bytes: &[u8]) -> Result<SignedEpochRoot> {
     let log_size = u64::from_be_bytes(
         bytes[cursor..cursor + 8]
             .try_into()
-            .expect("slice of length 8"),
+            .map_err(|_| KtError::InvalidSignedEpochRootWire("header_slice_len"))?,
     );
     cursor += 8;
 
     let timestamp_unix_millis = u64::from_be_bytes(
         bytes[cursor..cursor + 8]
             .try_into()
-            .expect("slice of length 8"),
+            .map_err(|_| KtError::InvalidSignedEpochRootWire("header_slice_len"))?,
     );
     cursor += 8;
 

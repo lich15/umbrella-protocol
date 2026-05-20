@@ -47,7 +47,25 @@ yanked = "deny"
 # Ignore advisories from this list with a mandatory reason. Every entry
 # requires quarterly re-evaluation in the process maturity review; stale
 # entries trip the `unused-ignored-advisory = "deny"` check.
-ignore = []
+ignore = [
+    # RUSTSEC-2023-0089 — `atomic-polyfill` unmaintained. Тянется через
+    # `heapless 0.7` (transitive dep of `frost-core` / `frost-ed25519`
+    # 3.0). Современный `heapless 0.8+` дроп'нул эту зависимость, но
+    # `frost-ed25519 3.0.0` (используется в `umbrella-threshold-identity`
+    # для FROST DKG round-6) ещё на `heapless 0.7`. Замена upstream
+    # требует мажорной версии FROST либо переписывания threshold-
+    # identity на альтернативный backend; carry-over к
+    # security/dependency-monitoring review.
+    # RUSTSEC-2023-0089 — `atomic-polyfill` unmaintained. Pulled in
+    # transitively via `heapless 0.7` (dep of `frost-core` /
+    # `frost-ed25519` 3.0). Modern `heapless 0.8+` dropped this
+    # dependency, but `frost-ed25519 3.0.0` (used by
+    # `umbrella-threshold-identity` for round-6 FROST DKG) is still on
+    # `heapless 0.7`. Upstream replacement requires a major FROST
+    # version bump or switching threshold-identity to a different
+    # backend; tracked under security/dependency-monitoring review.
+    "RUSTSEC-2023-0089",
+]
 
 # Сообщить, если запись в `ignore` больше не применима (advisory снят,
 # fixed version в lockfile). Защита от dead config.
@@ -121,6 +139,10 @@ skip = [
     { crate = "libcrux-intrinsics@0.0.6", reason = "latest openmls_rust_crypto 0.5.1 still pulls hpke-rs/libcrux-sha3 0.0.8; Umbrella PQ uses libcrux 0.0.9 to fix RUSTSEC-2026-0125/0126" },
     { crate = "libcrux-sha3@0.0.8", reason = "latest openmls_rust_crypto 0.5.1 still pulls hpke-rs/libcrux-sha3 0.0.8; no fixed openmls_rust_crypto release exists yet" },
     { crate = "libcrux-traits@0.0.6", reason = "latest openmls_rust_crypto 0.5.1 still pulls hpke-rs/libcrux-sha3 0.0.8; Umbrella PQ uses libcrux 0.0.9 to fix RUSTSEC-2026-0125/0126" },
+    { crate = "foldhash@0.1.5", reason = "transitive through hashbrown 0.15 in RustCrypto/Boring/Quinn stack; workspace itself does not depend on foldhash directly" },
+    { crate = "hash32@0.2.1", reason = "transitive through heapless 0.7 pulled by frost-ed25519 3.0 (umbrella-threshold-identity round-6 FROST DKG); modern heapless 0.8 uses hash32 0.3 but upstream FROST still on heapless 0.7" },
+    { crate = "hashbrown@0.14.5", reason = "transitive through openmls / RustCrypto stack; workspace uses hashbrown 0.15 via newer indexmap" },
+    { crate = "heapless@0.7.17", reason = "transitive through frost-ed25519 3.0 (umbrella-threshold-identity round-6 FROST DKG); modern heapless 0.8 dropped atomic-polyfill but FROST 3.0 still on 0.7" },
 ]
 
 # skip-tree — пропустить ВСЁ поддерево зависимостей под указанным crate.
