@@ -1,0 +1,134 @@
+maude tool: 'maude'
+ checking version: 3.5.1. OK.
+ checking installation: OK.
+[Theory umbrella_aggressive_dh_pcs] Theory loaded
+[Theory umbrella_aggressive_dh_pcs] Theory translated
+[Theory umbrella_aggressive_dh_pcs] Derivation checks started
+[Theory umbrella_aggressive_dh_pcs] Derivation checks ended
+[Theory umbrella_aggressive_dh_pcs] Theory closed
+[Saturating Sources] Step 1 (Max 5)
+[Saturating Sources] Done
+theory umbrella_aggressive_dh_pcs
+
+begin
+
+// Function signature and definition of the equational theory E
+
+functions: fst/1, h/1, pair/2, sdec/2, senc/2, snd/1
+equations:
+    fst(<x.1, x.2>) = x.1,
+    sdec(senc(x.1, x.2), x.2) = x.1,
+    snd(<x.1, x.2>) = x.2
+
+rule (modulo E) SetupEpoch0:
+   [ Fr( ~ek0 ) ]
+  --[
+  EpochEstablished( $sid, 'epoch_0', ~ek0 ),
+  ChainKeyDerived( $sid, 'epoch_0', ~ek0 )
+  ]->
+   [ !State( $sid, 'epoch_0', ~ek0 ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) ForceRekeyAdvance:
+   [ !State( $sid, prev_epoch, prev_ek ), Fr( ~fresh ) ]
+  --[
+  EpochAdvanced( $sid, prev_epoch, 'epoch_next', h(<prev_ek, ~fresh>) ),
+  ChainKeyDerived( $sid, 'epoch_next', h(<prev_ek, ~fresh>) ),
+  UsedFreshRandomness( ~fresh )
+  ]->
+   [ !State( $sid, 'epoch_next', h(<prev_ek, ~fresh>) ) ]
+
+  // loop breaker: [0]
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) SendApplicationMessage:
+   [ !State( $sid, epoch, ek ), In( m ) ]
+  --[ Encrypted( $sid, epoch, m, ek ) ]->
+   [ Out( <epoch, senc(m, ek)> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) RevealChainKey:
+   [ !State( $sid, epoch, ek ) ]
+  --[ RevealedChainKey( $sid, epoch, ek ) ]->
+   [ Out( ek ) ]
+
+  /* has exactly the trivial AC variant */
+
+lemma pcs_compromised_prev_epoch_does_not_reveal_new_epoch_messages:
+  all-traces
+  "∀ sid prev_epoch new_epoch new_ek m #i #j #l.
+    ((((EpochAdvanced( sid, prev_epoch, new_epoch, new_ek ) @ #i) ∧
+       (Encrypted( sid, new_epoch, m, new_ek ) @ #j)) ∧
+      (K( m ) @ #l)) ∧
+     (#i < #j)) ⇒
+    (((∃ #r. (RevealedChainKey( sid, new_epoch, new_ek ) @ #r) ∧ (#r < #l)) ∨
+      (∃ #k0. (K( m ) @ #k0) ∧ (#k0 < #j))) ∨
+     (∃ fresh #k1 #k2.
+       (UsedFreshRandomness( fresh ) @ #k1) ∧ (K( fresh ) @ #k2)))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ sid prev_epoch new_epoch new_ek m #i #j #l.
+  (EpochAdvanced( sid, prev_epoch, new_epoch, new_ek ) @ #i) ∧
+  (Encrypted( sid, new_epoch, m, new_ek ) @ #j) ∧
+  (K( m ) @ #l)
+ ∧
+  (#i < #j) ∧
+  (∀ #r. (RevealedChainKey( sid, new_epoch, new_ek ) @ #r) ⇒ ¬(#r < #l)) ∧
+  (∀ #k0. (K( m ) @ #k0) ⇒ ¬(#k0 < #j)) ∧
+  (∀ fresh #k1 #k2.
+    (UsedFreshRandomness( fresh ) @ #k1) ∧ (K( fresh ) @ #k2) ⇒ ⊥)"
+*/
+simplify
+by contradiction /* from formulas */
+
+lemma honest_per_message_advance_executable:
+  exists-trace
+  "∃ sid prev_epoch prev_ek new_epoch new_ek m #i #j #k.
+    ((((EpochEstablished( sid, prev_epoch, prev_ek ) @ #i) ∧
+       (EpochAdvanced( sid, prev_epoch, new_epoch, new_ek ) @ #j)) ∧
+      (Encrypted( sid, new_epoch, m, new_ek ) @ #k)) ∧
+     (#i < #j)) ∧
+    (#j < #k)"
+/*
+guarded formula characterizing all satisfying traces:
+"∃ sid prev_epoch prev_ek new_epoch new_ek m #i #j #k.
+  (EpochEstablished( sid, prev_epoch, prev_ek ) @ #i) ∧
+  (EpochAdvanced( sid, prev_epoch, new_epoch, new_ek ) @ #j) ∧
+  (Encrypted( sid, new_epoch, m, new_ek ) @ #k)
+ ∧
+  (#i < #j) ∧ (#j < #k)"
+*/
+simplify
+solve( !State( $sid, 'epoch_next', h(<prev_ek, ~fresh>) ) ▶₀ #k )
+  case ForceRekeyAdvance
+  solve( !State( $sid, 'epoch_0', prev_ek ) ▶₀ #j )
+    case SetupEpoch0
+    SOLVED // trace found
+  qed
+qed
+
+/* All wellformedness checks were successful. */
+
+/*
+Generated from:
+Tamarin version 1.12.0
+Maude version 3.5.1
+Git revision: UNKNOWN, branch: UNKNOWN
+Compiled at: 2026-05-06 19:40:31.002892 UTC
+*/
+
+end
+
+==============================================================================
+summary of summaries:
+
+analyzed: models/aggressive_dh_pcs.spthy
+
+  processing time: 0.12s
+  
+  pcs_compromised_prev_epoch_does_not_reveal_new_epoch_messages (all-traces): verified (2 steps)
+  honest_per_message_advance_executable (exists-trace): verified (4 steps)
+
+==============================================================================

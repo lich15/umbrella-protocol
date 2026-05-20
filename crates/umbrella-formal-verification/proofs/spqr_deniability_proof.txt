@@ -1,0 +1,186 @@
+maude tool: 'maude'
+ checking version: 3.5.1. OK.
+ checking installation: OK.
+[Theory umbrella_spqr_deniability] Theory loaded
+[Theory umbrella_spqr_deniability] Theory translated
+[Theory umbrella_spqr_deniability] Derivation checks started
+[Theory umbrella_spqr_deniability] Derivation checks ended
+[Theory umbrella_spqr_deniability] Theory closed
+[Saturating Sources] Step 1 (Max 5)
+[Saturating Sources] Done
+theory umbrella_spqr_deniability
+
+begin
+
+// Function signature and definition of the equational theory E
+
+functions: fst/1, h/1, hmac/2, pair/2, snd/1
+equations: fst(<x.1, x.2>) = x.1, snd(<x.1, x.2>) = x.2
+
+rule (modulo E) SetupEpoch:
+   [ Fr( ~es ) ]
+  --[
+  HasEpochSecret( 'Alice', ~es ), HasEpochSecret( 'Bob', ~es ),
+  EpochCreated( ~es )
+  ]->
+   [ !EpochAlice( $eid, ~es ), !EpochBob( $eid, ~es ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) AliceComputesMAC:
+   [ !EpochAlice( $eid, es ), In( m ) ]
+  --[ ComputedMAC( 'Alice', es, m, hmac(es, m) ), Authored( 'Alice', m )
+  ]->
+   [ Out( <m, hmac(es, m)> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) BobComputesMAC:
+   [ !EpochBob( $eid, es ), In( m ) ]
+  --[ ComputedMAC( 'Bob', es, m, hmac(es, m) ), Authored( 'Bob', m ) ]->
+   [ Out( <m, hmac(es, m)> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) VerifyMAC:
+   [ !EpochBob( $eid, es ), In( <m, expected_mac> ) ]
+  --[
+  Verified( 'Bob', es, m, expected_mac ), Eq( expected_mac, hmac(es, m) )
+  ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) RevealEpochSecret:
+   [ !EpochAlice( $eid, es ) ] --[ RevealedEpoch( es ) ]-> [ Out( es ) ]
+
+  /* has exactly the trivial AC variant */
+
+restriction Equality:
+  "∀ x y #i. (Eq( x, y ) @ #i) ⇒ (x = y)"
+  // safety formula
+
+  /*
+  expanded formula:
+  "∀ x y #i. (Eq( x, y ) @ #i) ⇒ (x = y)"
+  */
+
+lemma either_party_can_produce_arbitrary_mac:
+  exists-trace
+  "∃ es m mac #i #j #k.
+    (((EpochCreated( es ) @ #k) ∧
+      (ComputedMAC( 'Alice', es, m, mac ) @ #i)) ∧
+     (ComputedMAC( 'Bob', es, m, mac ) @ #j)) ∧
+    (¬(#i = #j))"
+/*
+guarded formula characterizing all satisfying traces:
+"∃ es m mac #i #j #k.
+  (EpochCreated( es ) @ #k) ∧
+  (ComputedMAC( 'Alice', es, m, mac ) @ #i) ∧
+  (ComputedMAC( 'Bob', es, m, mac ) @ #j)
+ ∧
+  ¬(#i = #j)"
+*/
+simplify
+solve( (#i < #j)  ∥ (#j < #i) )
+  case case_1
+  solve( ComputedMAC( 'Alice', ~es, m, mac ) @ #i )
+    case AliceComputesMAC
+    solve( !EpochAlice( $eid, ~es ) ▶₀ #i )
+      case SetupEpoch
+      solve( ComputedMAC( 'Bob', ~es, m, hmac(~es, m) ) @ #j )
+        case BobComputesMAC
+        solve( !EpochBob( $eid.1, ~es ) ▶₀ #j )
+          case SetupEpoch
+          SOLVED // trace found
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma epoch_secret_required_for_forgery:
+  all-traces
+  "∀ es m mac #i.
+    (Verified( 'Bob', es, m, mac ) @ #i) ⇒
+    ((∃ p #j. (ComputedMAC( p, es, m, mac ) @ #j) ∧ (#j < #i)) ∨
+     (∃ #r. (RevealedEpoch( es ) @ #r) ∧ (#r < #i)))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ es m mac #i.
+  (Verified( 'Bob', es, m, mac ) @ #i)
+ ∧
+  (∀ p #j. (ComputedMAC( p, es, m, mac ) @ #j) ⇒ ¬(#j < #i)) ∧
+  (∀ #r. (RevealedEpoch( es ) @ #r) ⇒ ¬(#r < #i))"
+*/
+simplify
+solve( !EpochBob( $eid, es ) ▶₀ #i )
+  case SetupEpoch
+  solve( !KU( hmac(~es, m) ) @ #vk.2 )
+    case AliceComputesMAC
+    by contradiction /* from formulas */
+  next
+    case BobComputesMAC
+    by contradiction /* from formulas */
+  next
+    case c_hmac
+    solve( !KU( ~es ) @ #vk.3 )
+      case RevealEpochSecret
+      by contradiction /* from formulas */
+    qed
+  qed
+qed
+
+lemma honest_authentication_executable:
+  exists-trace
+  "∃ es m mac #i #j.
+    ((ComputedMAC( 'Alice', es, m, mac ) @ #i) ∧
+     (Verified( 'Bob', es, m, mac ) @ #j)) ∧
+    (#i < #j)"
+/*
+guarded formula characterizing all satisfying traces:
+"∃ es m mac #i #j.
+  (ComputedMAC( 'Alice', es, m, mac ) @ #i) ∧
+  (Verified( 'Bob', es, m, mac ) @ #j)
+ ∧
+  #i < #j"
+*/
+simplify
+solve( !EpochBob( $eid, es ) ▶₀ #j )
+  case SetupEpoch
+  solve( ComputedMAC( 'Alice', ~es, m, hmac(~es, m) ) @ #i )
+    case AliceComputesMAC
+    solve( !EpochAlice( $eid, ~es ) ▶₀ #i )
+      case SetupEpoch
+      solve( !KU( hmac(~es, m) ) @ #vk.2 )
+        case AliceComputesMAC
+        SOLVED // trace found
+      qed
+    qed
+  qed
+qed
+
+/* All wellformedness checks were successful. */
+
+/*
+Generated from:
+Tamarin version 1.12.0
+Maude version 3.5.1
+Git revision: UNKNOWN, branch: UNKNOWN
+Compiled at: 2026-05-06 19:40:31.002892 UTC
+*/
+
+end
+
+==============================================================================
+summary of summaries:
+
+analyzed: models/spqr_deniability.spthy
+
+  processing time: 0.18s
+  
+  either_party_can_produce_arbitrary_mac (exists-trace): verified (7 steps)
+  epoch_secret_required_for_forgery (all-traces): verified (7 steps)
+  honest_authentication_executable (exists-trace): verified (6 steps)
+
+==============================================================================
